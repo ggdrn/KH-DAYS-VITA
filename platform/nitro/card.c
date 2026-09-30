@@ -1,9 +1,11 @@
 /* The cartridge: CARDi_ReadRom, the single path every ROM read of the NitroSDK goes through
  * (FS's ROM archive calls it asynchronously, with a completion callback).
  *
- * The data comes from the user's dump (rom_read). An asynchronous read completes the way a
- * card DMA did: its callback runs later, on the running NitroSDK thread in IRQ mode, so the
- * FS state machine sees "started" before "done" as it expects. */
+ * The data comes from the user's dump (rom_read). An asynchronous read completes later, so
+ * the FS state machine sees "started" before "done" as it expects. On the DS the CARD task
+ * thread calls the callback when it finishes the transfer, whether interrupts are on or not:
+ * main() loads ov001 before anything sets IME. So the completion is a task deferral
+ * (kh_cpu_defer_task), not an interrupt one. */
 #include "log.h"
 #include "nitro/cpu.h"
 #include "rom.h"
@@ -39,7 +41,7 @@ void CARDi_ReadRom(uint32_t dma, const void *src, void *dst, uint32_t len, CARDC
     if (!cb)
         return;
     if (async)
-        kh_cpu_defer(complete, (void *)cb, arg, NULL);
+        kh_cpu_defer_task(complete, (void *)cb, arg, NULL);
     else
         cb(arg);
 }

@@ -37,6 +37,8 @@ extern struct { void *head, *tail; } data_027e0058; /* OSi_IrqThreadQueue */
 extern struct {
     uint16_t isNeedRescheduling;
     uint16_t irqDepth;
+    uint8_t *current; /* OSThread * */
+    uint8_t *list;    /* by priority, through OSThread.next */
 } data_02044330;                                 /* OSi_ThreadInfo */
 
 extern void OSi_RescheduleThread(void);
@@ -88,15 +90,17 @@ typedef struct Deferred {
     struct Deferred *next;
 } Deferred;
 
-static Deferred *volatile s_deferred;
+static Deferred *volatile s_deferred;      /* interrupt completions: need IME and IE */
+static Deferred *volatile s_task_deferred; /* thread completions: need only the I bit clear */
 static SceUID s_deferred_lock = -1;
 
-void kh_cpu_defer(void (*fn)(void *, void *, void *), void *a, void *b, void *c)
+static void defer_on(Deferred *volatile *list, void (*fn)(void *, void *, void *), void *a,
+                     void *b, void *c)
 {
     Deferred *d = malloc(sizeof(*d)), **tail;
     d->fn = fn, d->a = a, d->b = b, d->c = c, d->next = NULL;
     sceKernelLockMutex(s_deferred_lock, 1, NULL);
-    for (tail = (Deferred **)&s_deferred; *tail; tail = &(*tail)->next)
+    for (tail = (Deferred **)list; *tail; tail = &(*tail)->next)
         ;
     *tail = d;
     sceKernelUnlockMutex(s_deferred_lock, 1);
@@ -104,16 +108,36 @@ void kh_cpu_defer(void (*fn)(void *, void *, void *), void *a, void *b, void *c)
         sceKernelSetEventFlag(s_event, 1);
 }
 
-static Deferred *take_deferred(void)
+void kh_cpu_defer(void (*fn)(void *, void *, void *), void *a, void *b, void *c)
 {
-    Deferred *list;
-    if (!s_deferred)
+    defer_on(&s_deferred, fn, a, b, c);
+}
+
+void kh_cpu_defer_task(void (*fn)(void *, void *, void *), void *a, void *b, void *c)
+{
+    defer_on(&s_task_deferred, fn, a, b, c);
+}
+
+static Deferred *take_deferred(Deferred *volatile *list)
+{
+    Deferred *taken;
+    if (!*list)
         return NULL;
     sceKernelLockMutex(s_deferred_lock, 1, NULL);
-    list = s_deferred;
-    s_deferred = NULL;
+    taken = *list;
+    *list = NULL;
     sceKernelUnlockMutex(s_deferred_lock, 1);
-    return list;
+    return taken;
+}
+
+static void run_deferred(Deferred *d)
+{
+    while (d) {
+        Deferred *next = d->next;
+        d->fn(d->a, d->b, d->c);
+        free(d);
+        d = next;
+    }
 }
 
 /* ---- delivery -------------------------------------------------------------------------------
@@ -127,10 +151,15 @@ static Deferred *take_deferred(void)
  * clear after claiming s_irq_busy, and OS_DisableInterrupts returns only after it sees
  * s_irq_busy clear after setting the I bit. So no handler runs inside a critical section. */
 
+static int irq_work(void)
+{
+    return (KH_IO16(REG_IME) & 1) && ((KH_IO32(REG_IE) & s_pending) || s_deferred);
+}
+
 static int deliverable(void)
 {
-    return (KH_IO16(REG_IME) & 1) && !(__atomic_load_n(&kh_cpsr_if, __ATOMIC_SEQ_CST) & 0x80) &&
-           ((KH_IO32(REG_IE) & s_pending) || s_deferred);
+    return !(__atomic_load_n(&kh_cpsr_if, __ATOMIC_SEQ_CST) & 0x80) &&
+           (irq_work() || s_task_deferred);
 }
 
 static int claim(void)
@@ -155,21 +184,17 @@ static void release(void)
 static void run_handlers(void)
 {
     s_irq_thread = sceKernelGetThreadId();
-    while ((KH_IO16(REG_IME) & 1) && ((KH_IO32(REG_IE) & s_pending) || s_deferred)) {
-        uint32_t live = KH_IO32(REG_IE) & s_pending;
+    while (irq_work() || s_task_deferred) {
+        uint32_t live = (KH_IO16(REG_IME) & 1) ? KH_IO32(REG_IE) & s_pending : 0;
         if (live) {
             int bit = __builtin_ctz(live);
             kh_irq_ack(1u << bit);
             if (bit < 22 && data_027e0000[bit])
                 data_027e0000[bit]();
+        } else if (s_task_deferred) {
+            run_deferred(take_deferred(&s_task_deferred));
         } else {
-            Deferred *d = take_deferred();
-            while (d) {
-                Deferred *next = d->next;
-                d->fn(d->a, d->b, d->c);
-                free(d);
-                d = next;
-            }
+            run_deferred(take_deferred(&s_deferred));
         }
         kh_cpu_irqs_delivered++;
         /* OS_IrqHandler_ThreadSwitch: threads waiting in OS_WaitIrq become ready */
@@ -457,9 +482,20 @@ void OS_LoadContext(void *ctx)
 
 void kh_cpu_log_state(void)
 {
+    const uint8_t *t;
+    int n = 0;
     LOG("cpu: pending %08x IE %08x IME %d cpsr %02x busy %d owner %08x irq_thread %08x "
-        "resched %d deferred %d",
+        "resched %d deferred %d task %d",
         (unsigned)s_pending, (unsigned)KH_IO32(REG_IE), KH_IO16(REG_IME) & 1,
         (unsigned)kh_cpsr_if, s_irq_busy, (unsigned)s_owner, (unsigned)s_irq_thread,
-        data_02044330.isNeedRescheduling, s_deferred != NULL);
+        data_02044330.isNeedRescheduling, s_deferred != NULL, s_task_deferred != NULL);
+    /* the SDK's threads, highest priority first (OSThread: state +0x64, next +0x68, id +0x6c,
+     * priority +0x70, queue +0x78; the context's pc+4 at +0x40: the entry, as the port does not
+     * save registers on a switch) */
+    for (t = data_02044330.list; t && n < 16; t = *(uint8_t *const *)(t + 0x68), n++)
+        LOG("cpu:   thread %p id %u prio %u state %u queue %p%s entry %08x", (void *)t,
+            (unsigned)*(const uint32_t *)(t + 0x6c), (unsigned)*(const uint32_t *)(t + 0x70),
+            (unsigned)*(const uint32_t *)(t + 0x64), *(void *const *)(t + 0x78),
+            t == data_02044330.current ? " (current)" : "",
+            (unsigned)(*(const uint32_t *)(t + 0x40) - 4));
 }

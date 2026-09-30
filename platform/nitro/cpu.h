@@ -26,6 +26,12 @@ void kh_irq_ack(uint32_t bits);
  * the completion of something the DS did asynchronously (a card read, an ARM7 reply). */
 void kh_cpu_defer(void (*fn)(void *, void *, void *), void *a, void *b, void *c);
 
+/* The same for a completion the DS delivered from a thread, not an interrupt (the CARD task
+ * thread ends an asynchronous ROM read by calling its callback): it does not wait for IME/IE,
+ * only for the CPU to be outside a critical section. The boot reads ov001, which is what
+ * enables interrupts, before IME is ever set. */
+void kh_cpu_defer_task(void (*fn)(void *, void *, void *), void *a, void *b, void *c);
+
 /* Deliver whatever interrupts are pending and allowed (baton holder only). */
 void kh_cpu_poll(void);
 /* One log line with the interrupt and scheduling state (for the watchdog). */

@@ -82,6 +82,17 @@ def main():
                 print(f"    {k:4s} {wanted[k]:08x}  {names[wanted[k]]}")
         print()
 
+    # thread entries (cpu: "started (entry X)" and the watchdog's thread list), with the load
+    # bias of the run's "fault:" line
+    m = re.search(r"\(main=([0-9a-f]{8})\)", text)
+    if m:
+        bias = int(m.group(1), 16) - elf_main
+        entries = sorted({int(v, 16) - bias for v in re.findall(r"entry ([0-9a-f]{8})", text)})
+        entries = [a for a in entries if lo <= a < hi]
+        names = addr2line(elf, entries)
+        for a in entries:
+            print(f"entry {a + bias:08x} -> {a:08x}  {names[a]}")
+
 
 if __name__ == "__main__":
     main()
