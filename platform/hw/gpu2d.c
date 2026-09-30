@@ -271,20 +271,21 @@ static const int8_t s_bg_kind[8][4] = {
     { 0, 0, 1, 2 }, { 0, 0, 2, 2 }, { 0, -1, -1, -1 }, { -1, -1, -1, -1 },
 };
 
-static void render_bg(const Engine *e, int bg, int line, uint16_t *out)
+/* Draws BG `bg` into out; 0 when the layer is not shown (out is then left as it was). */
+static int render_bg(const Engine *e, int bg, int line, uint16_t *out)
 {
-    const int mode = e->dispcnt & 7;
-    memset(out, 0, W * sizeof(*out));
-    if (!(e->dispcnt & (0x100u << bg)))
-        return;
+    const int kind = s_bg_kind[e->dispcnt & 7][bg];
+    if (!(e->dispcnt & (0x100u << bg)) || kind < 0)
+        return 0;
     if (bg == 0 && e->is_a && (e->dispcnt & 0x08))
-        return; /* the 3D layer */
-    switch (s_bg_kind[mode][bg]) {
+        return 0; /* the 3D layer */
+    memset(out, 0, W * sizeof(*out));
+    switch (kind) {
     case 0: bg_text(e, bg, line, out); break;
     case 1: bg_affine_tiles(e, bg, line, out); break;
-    case 2: bg_extended(e, bg, line, out); break;
-    default: break;
+    default: bg_extended(e, bg, line, out); break;
     }
+    return 1;
 }
 
 /* ---- sprites -------------------------------------------------------------------------- */
@@ -333,13 +334,15 @@ static uint16_t obj_texel(const Engine *e, uint16_t a0, uint16_t a2, int w, int 
     }
 }
 
-static void render_obj(const Engine *e, int line, ObjLine *o)
+/* Draws the sprites of `line`; returns 1 if any sprite pixel was drawn, plus 2 if one of them
+ * blends by itself (semi-transparent or bitmap), plus 4 if any OBJ window pixel was set. */
+static int render_obj(const Engine *e, int line, ObjLine *o)
 {
-    int i;
+    int i, got = 0;
     memset(o->col, 0, sizeof(o->col));
     memset(o->win, 0, sizeof(o->win));
     if (!(e->dispcnt & 0x1000))
-        return;
+        return 0;
     for (i = 0; i < 128; i++) {
         const uint16_t a0 = e->oam[i * 4], a1 = e->oam[i * 4 + 1], a2 = e->oam[i * 4 + 2];
         const int affine = a0 & 0x100, mode = (a0 >> 10) & 3, shape = a0 >> 14;
@@ -387,6 +390,7 @@ static void render_obj(const Engine *e, int line, ObjLine *o)
                 continue;
             if (mode == 2) {
                 o->win[x] = 1;
+                got |= 4;
                 continue;
             }
             if ((o->col[x] & OPAQUE) && prio >= o->prio[x])
@@ -401,8 +405,10 @@ static void render_obj(const Engine *e, int line, ObjLine *o)
             }
             o->col[x] = c | OPAQUE;
             o->prio[x] = (uint8_t)prio;
+            got |= o->alpha[x] ? 3 : 1;
         }
     }
+    return got;
 }
 
 /* ---- composition ---------------------------------------------------------------------- */
@@ -432,11 +438,23 @@ static inline uint16_t darken(uint16_t c, int f)
     return (uint16_t)(r | g << 5 | b << 10);
 }
 
+static uint32_t s_rgba[0x8000]; /* BGR555 -> RGBA8888 */
+
+static void init_rgba(void)
+{
+    uint32_t c;
+    if (s_rgba[0x7fff])
+        return;
+    for (c = 0; c < 0x8000; c++) {
+        uint32_t r = c & 31, g = (c >> 5) & 31, b = (c >> 10) & 31;
+        r = r << 3 | r >> 2, g = g << 3 | g >> 2, b = b << 3 | b >> 2;
+        s_rgba[c] = 0xff000000u | b << 16 | g << 8 | r;
+    }
+}
+
 static inline uint32_t to_rgba(uint16_t c)
 {
-    uint32_t r = c & 31, g = (c >> 5) & 31, b = (c >> 10) & 31;
-    r = r << 3 | r >> 2, g = g << 3 | g >> 2, b = b << 3 | b >> 2;
-    return 0xff000000u | b << 16 | g << 8 | r;
+    return s_rgba[c & 0x7fff];
 }
 
 static int in_span(int v, int lo, int hi)
@@ -445,16 +463,14 @@ static int in_span(int v, int lo, int hi)
 }
 
 /* the window control (WININ/WINOUT bits 0-5) of each pixel of the line */
-static void window_line(const Engine *e, int line, const ObjLine *o, uint8_t *ctl)
+static int window_line(const Engine *e, int line, const ObjLine *o, uint8_t *ctl)
 {
     const uint32_t dc = e->dispcnt;
     const uint16_t winin = io16(e, 0x48), winout = io16(e, 0x4a);
     int x, win_on[2];
 
-    if (!(dc & 0xe000)) {
-        memset(ctl, 0x3f, W);
-        return;
-    }
+    if (!(dc & 0xe000))
+        return 0;
     for (x = 0; x < 2; x++) {
         const uint16_t v = io16(e, 0x44 + 2 * x);
         win_on[x] = (dc & (0x2000u << x)) && in_span(line, v >> 8, v & 0xff);
@@ -469,9 +485,13 @@ static void window_line(const Engine *e, int line, const ObjLine *o, uint8_t *ct
             c = (winout >> 8) & 0x3f;
         ctl[x] = c;
     }
+    return 1;
 }
 
-static void compose_line(const Engine *e, int line, uint32_t *out)
+/* One line into out as BGR555. The layers shown are put in drawing order once per line
+ * (priority, then BG number); per pixel only those are looked at, and the window and colour
+ * effect work is done only when they are on. */
+static void compose_line(const Engine *e, int line, uint16_t *out)
 {
     static uint16_t bgl[4][W];
     static ObjLine obj;
@@ -480,35 +500,64 @@ static void compose_line(const Engine *e, int line, uint32_t *out)
     const int effect = (bldcnt >> 6) & 3;
     int eva = bldalpha & 31, evb = (bldalpha >> 8) & 31, evy = io16(e, 0x54) & 31;
     const uint16_t backdrop = e->bg_pal[0] & 0x7fff;
-    int bgprio[4];
-    int bg, x;
+    int order[4], prio[4], nb = 0, objs, windows, bg, x, i;
 
     if (eva > 16) eva = 16;
     if (evb > 16) evb = 16;
     if (evy > 16) evy = 16;
     for (bg = 0; bg < 4; bg++) {
-        render_bg(e, bg, line, bgl[bg]);
-        bgprio[bg] = io16(e, 0x08 + 2 * bg) & 3;
-    }
-    render_obj(e, line, &obj);
-    window_line(e, line, &obj, ctl);
-
-    for (x = 0; x < W; x++) {
-        /* the two frontmost visible layers: lower priority value first, OBJ above BGs of the
-         * same priority, lower BG number above higher */
-        uint16_t c[2] = { backdrop, backdrop };
-        int id[2] = { L_BD, L_BD }, n = 0, p;
-        uint16_t out_c;
-        for (p = 0; p < 4 && n < 2; p++) {
-            if ((ctl[x] & 0x10) && (obj.col[x] & OPAQUE) && obj.prio[x] == p) {
-                c[n] = obj.col[x] & 0x7fff, id[n] = L_OBJ, n++;
-            }
-            for (bg = 0; bg < 4 && n < 2; bg++) {
-                if (bgprio[bg] != p || !(ctl[x] & (1 << bg)) || !(bgl[bg][x] & OPAQUE))
-                    continue;
-                c[n] = bgl[bg][x] & 0x7fff, id[n] = bg, n++;
-            }
+        if (!render_bg(e, bg, line, bgl[bg]))
+            continue;
+        /* insertion by (priority, BG number) */
+        {
+            const int p = io16(e, 0x08 + 2 * bg) & 3;
+            for (i = nb; i > 0 && prio[i - 1] > p; i--)
+                order[i] = order[i - 1], prio[i] = prio[i - 1];
+            order[i] = bg, prio[i] = p, nb++;
         }
+    }
+    objs = render_obj(e, line, &obj);
+    windows = window_line(e, line, &obj, ctl);
+
+    if (!windows && !effect && !(objs & 2)) {
+        /* the common case: the frontmost opaque pixel, nothing else */
+        for (x = 0; x < W; x++) {
+            uint16_t c = backdrop;
+            int p = 4;
+            for (i = 0; i < nb; i++) {
+                const uint16_t v = bgl[order[i]][x];
+                if (v & OPAQUE) {
+                    c = v & 0x7fff, p = prio[i];
+                    break;
+                }
+            }
+            if ((objs & 1) && (obj.col[x] & OPAQUE) && obj.prio[x] <= p)
+                c = obj.col[x] & 0x7fff;
+            out[x] = c;
+        }
+        return;
+    }
+
+    if (!windows)
+        memset(ctl, 0x3f, W);
+    for (x = 0; x < W; x++) {
+        /* the two frontmost visible layers: OBJ goes above BGs of the same priority */
+        uint16_t c[2] = { backdrop, backdrop };
+        int id[2] = { L_BD, L_BD }, n = 0;
+        int obj_left = (ctl[x] & 0x10) && (obj.col[x] & OPAQUE);
+        uint16_t out_c;
+        for (i = 0; i < nb && n < 2; i++) {
+            const int b = order[i];
+            if (obj_left && obj.prio[x] <= prio[i]) {
+                c[n] = obj.col[x] & 0x7fff, id[n] = L_OBJ, n++, obj_left = 0;
+                if (n == 2)
+                    break;
+            }
+            if ((ctl[x] & (1 << b)) && (bgl[b][x] & OPAQUE))
+                c[n] = bgl[b][x] & 0x7fff, id[n] = b, n++;
+        }
+        if (obj_left && n < 2)
+            c[n] = obj.col[x] & 0x7fff, id[n] = L_OBJ, n++;
         out_c = c[0];
         if (id[0] == L_OBJ && obj.alpha[x] && (bldcnt & (0x100 << id[1]))) {
             /* semi-transparent and bitmap sprites blend with what is under them */
@@ -556,6 +605,7 @@ void kh_gpu2d_render(int engine, uint32_t *fb)
     Engine e;
     int mode, line, x;
 
+    init_rgba();
     engine_setup(&e, engine);
     mode = (e.dispcnt >> 16) & (e.is_a ? 3 : 1);
     if (mode == 0 || (e.dispcnt & 0x80)) { /* display off, or forced blank: white */
@@ -573,10 +623,11 @@ void kh_gpu2d_render(int engine, uint32_t *fb)
         memset(fb, 0, W * H * sizeof(*fb));
     } else {
         for (line = 0; line < H; line++) {
-            uint32_t *row = fb + line * W;
+            uint16_t row[W];
+            uint32_t *dst = fb + line * W;
             compose_line(&e, line, row);
-            for (x = W - 1; x >= 0; x--)
-                row[x] = to_rgba((uint16_t)row[x]);
+            for (x = 0; x < W; x++)
+                dst[x] = to_rgba(row[x]);
         }
     }
     master_brightness(&e, fb);
