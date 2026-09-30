@@ -35,7 +35,7 @@ Phases follow the generic "port a decompiled game to the Vita" plan. ✅ done ·
     (copies, matrices, MATH_QSort, streaming LZ, SHA-1, CP context, interrupt state, MobiClip
     blit); `platform/nitro/dsprotect.c`: DS Protect answers "genuine"
 - ✅ Hardware addresses translated; a scan of the linked ELF finds no DS address left
-- 🔶 Console: boots to `NitroMain` (0.0.8); 0.0.9 past the GBA-slot probe and into the first SDK thread; 0.0.10 pins the shared-bss statics (OSi_CurrentThreadPtr was NULL); 0.0.11 = 0.0.10 on decomp ea39ead5e; 0.0.12 defines those names in assembly (--defsym block+off was absolute, not relocated)
+- 🔶 Console: boots to `NitroMain` (0.0.8); 0.0.9 past the GBA-slot probe and into the first SDK thread; 0.0.10 pins the shared-bss statics (OSi_CurrentThreadPtr was NULL); 0.0.11 = 0.0.10 on decomp ea39ead5e; 0.0.12 defines those names in assembly (--defsym block+off was absolute, not relocated); 0.0.13 gives 64-bit struct members the DS 4-byte alignment (OSThread.state was at +0x68)
 
 ## 6. Platform layer 🔶
 - ✅ main/system: clocks, data dir, log + previous log, ROM open/verify (cached SHA-1), msg dialog

@@ -404,10 +404,10 @@ index 54d1b93a3..2764ae0e7 100644
  
 diff --git a/include/nitro/kh_hw.h b/include/nitro/kh_hw.h
 new file mode 100644
-index 000000000..9e673d6aa
+index 000000000..6a21c210d
 --- /dev/null
 +++ b/include/nitro/kh_hw.h
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,25 @@
 +/* KH_HW(addr): a fixed hardware address of the DS, as the code uses it.
 + *
 + * On the DS this is the address itself, so every source compiles to the same bytes as before.
@@ -421,6 +421,15 @@ index 000000000..9e673d6aa
 +#include "kh_hw_map.h"
 +#else
 +#define KH_HW(addr) (addr)
++#endif
++
++/* KH_ALIGN64 after a struct member declared as a plain `long long`: mwcc aligns 64-bit
++ * integers to 4 bytes, GCC for ARM to 8, which would pad the struct differently. (u64 and
++ * s64 carry the DS alignment in their typedefs, nitro/types.h.) Nothing on the DS. */
++#ifdef PLATFORM_VITA
++#define KH_ALIGN64 __attribute__((packed, aligned(4)))
++#else
++#define KH_ALIGN64
 +#endif
 +
 +#endif
@@ -469,6 +478,36 @@ index 7da3ce673..e94db3bc5 100644
  
  typedef struct OSMessageQueue OSMessageQueue;
  
+diff --git a/include/nitro/types.h b/include/nitro/types.h
+index 1f48cc42e..3b57db499 100644
+--- a/include/nitro/types.h
++++ b/include/nitro/types.h
+@@ -15,7 +15,13 @@ typedef unsigned long u32;
+ #else
+ typedef unsigned int u32;
+ #endif
++#ifdef PLATFORM_VITA
++/* mwcc aligns 64-bit integers to 4 bytes; GCC for ARM to 8, which would pad and shift the
++ * structs that hold them (CPContext inside every OSThread). A typedef may lower alignment. */
++typedef unsigned long long u64 __attribute__((aligned(4)));
++#else
+ typedef unsigned long long u64;
++#endif
+ 
+ typedef signed char s8;
+ typedef short s16;
+@@ -24,7 +30,11 @@ typedef signed long s32;
+ #else
+ typedef int s32;
+ #endif
++#ifdef PLATFORM_VITA
++typedef long long s64 __attribute__((aligned(4)));
++#else
+ typedef long long s64;
++#endif
+ 
+ typedef volatile u8 vu8;
+ typedef volatile u16 vu16;
 diff --git a/libs/nitro/card/auto/CARDi_SetRomOp.c b/libs/nitro/card/auto/CARDi_SetRomOp.c
 index 57a885584..174cfb0e6 100644
 --- a/libs/nitro/card/auto/CARDi_SetRomOp.c
@@ -8498,6 +8537,50 @@ index 27416750d..97715651a 100644
  
  static inline void G2_SetBG2Control(int screenSize, int colorMode, int screenBase, int charBase, int bgExtPltt)
  {
+diff --git a/src/engine/RandNext.c b/src/engine/RandNext.c
+index 56d615636..9b0e2407f 100644
+--- a/src/engine/RandNext.c
++++ b/src/engine/RandNext.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /*
+  * RandNext - advance the global 64-bit LCG RNG and return its top 12 bits.
+  *
+@@ -13,9 +14,9 @@
+ 
+ typedef struct {
+     char pad0[0xc];
+-    unsigned long long seed;   /* 0x0c */
+-    unsigned long long mult;   /* 0x14 */
+-    unsigned long long inc;    /* 0x1c */
++    unsigned long long seed KH_ALIGN64;   /* 0x0c */
++    unsigned long long mult KH_ALIGN64;   /* 0x14 */
++    unsigned long long inc KH_ALIGN64;    /* 0x1c */
+ } RngState;
+ 
+ extern RngState data_0204c168;
+diff --git a/src/engine/RandNextScaled.c b/src/engine/RandNextScaled.c
+index 312f4eca6..bc2093736 100644
+--- a/src/engine/RandNextScaled.c
++++ b/src/engine/RandNextScaled.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /*
+  * RandNextScaled - advance the global 64-bit LCG RNG and return a value scaled to [0, range).
+  *
+@@ -13,9 +14,9 @@
+ 
+ typedef struct {
+     char pad0[0xc];
+-    long long seed;   /* 0x0c */
+-    long long mult;   /* 0x14 */
+-    long long inc;    /* 0x1c */
++    long long seed KH_ALIGN64;   /* 0x0c */
++    long long mult KH_ALIGN64;   /* 0x14 */
++    long long inc KH_ALIGN64;    /* 0x1c */
+ } RngState;
+ 
+ extern RngState data_0204c168;
 diff --git a/src/engine/RoomBox_HitTop.c b/src/engine/RoomBox_HitTop.c
 index 39641ce1d..bc99e8a73 100644
 --- a/src/engine/RoomBox_HitTop.c
@@ -8730,6 +8813,42 @@ index edd340ba3..ba06edda7 100644
          Rec buf;
  
          latest = TP_GetLatestIndexInAuto();
+diff --git a/src/engine/Tween_Sample.c b/src/engine/Tween_Sample.c
+index 2c3b9366b..222e81496 100644
+--- a/src/engine/Tween_Sample.c
++++ b/src/engine/Tween_Sample.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Samples a tween: converts the time elapsed since it started (or the frozen time while paused) to
+  * ticks, marks it finished when it reaches the duration, and writes the eased value between its
+  * endpoints. */
+@@ -23,7 +24,7 @@ typedef struct Tween {
+     s32 duration;
+     s32 from;
+     s32 to;
+-    long long startTick; /* running: tick the tween started at.
++    long long startTick KH_ALIGN64; /* running: tick the tween started at.
+                            * paused: the frozen elapsed tick count itself. */
+     TweenFlags flags;
+ } Tween;
+diff --git a/src/engine/Tween_Start.c b/src/engine/Tween_Start.c
+index c2acda859..d7c6c1a38 100644
+--- a/src/engine/Tween_Start.c
++++ b/src/engine/Tween_Start.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Stamp llStartTick with GetTick64() and set flag bit 0, clearing bits 1 and 2. This is what makes
+  * the object time-based: the elapsed time is measured against this stamp. */
+ 
+@@ -5,7 +6,7 @@ extern long long OS_GetTick(void);
+ 
+ struct obj {
+     int _pad[4];
+-    long long value;
++    long long value KH_ALIGN64;
+     unsigned flag0 : 1;
+     unsigned flag1 : 1;
+     unsigned flag2 : 1;
 diff --git a/src/engine/UnloadActorOverlay.c b/src/engine/UnloadActorOverlay.c
 index 937fb230a..7470a129b 100644
 --- a/src/engine/UnloadActorOverlay.c
@@ -8797,6 +8916,222 @@ index f69c118cd..aa6082ff8 100644
          if (*reg & 0x2000) return param_1 + 2;
      }
      return param_1;
+diff --git a/src/overlays/enemies/ov131_enemy_minute_bomb/Ov131_throwRelease_tick.c b/src/overlays/enemies/ov131_enemy_minute_bomb/Ov131_throwRelease_tick.c
+index 352309457..170a9e1bc 100644
+--- a/src/overlays/enemies/ov131_enemy_minute_bomb/Ov131_throwRelease_tick.c
++++ b/src/overlays/enemies/ov131_enemy_minute_bomb/Ov131_throwRelease_tick.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ 
+ /*
+  * Coordinates are held in a one-value wrapper type (Fx32), a tentative
+@@ -67,7 +68,7 @@ struct State {
+     char pad34[0xc];
+     FxVec *pPos40;
+     char pad44[8];
+-    unsigned long long uMask4c;
++    unsigned long long uMask4c KH_ALIGN64;
+ };
+ 
+ struct Node {
+diff --git a/src/overlays/enemies/ov132_enemy_minute_bomb_2/Ov132_throwRelease_tick.c b/src/overlays/enemies/ov132_enemy_minute_bomb_2/Ov132_throwRelease_tick.c
+index 8f42c6756..ee3b1c805 100644
+--- a/src/overlays/enemies/ov132_enemy_minute_bomb_2/Ov132_throwRelease_tick.c
++++ b/src/overlays/enemies/ov132_enemy_minute_bomb_2/Ov132_throwRelease_tick.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ 
+ /*
+  * Coordinates are held in a one-value wrapper type (Fx32), a tentative
+@@ -67,7 +68,7 @@ struct State {
+     char pad34[0xc];
+     FxVec *pPos40;
+     char pad44[8];
+-    unsigned long long uMask4c;
++    unsigned long long uMask4c KH_ALIGN64;
+ };
+ 
+ struct Node {
+diff --git a/src/overlays/enemies/ov133_enemy_minute_bomb_3/Ov133_throwRelease_tick.c b/src/overlays/enemies/ov133_enemy_minute_bomb_3/Ov133_throwRelease_tick.c
+index b8d9f9286..746b34dda 100644
+--- a/src/overlays/enemies/ov133_enemy_minute_bomb_3/Ov133_throwRelease_tick.c
++++ b/src/overlays/enemies/ov133_enemy_minute_bomb_3/Ov133_throwRelease_tick.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ 
+ /*
+  * Coordinates are held in a one-value wrapper type (Fx32), a tentative
+@@ -67,7 +68,7 @@ struct State {
+     char pad34[0xc];
+     FxVec *pPos40;
+     char pad44[8];
+-    unsigned long long uMask4c;
++    unsigned long long uMask4c KH_ALIGN64;
+ };
+ 
+ struct Node {
+diff --git a/src/overlays/enemies/ov161_enemy_storm_bomb/Ov161_ThrowReleaseTick.c b/src/overlays/enemies/ov161_enemy_storm_bomb/Ov161_ThrowReleaseTick.c
+index 73c767989..b5bd65d07 100644
+--- a/src/overlays/enemies/ov161_enemy_storm_bomb/Ov161_ThrowReleaseTick.c
++++ b/src/overlays/enemies/ov161_enemy_storm_bomb/Ov161_ThrowReleaseTick.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Ov161_ThrowReleaseTick: throw-release tick of the ov161 enemy (x2), ported from the matched ov202 sibling (radius = timer * 4 + 0x800, pushes raised to 0x1000, kind bit 0x20000, +0x60 bit 7 set at the end). */
+ /* Ov161_ThrowReleaseTick: ported from a matched sibling family (same shape, constants and offsets adjusted). */
+ 
+@@ -69,7 +70,7 @@ struct State {
+     char pad34[0xc];
+     FxVec *pPos40;
+     char pad44[8];
+-    unsigned long long uMask4c;
++    unsigned long long uMask4c KH_ALIGN64;
+ };
+ 
+ struct Node {
+diff --git a/src/overlays/enemies/ov162_enemy_storm_bomb_2/Ov162_ThrowReleaseTick.c b/src/overlays/enemies/ov162_enemy_storm_bomb_2/Ov162_ThrowReleaseTick.c
+index 0f9b930ad..4590d7863 100644
+--- a/src/overlays/enemies/ov162_enemy_storm_bomb_2/Ov162_ThrowReleaseTick.c
++++ b/src/overlays/enemies/ov162_enemy_storm_bomb_2/Ov162_ThrowReleaseTick.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Ov162_ThrowReleaseTick: throw-release tick of the ov161 enemy (x2), ported from the matched ov202 sibling (radius = timer * 4 + 0x800, pushes raised to 0x1000, kind bit 0x20000, +0x60 bit 7 set at the end). */
+ /* Ov162_ThrowReleaseTick: ported from a matched sibling family (same shape, constants and offsets adjusted). */
+ 
+@@ -69,7 +70,7 @@ struct State {
+     char pad34[0xc];
+     FxVec *pPos40;
+     char pad44[8];
+-    unsigned long long uMask4c;
++    unsigned long long uMask4c KH_ALIGN64;
+ };
+ 
+ struct Node {
+diff --git a/src/overlays/enemies/ov163_enemy_skater_bomb/Ov163_ThrowReleaseTick.c b/src/overlays/enemies/ov163_enemy_skater_bomb/Ov163_ThrowReleaseTick.c
+index ad166b4fb..713e917f0 100644
+--- a/src/overlays/enemies/ov163_enemy_skater_bomb/Ov163_ThrowReleaseTick.c
++++ b/src/overlays/enemies/ov163_enemy_skater_bomb/Ov163_ThrowReleaseTick.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Ov163_ThrowReleaseTick: ported from the matched ov202 sibling (same shape: throw-release tick with the 0xc00 guard, a fixed 0x3000 radius and the +0x60 bit-7 set at the end). */
+ /* Ov163_ThrowReleaseTick: ported from a matched sibling family (same shape, constants and offsets adjusted). */
+ 
+@@ -69,7 +70,7 @@ struct State {
+     char pad34[0x1c];
+     FxVec *pPos50;
+     char pad54[8];
+-    unsigned long long uMask5c;
++    unsigned long long uMask5c KH_ALIGN64;
+ };
+ 
+ struct Node {
+diff --git a/src/overlays/enemies/ov164_enemy_skater_bomb_2/Ov164_ThrowReleaseTick.c b/src/overlays/enemies/ov164_enemy_skater_bomb_2/Ov164_ThrowReleaseTick.c
+index 9ec416435..f232c4c6f 100644
+--- a/src/overlays/enemies/ov164_enemy_skater_bomb_2/Ov164_ThrowReleaseTick.c
++++ b/src/overlays/enemies/ov164_enemy_skater_bomb_2/Ov164_ThrowReleaseTick.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Ov164_ThrowReleaseTick: ported from the matched ov202 sibling (same shape: throw-release tick with the 0xc00 guard, a fixed 0x3000 radius and the +0x60 bit-7 set at the end). */
+ /* Ov164_ThrowReleaseTick: ported from a matched sibling family (same shape, constants and offsets adjusted). */
+ 
+@@ -69,7 +70,7 @@ struct State {
+     char pad34[0x1c];
+     FxVec *pPos50;
+     char pad54[8];
+-    unsigned long long uMask5c;
++    unsigned long long uMask5c KH_ALIGN64;
+ };
+ 
+ struct Node {
+diff --git a/src/overlays/enemies/ov165_enemy_skater_bomb_3/Ov165_ThrowReleaseTick.c b/src/overlays/enemies/ov165_enemy_skater_bomb_3/Ov165_ThrowReleaseTick.c
+index 823eec9c9..8ce85441a 100644
+--- a/src/overlays/enemies/ov165_enemy_skater_bomb_3/Ov165_ThrowReleaseTick.c
++++ b/src/overlays/enemies/ov165_enemy_skater_bomb_3/Ov165_ThrowReleaseTick.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Ov165_ThrowReleaseTick: ported from the matched ov202 sibling (same shape: throw-release tick with the 0xc00 guard, a fixed 0x3000 radius and the +0x60 bit-7 set at the end). */
+ /* Ov165_ThrowReleaseTick: ported from a matched sibling family (same shape, constants and offsets adjusted). */
+ 
+@@ -69,7 +70,7 @@ struct State {
+     char pad34[0x1c];
+     FxVec *pPos50;
+     char pad54[8];
+-    unsigned long long uMask5c;
++    unsigned long long uMask5c KH_ALIGN64;
+ };
+ 
+ struct Node {
+diff --git a/src/overlays/enemies/ov202_enemy_detonator/Ov202_ThrowReleaseTick.c b/src/overlays/enemies/ov202_enemy_detonator/Ov202_ThrowReleaseTick.c
+index 206744bf7..8531b308d 100644
+--- a/src/overlays/enemies/ov202_enemy_detonator/Ov202_ThrowReleaseTick.c
++++ b/src/overlays/enemies/ov202_enemy_detonator/Ov202_ThrowReleaseTick.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Ov202_ThrowReleaseTick: ported from a matched sibling family (same shape, constants and offsets adjusted). */
+ 
+ /*
+@@ -68,7 +69,7 @@ struct State {
+     char pad34[0xc];
+     FxVec *pPos40;
+     char pad44[8];
+-    unsigned long long uMask4c;
++    unsigned long long uMask4c KH_ALIGN64;
+ };
+ 
+ struct Node {
+diff --git a/src/overlays/enemies/ov203_enemy_detonator_2/Ov203_ThrowReleaseTick.c b/src/overlays/enemies/ov203_enemy_detonator_2/Ov203_ThrowReleaseTick.c
+index be62dc320..e89e22fe4 100644
+--- a/src/overlays/enemies/ov203_enemy_detonator_2/Ov203_ThrowReleaseTick.c
++++ b/src/overlays/enemies/ov203_enemy_detonator_2/Ov203_ThrowReleaseTick.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Ov203_ThrowReleaseTick: ported from a matched sibling family (same shape, constants and offsets adjusted). */
+ 
+ /*
+@@ -68,7 +69,7 @@ struct State {
+     char pad34[0xc];
+     FxVec *pPos40;
+     char pad44[8];
+-    unsigned long long uMask4c;
++    unsigned long long uMask4c KH_ALIGN64;
+ };
+ 
+ struct Node {
+diff --git a/src/overlays/enemies/ov218_enemy_lock/Ov218_ShotBurstTick.c b/src/overlays/enemies/ov218_enemy_lock/Ov218_ShotBurstTick.c
+index 026e8fcde..f86d05792 100644
+--- a/src/overlays/enemies/ov218_enemy_lock/Ov218_ShotBurstTick.c
++++ b/src/overlays/enemies/ov218_enemy_lock/Ov218_ShotBurstTick.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Burst tick of the ov218 enemy's shot: for 0.5 after the bounce the +0x34 clock runs and the owner's
+  * sphere (radius 2.0) hits every entity around the +0x390 body once (the +0x3c 64-bit kind mask): the
+  * direct hits are pushed by 0.5 along the flattened direction away from the owner (kind 1 with a
+@@ -32,7 +33,7 @@ struct ShotState {
+     char pad0c[0x28];
+     int timer034;           /* +0x34 */
+     char pad38[4];
+-    unsigned long long mask; /* +0x3c */
++    unsigned long long mask KH_ALIGN64; /* +0x3c */
+ };
+ 
+ extern int Ov107_CollectSphereOverlaps(int owner, struct Sphere *query, int *out);
+diff --git a/src/overlays/enemies/ov238_enemy_pete_41/Ov238_ChargeSweepTick.c b/src/overlays/enemies/ov238_enemy_pete_41/Ov238_ChargeSweepTick.c
+index 2d139dd65..7f177fb22 100644
+--- a/src/overlays/enemies/ov238_enemy_pete_41/Ov238_ChargeSweepTick.c
++++ b/src/overlays/enemies/ov238_enemy_pete_41/Ov238_ChargeSweepTick.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Charge sweep tick of the ov238 enemy. Between 0.17 and 1.49 of the +0x2c clock a sphere at the +8
+  * position (radius growing from 1.04 with the clock, capped at 1.71) collects the entities around the
+  * owner; each one not yet in the +0x1c 64-bit mask with a +0x1c4 hit hook gets a 40-byte packet (the
+@@ -44,7 +45,7 @@ struct ChargeState {
+     int pad04;
+     VecFx32 *pPos;             /* +0x08 */
+     char pad0c[0x10];
+-    unsigned long long mask; /* +0x1c */
++    unsigned long long mask KH_ALIGN64; /* +0x1c */
+     int pad24;
+     int nHeading;           /* +0x28 */
+     int nClock;             /* +0x2c */
 diff --git a/src/overlays/enemies/ov252_enemy_ruler_of_the_sky/Ov252_PlaceBodyParts.c b/src/overlays/enemies/ov252_enemy_ruler_of_the_sky/Ov252_PlaceBodyParts.c
 index e201c905f..dd031b5c8 100644
 --- a/src/overlays/enemies/ov252_enemy_ruler_of_the_sky/Ov252_PlaceBodyParts.c
@@ -8813,6 +9148,78 @@ index e201c905f..dd031b5c8 100644
      if (self->nPhase != 5) {
          self->nPhaseTimer = 0;
      }
+diff --git a/src/overlays/enemies/ov287_enemy_training_barrel/Ov287_AreaSweepAttack_Tick.c b/src/overlays/enemies/ov287_enemy_training_barrel/Ov287_AreaSweepAttack_Tick.c
+index e441f06b1..a532196f2 100644
+--- a/src/overlays/enemies/ov287_enemy_training_barrel/Ov287_AreaSweepAttack_Tick.c
++++ b/src/overlays/enemies/ov287_enemy_training_barrel/Ov287_AreaSweepAttack_Tick.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ 
+ 
+ #include "nitro/types.h"
+@@ -32,7 +33,7 @@ struct State {
+     char pad00c[0x28];
+     int timer034;
+     char pad038[0x14];
+-    unsigned long long mask;
++    unsigned long long mask KH_ALIGN64;
+     u8 sent054;
+     char pad055[3];
+ };
+diff --git a/src/overlays/enemies/ov288_enemy_training_barrel_2/Ov288_AreaSweepAttack_Tick.c b/src/overlays/enemies/ov288_enemy_training_barrel_2/Ov288_AreaSweepAttack_Tick.c
+index 2c93d60cb..292759854 100644
+--- a/src/overlays/enemies/ov288_enemy_training_barrel_2/Ov288_AreaSweepAttack_Tick.c
++++ b/src/overlays/enemies/ov288_enemy_training_barrel_2/Ov288_AreaSweepAttack_Tick.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ 
+ 
+ #include "nitro/types.h"
+@@ -32,7 +33,7 @@ struct State {
+     char pad00c[0x28];
+     int timer034;
+     char pad038[0x14];
+-    unsigned long long mask;
++    unsigned long long mask KH_ALIGN64;
+     u8 sent054;
+     char pad055[3];
+ };
+diff --git a/src/overlays/enemies/ov289_enemy_training_barrel_3/Ov289_AreaSweepAttack_Tick.c b/src/overlays/enemies/ov289_enemy_training_barrel_3/Ov289_AreaSweepAttack_Tick.c
+index f447eb1ab..de82d1397 100644
+--- a/src/overlays/enemies/ov289_enemy_training_barrel_3/Ov289_AreaSweepAttack_Tick.c
++++ b/src/overlays/enemies/ov289_enemy_training_barrel_3/Ov289_AreaSweepAttack_Tick.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ 
+ 
+ #include "nitro/types.h"
+@@ -32,7 +33,7 @@ struct State {
+     char pad00c[0x28];
+     int timer034;
+     char pad038[0x14];
+-    unsigned long long mask;
++    unsigned long long mask KH_ALIGN64;
+     u8 sent054;
+     char pad055[3];
+ };
+diff --git a/src/overlays/field/ov013/Ov013_UpdateSpawnGroups.c b/src/overlays/field/ov013/Ov013_UpdateSpawnGroups.c
+index 6ea0090b3..39d5d77e5 100644
+--- a/src/overlays/field/ov013/Ov013_UpdateSpawnGroups.c
++++ b/src/overlays/field/ov013/Ov013_UpdateSpawnGroups.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Spawns an effect for each entry of the current group (types 2, 15 and 28 within the value limit)
+  * that has not spawned yet. */
+ 
+@@ -25,7 +26,7 @@ typedef struct {
+ 
+ typedef struct {
+     char padding00[0x464];
+-    unsigned long long flags464;
++    unsigned long long flags464 KH_ALIGN64;
+     char padding46c[0x20];
+     char spawnData[0x230];
+     int currentGroup;
 diff --git a/src/overlays/field/ov017_field_deposits/Ov017_ScriptOpPostScoreAndClearBgPriority.c b/src/overlays/field/ov017_field_deposits/Ov017_ScriptOpPostScoreAndClearBgPriority.c
 index 0e9b9c912..c6ca0ec32 100644
 --- a/src/overlays/field/ov017_field_deposits/Ov017_ScriptOpPostScoreAndClearBgPriority.c
@@ -8849,6 +9256,152 @@ index 5aa31429d..98f4553b9 100644
      int target;
      int value;
      unsigned short h;
+diff --git a/src/overlays/field/ov022_battle/Ov022_ActorSetHp.c b/src/overlays/field/ov022_battle/Ov022_ActorSetHp.c
+index f99d8a786..580a5354a 100644
+--- a/src/overlays/field/ov022_battle/Ov022_ActorSetHp.c
++++ b/src/overlays/field/ov022_battle/Ov022_ActorSetHp.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* ov022: set an entity's hit points, clamped to its maximum.
+  *
+  * Dropping to zero is the interesting path: it plays a death cue that depends
+@@ -14,7 +15,7 @@
+ #include "game/engine.h"
+ 
+ struct Ent {
+-    unsigned long long nFlags;   /* 0x00 */
++    unsigned long long nFlags KH_ALIGN64;   /* 0x00 */
+     u8 nOwner;                   /* 0x08 */
+     u8 nId;                      /* 0x09 */
+     u8 pad0a[8];
+diff --git a/src/overlays/field/ov022_battle/Ov022_ActorSetState.c b/src/overlays/field/ov022_battle/Ov022_ActorSetState.c
+index 210058603..4b0cff105 100644
+--- a/src/overlays/field/ov022_battle/Ov022_ActorSetState.c
++++ b/src/overlays/field/ov022_battle/Ov022_ActorSetState.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* ov022 actor state entry.
+  *
+  * Two shapes drive this one. The three-word copy at the top is a struct
+@@ -24,7 +25,7 @@ struct ActorNode {
+ };
+ 
+ struct Actor {
+-    unsigned long long nFlags;
++    unsigned long long nFlags KH_ALIGN64;
+     u8 pad08[0x18];
+     struct ActorNode *pNode;         /* 0x20 */
+     u8 pad24[0x40];
+diff --git a/src/overlays/field/ov022_battle/Ov022_ActorUpdate.c b/src/overlays/field/ov022_battle/Ov022_ActorUpdate.c
+index 40b32872e..00582d68a 100644
+--- a/src/overlays/field/ov022_battle/Ov022_ActorUpdate.c
++++ b/src/overlays/field/ov022_battle/Ov022_ActorUpdate.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* ov022: the actor's per-frame tick.
+  *
+  * Snapshots the previous position, refreshes the facing angle from the node,
+@@ -51,7 +52,7 @@ struct Actor;
+ typedef void *(*PfnState)(struct Actor *pActor);
+ 
+ struct Actor {
+-    unsigned long long nFlags;   /* 0x000 */
++    unsigned long long nFlags KH_ALIGN64;   /* 0x000 */
+     u8 nOwner;                   /* 0x008 */
+     u8 nId;                      /* 0x009 */
+     u8 pad00a[8];
+@@ -70,7 +71,7 @@ struct Actor {
+     int nHasFloor;               /* 0x10c */
+     u8 pad110[0x350];
+     PfnState pfnState;           /* 0x460 */
+-    unsigned long long nFlags2;  /* 0x464 */
++    unsigned long long nFlags2 KH_ALIGN64;  /* 0x464 */
+     u8 pad46c[0xe];
+     char nField47a;              /* 0x47a */
+     char nField47b;              /* 0x47b */
+diff --git a/src/overlays/field/ov022_battle/Ov022_ApplyExternalPush.c b/src/overlays/field/ov022_battle/Ov022_ApplyExternalPush.c
+index 300201871..7dbfbb49e 100644
+--- a/src/overlays/field/ov022_battle/Ov022_ApplyExternalPush.c
++++ b/src/overlays/field/ov022_battle/Ov022_ApplyExternalPush.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* ov022: fold an external push into the actor's step.
+  *
+  * Reads the push vector the actor is currently subject to, drops its downward
+@@ -11,7 +12,7 @@
+ #include "nitro/fx_types.h"
+ 
+ struct Actor {
+-    unsigned long long nFlags;   /* 0x000 */
++    unsigned long long nFlags KH_ALIGN64;   /* 0x000 */
+     u8 pad008[0x1c];
+     u32 nInputMask;              /* 0x024 */
+     u8 pad028[0x470];
+diff --git a/src/overlays/field/ov022_battle/Ov022_ApplySurfaceReactions.c b/src/overlays/field/ov022_battle/Ov022_ApplySurfaceReactions.c
+index 87cd7b711..e7ff3014f 100644
+--- a/src/overlays/field/ov022_battle/Ov022_ApplySurfaceReactions.c
++++ b/src/overlays/field/ov022_battle/Ov022_ApplySurfaceReactions.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* ov022: react to what the actor is standing on.
+  *
+  * Walks the four collision contacts, looks up each surface's attribute block
+@@ -34,7 +35,7 @@ struct Ride {
+ };
+ 
+ struct Actor {
+-    unsigned long long nFlags;   /* 0x000 */
++    unsigned long long nFlags KH_ALIGN64;   /* 0x000 */
+     u8 nOwner;                   /* 0x008 */
+     u8 pad009[0x1b];
+     u32 nInputMask;              /* 0x024 */
+@@ -47,8 +48,8 @@ struct Actor {
+     u8 pad074[0x98];
+     int nContactMode;            /* 0x10c */
+     u8 pad110[0x354];
+-    unsigned long long nFlags2;  /* 0x464 */
+-    unsigned long long nFlags3;  /* 0x46c */
++    unsigned long long nFlags2 KH_ALIGN64;  /* 0x464 */
++    unsigned long long nFlags3 KH_ALIGN64;  /* 0x46c */
+     u8 pad474[0x24];
+     VecFx32 vecStep;         /* 0x498 */
+     VecFx32 vecPush;         /* 0x4a4 */
+diff --git a/src/overlays/field/ov022_battle/Ov022_BroadcastCue.c b/src/overlays/field/ov022_battle/Ov022_BroadcastCue.c
+index c77ecd174..24eb1d7e8 100644
+--- a/src/overlays/field/ov022_battle/Ov022_BroadcastCue.c
++++ b/src/overlays/field/ov022_battle/Ov022_BroadcastCue.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Ov022_BroadcastCue -- tell everything that cares where a cue happened.
+  *
+  * The active entry gets it first, but only while it is the one the caller
+@@ -15,7 +16,7 @@
+ #include "game/engine.h"
+ 
+ struct Entry {
+-    unsigned long long nFlags;   /* 0x00, a 64 bit flag word */
++    unsigned long long nFlags KH_ALIGN64;   /* 0x00, a 64 bit flag word */
+     u8 pad0008[0xa];
+     u16 nHp;                     /* 0x12 */
+ };
+diff --git a/src/overlays/field/ov022_battle/Ov022_ClampHitPoints.c b/src/overlays/field/ov022_battle/Ov022_ClampHitPoints.c
+index 12a5ecebd..4d29162fa 100644
+--- a/src/overlays/field/ov022_battle/Ov022_ClampHitPoints.c
++++ b/src/overlays/field/ov022_battle/Ov022_ClampHitPoints.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Applies the regen penalty of ability 0x34: lowers the actor's HP by 5% of its maximum (keeping at
+  * least 1), and counts the hit statistic for player 0 outside mode 4. */
+ 
+@@ -14,7 +15,7 @@ struct LinkedObject_02095c58 {
+ };
+ 
+ struct Obj_02095c58 {
+-    unsigned long long flags000;
++    unsigned long long flags000 KH_ALIGN64;
+     unsigned char pad008;
+     unsigned char kind009;
+     unsigned char pad00a[8];
 diff --git a/src/overlays/field/ov022_battle/Ov022_EndKeySharingSession.c b/src/overlays/field/ov022_battle/Ov022_EndKeySharingSession.c
 index 489f7c75e..0d011b961 100644
 --- a/src/overlays/field/ov022_battle/Ov022_EndKeySharingSession.c
@@ -8865,6 +9418,60 @@ index 489f7c75e..0d011b961 100644
  #define FS_OVERLAY_ID_ov106 ((FSOverlayID)(u32) & (OVERLAY_106_ID))
  
  extern void func_02023ad0(int handle);
+diff --git a/src/overlays/field/ov022_battle/Ov022_FillSelectorStates.c b/src/overlays/field/ov022_battle/Ov022_FillSelectorStates.c
+index 65ada4864..52499d6a0 100644
+--- a/src/overlays/field/ov022_battle/Ov022_FillSelectorStates.c
++++ b/src/overlays/field/ov022_battle/Ov022_FillSelectorStates.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Sets up each player's battle state from the configuration records: resolves special kinds, fills
+  * the setup arguments, acquires the player's overlay slot and creates its controller, then applies
+  * the configured limits and metadata flags to the player's entry. */
+@@ -44,7 +45,7 @@ typedef struct Ov022CallbackArgs {
+ } Ov022CallbackArgs;
+ 
+ typedef struct Ov022PlayerEntry {
+-    unsigned long long flags;
++    unsigned long long flags KH_ALIGN64;
+     char padding008[0xa];
+     unsigned short selectedLimit;
+     char padding014[2];
+diff --git a/src/overlays/field/ov022_battle/Ov022_GetStreamTimestamp.c b/src/overlays/field/ov022_battle/Ov022_GetStreamTimestamp.c
+index 084acdd90..5b1a2e8ce 100644
+--- a/src/overlays/field/ov022_battle/Ov022_GetStreamTimestamp.c
++++ b/src/overlays/field/ov022_battle/Ov022_GetStreamTimestamp.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* The stream's current 64-bit timestamp, or 0 when there is no stream. Both
+  * halves are read separately and both are zeroed on the null path, which is what
+  * a predicated long long return looks like. */
+@@ -6,7 +7,7 @@
+ 
+ typedef struct {
+     char pad0000[0x464];
+-    unsigned long long qwTimestamp; /* +0x464 */
++    unsigned long long qwTimestamp KH_ALIGN64; /* +0x464 */
+ } Ov022Stream;
+ 
+ unsigned long long Ov022_GetStreamTimestamp(int idx) {
+diff --git a/src/overlays/field/ov022_battle/Ov022_LoadNodeFromResource.c b/src/overlays/field/ov022_battle/Ov022_LoadNodeFromResource.c
+index de2e7a832..2e78904f1 100644
+--- a/src/overlays/field/ov022_battle/Ov022_LoadNodeFromResource.c
++++ b/src/overlays/field/ov022_battle/Ov022_LoadNodeFromResource.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Unpacks entry index of the resource (ids, packed fields, facing, flags) into the node. */
+ 
+ typedef struct Ov022Bits4e8 {
+@@ -45,7 +46,7 @@ typedef struct Ov022ResourceView {
+ } Ov022ResourceView;
+ 
+ typedef struct Ov022Node {
+-    unsigned long long flags;
++    unsigned long long flags KH_ALIGN64;
+     char padding008[0xa];
+     unsigned short field012;
+     char padding014[4];
 diff --git a/src/overlays/field/ov022_battle/Ov022_LoadSceneResources.c b/src/overlays/field/ov022_battle/Ov022_LoadSceneResources.c
 index 4b447736f..dc4c98a93 100644
 --- a/src/overlays/field/ov022_battle/Ov022_LoadSceneResources.c
@@ -8881,6 +9488,69 @@ index 4b447736f..dc4c98a93 100644
  #define FS_OVERLAY_ID_ov106 ((u32)(u32)&OVERLAY_106_ID)
  
  typedef struct Ov022RegistrationBuffer {
+diff --git a/src/overlays/field/ov022_battle/Ov022_LookupRowValue.c b/src/overlays/field/ov022_battle/Ov022_LookupRowValue.c
+index 660aec869..369d37881 100644
+--- a/src/overlays/field/ov022_battle/Ov022_LookupRowValue.c
++++ b/src/overlays/field/ov022_battle/Ov022_LookupRowValue.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Rolls an actor's stat from its configuration row plus its gauge bonuses (halved outside mode,
+  * boosted by ability 0x3d); returns the scaled value or 0 when the roll fails. */
+ 
+@@ -18,7 +19,7 @@ struct GaugeBlock020a2230 {
+ };
+ 
+ struct Ov022Object020a2230 {
+-    unsigned long long flags;
++    unsigned long long flags KH_ALIGN64;
+     unsigned char _pad08;
+     unsigned char kind;
+     char _pad0a[0x118 - 0x0a];
+diff --git a/src/overlays/field/ov022_battle/Ov022_Party_ApplyNetState.c b/src/overlays/field/ov022_battle/Ov022_Party_ApplyNetState.c
+index 5e5dbc988..fbb9e179c 100644
+--- a/src/overlays/field/ov022_battle/Ov022_Party_ApplyNetState.c
++++ b/src/overlays/field/ov022_battle/Ov022_Party_ApplyNetState.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Host-side: applies the received member records (position, state, flags) to each party actor;
+  * returns whether any changed. */
+ 
+@@ -5,7 +6,7 @@
+ #include "game/engine.h"
+ 
+ typedef struct Ov022NetRecord {
+-    unsigned long long state;
++    unsigned long long state KH_ALIGN64;
+     VecFx32 position;
+     unsigned int field14;
+     unsigned short angle18;
+@@ -55,7 +56,7 @@ typedef struct Ov022Actor {
+     char padding024[0x42];
+     short field066;
+     char padding068[0x3fc];
+-    unsigned long long state464;
++    unsigned long long state464 KH_ALIGN64;
+     char padding46c[0xc];
+     unsigned short angle478;
+     char padding47a[0x12];
+diff --git a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
+index f3055d4ba..138ba3470 100644
+--- a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
++++ b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Refreshes the battle slot rows from the players' nodes: records each node's position, group and
+  * heading, and updates the saved masks and state bits of the root. */
+ 
+@@ -29,7 +30,7 @@ typedef struct Ov022Node {
+ } Ov022Node;
+ 
+ typedef struct Ov022FlagsView {
+-    unsigned long long flags;
++    unsigned long long flags KH_ALIGN64;
+ } Ov022FlagsView;
+ 
+ typedef struct Ov022NodeOwner {
 diff --git a/src/overlays/field/ov022_battle/Ov022_ResetCameraState.c b/src/overlays/field/ov022_battle/Ov022_ResetCameraState.c
 index d18086d57..dfe59829f 100644
 --- a/src/overlays/field/ov022_battle/Ov022_ResetCameraState.c
@@ -8897,6 +9567,95 @@ index d18086d57..dfe59829f 100644
  #define FS_OVERLAY_ID_ov029 ((FSOverlayID)(unsigned int)&OVERLAY_29_ID)
  
  extern Ov022CameraState *NNSi_FndGetCurrentRootHeap(void);
+diff --git a/src/overlays/field/ov022_battle/Ov022_SelectForcedState.c b/src/overlays/field/ov022_battle/Ov022_SelectForcedState.c
+index 0ebd0b461..49929dc2b 100644
+--- a/src/overlays/field/ov022_battle/Ov022_SelectForcedState.c
++++ b/src/overlays/field/ov022_battle/Ov022_SelectForcedState.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* ov022: pick the state the actor is forced into this frame.
+  *
+  * The per-frame tick calls this before running the state machine and stores a
+@@ -18,7 +19,7 @@
+ #include "nitro/fx_types.h"
+ 
+ struct Actor {
+-    unsigned long long nFlags;   /* 0x000 */
++    unsigned long long nFlags KH_ALIGN64;   /* 0x000 */
+     u8 nOwner;                   /* 0x008 */
+     u8 pad009[9];
+     u16 nHp;                     /* 0x012 */
+@@ -26,7 +27,7 @@ struct Actor {
+     short nSlotIndex;            /* 0x066 */
+     u8 pad068[0x3f8];
+     void *pfnState;              /* 0x460 */
+-    unsigned long long nFlags2;  /* 0x464 */
++    unsigned long long nFlags2 KH_ALIGN64;  /* 0x464 */
+     u8 pad46c[8];
+     int nFallTimer;              /* 0x474 */
+     u8 pad478[0x14];
+diff --git a/src/overlays/field/ov022_battle/Ov022_SelectStunState.c b/src/overlays/field/ov022_battle/Ov022_SelectStunState.c
+index 8149ebdb2..828a294ab 100644
+--- a/src/overlays/field/ov022_battle/Ov022_SelectStunState.c
++++ b/src/overlays/field/ov022_battle/Ov022_SelectStunState.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* ov022: decide whether the actor gets knocked into a stun.
+  *
+  * The per-frame tick calls this after the state function has run and stores a
+@@ -14,14 +15,14 @@
+ #include "nitro/types.h"
+ 
+ struct Actor {
+-    unsigned long long nFlags;   /* 0x000 */
++    unsigned long long nFlags KH_ALIGN64;   /* 0x000 */
+     u8 pad008[1];
+     u8 nId;                      /* 0x009 */
+     u8 pad00a[0x1a];
+     u32 nInputMask;              /* 0x024 */
+     u8 pad028[0x438];
+     void *pfnState;              /* 0x460 */
+-    unsigned long long nFlags2;  /* 0x464 */
++    unsigned long long nFlags2 KH_ALIGN64;  /* 0x464 */
+     u8 pad46c[0x48];
+     int nStunHold;               /* 0x4b4 */
+     u8 pad4b8[0x2f8];
+diff --git a/src/overlays/field/ov022_battle/Ov022_SendActorStatePacket.c b/src/overlays/field/ov022_battle/Ov022_SendActorStatePacket.c
+index 89534721b..f71d06708 100644
+--- a/src/overlays/field/ov022_battle/Ov022_SendActorStatePacket.c
++++ b/src/overlays/field/ov022_battle/Ov022_SendActorStatePacket.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ 
+ #include "nitro/types.h"
+ #include "nitro/fx_types.h"
+@@ -43,7 +44,7 @@ struct Actor {
+ 
+ /* One 0x30-byte slot of the status packet the gate receives each frame. */
+ struct StatusRecord {
+-    unsigned long long nStamp;       /* 0x00 */
++    unsigned long long nStamp KH_ALIGN64;       /* 0x00 */
+     VecFx32 vecAt;            /* 0x08 */
+     int nField14;                    /* 0x14 */
+     u16 nField18;                    /* 0x18 */
+diff --git a/src/overlays/field/ov022_battle/Ov022_SetSlotClaim.c b/src/overlays/field/ov022_battle/Ov022_SetSlotClaim.c
+index 2c15f20ae..f0bfce7b2 100644
+--- a/src/overlays/field/ov022_battle/Ov022_SetSlotClaim.c
++++ b/src/overlays/field/ov022_battle/Ov022_SetSlotClaim.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* ov022: set or clear one slot's claim on the actor.
+  *
+  * Setting ORs the slot's own pair of 64-bit masks into the actor's third flag
+@@ -29,7 +30,7 @@ struct Actor {
+ };
+ 
+ struct MaskTable {
+-    unsigned long long aMask[2];
++    unsigned long long aMask[2] KH_ALIGN64;
+ };
+ 
+ extern const struct MaskTable data_ov022_020b25f4;
 diff --git a/src/overlays/field/ov022_battle/Ov022_SetupRenderState.c b/src/overlays/field/ov022_battle/Ov022_SetupRenderState.c
 index 51d64bce5..cd21f4bb0 100644
 --- a/src/overlays/field/ov022_battle/Ov022_SetupRenderState.c
@@ -8915,6 +9674,185 @@ index 51d64bce5..cd21f4bb0 100644
  
  void Ov022_SetupRenderState(void)
  {
+diff --git a/src/overlays/field/ov022_battle/Ov022_StepPrimaryNodeTarget.c b/src/overlays/field/ov022_battle/Ov022_StepPrimaryNodeTarget.c
+index 11da93d12..b6f174877 100644
+--- a/src/overlays/field/ov022_battle/Ov022_StepPrimaryNodeTarget.c
++++ b/src/overlays/field/ov022_battle/Ov022_StepPrimaryNodeTarget.c
+@@ -1,10 +1,11 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Replay step for the primary node: resolves its target pick from the recorded input, turns it
+  * towards the target, and runs its hit callback, actor update and sub-object chain. */
+ 
+ #include "nitro/fx_types.h"
+ 
+ typedef struct Ov022Node {
+-    unsigned long long flags;
++    unsigned long long flags KH_ALIGN64;
+     char padding008[0x10];
+     unsigned short flags018;
+     unsigned short flags01a;
+diff --git a/src/overlays/field/ov022_battle/Ov022_TrackWallPress.c b/src/overlays/field/ov022_battle/Ov022_TrackWallPress.c
+index cd1deb4fa..8d08f5cf1 100644
+--- a/src/overlays/field/ov022_battle/Ov022_TrackWallPress.c
++++ b/src/overlays/field/ov022_battle/Ov022_TrackWallPress.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* ov022: track whether the actor is pressing into a wall.
+  *
+  * Runs from the per-frame tick, only for the local player's actor. It turns the
+@@ -26,7 +27,7 @@ struct Surface {
+ 
+ struct WallHold {
+     struct Surface *pSurface;    /* 0x00 */
+-    unsigned long long nStamp;   /* 0x04 */
++    unsigned long long nStamp KH_ALIGN64;   /* 0x04 */
+ };
+ 
+ struct CollBlock {
+@@ -37,7 +38,7 @@ struct CollBlock {
+ };
+ 
+ struct Actor {
+-    unsigned long long nFlags;   /* 0x000 */
++    unsigned long long nFlags KH_ALIGN64;   /* 0x000 */
+     u8 nOwner;                   /* 0x008 */
+     u8 pad009[9];
+     u16 nHp;                     /* 0x012 */
+@@ -52,7 +53,7 @@ struct Actor {
+     struct CollBlock collWallA;  /* 0x1b8 */
+     struct CollBlock collWallB;  /* 0x260 */
+     u8 pad308[0x15c];
+-    unsigned long long nFlags2;  /* 0x464 */
++    unsigned long long nFlags2 KH_ALIGN64;  /* 0x464 */
+     u8 pad46c[0xc];
+     short nAngleBias;            /* 0x478 */
+     u8 pad47a[0x1e7e];
+diff --git a/src/overlays/field/ov022_battle/Ov022_TranslateCommandToAction.c b/src/overlays/field/ov022_battle/Ov022_TranslateCommandToAction.c
+index e5550fed5..acdd9f4e8 100644
+--- a/src/overlays/field/ov022_battle/Ov022_TranslateCommandToAction.c
++++ b/src/overlays/field/ov022_battle/Ov022_TranslateCommandToAction.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* ov022: turn the committed command into an action request.
+  *
+  * The per-frame tick runs this straight after the forced-state selector. It
+@@ -16,7 +17,7 @@
+ struct Equip;
+ 
+ struct Actor {
+-    unsigned long long nFlags;   /* 0x000 */
++    unsigned long long nFlags KH_ALIGN64;   /* 0x000 */
+     u8 nOwner;                   /* 0x008 */
+     u8 nId;                      /* 0x009 */
+     u8 pad00a[0xe];
+@@ -24,7 +25,7 @@ struct Actor {
+     u16 nButtons2;               /* 0x01a */
+     u16 nPendingAction;          /* 0x01c */
+     u8 pad01e[0x446];
+-    unsigned long long nFlags2;  /* 0x464 */
++    unsigned long long nFlags2 KH_ALIGN64;  /* 0x464 */
+     u8 pad46c[0x6a];
+     signed char nCommandKind;    /* 0x4d6 */
+     u8 pad4d7[1];
+diff --git a/src/overlays/field/ov022_battle/Ov022_TryTriggerFinisher.c b/src/overlays/field/ov022_battle/Ov022_TryTriggerFinisher.c
+index 99aa137aa..05f8bf9fb 100644
+--- a/src/overlays/field/ov022_battle/Ov022_TryTriggerFinisher.c
++++ b/src/overlays/field/ov022_battle/Ov022_TryTriggerFinisher.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Ov022_TryTriggerFinisher -- decide whether this hit opens the finisher.
+  *
+  * Nothing opens unless the actor's follow block says so, the caller's flags do
+@@ -19,7 +20,7 @@ struct Actor {
+     u8 pad0004[5];
+     u8 nId;                          /* 0x0009 */
+     u8 pad000a[0x462];
+-    long long nFlags3;               /* 0x046c */
++    long long nFlags3 KH_ALIGN64;               /* 0x046c */
+     u8 pad0474[0x40];
+     int nInterruptCharge;            /* 0x04b4 */
+     u8 pad04b8[0xcd4];
+diff --git a/src/overlays/field/ov022_battle/Ov022_UpdateCommandInput.c b/src/overlays/field/ov022_battle/Ov022_UpdateCommandInput.c
+index c52f88764..f6e6688b0 100644
+--- a/src/overlays/field/ov022_battle/Ov022_UpdateCommandInput.c
++++ b/src/overlays/field/ov022_battle/Ov022_UpdateCommandInput.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* ov022: the local player's command-input dispatcher.
+  *
+  * Reached from the per-frame actor tick once the actor is confirmed to belong
+@@ -20,7 +21,7 @@ struct Equip {
+ };
+ 
+ struct Actor {
+-    unsigned long long nFlags;   /* 0x000 */
++    unsigned long long nFlags KH_ALIGN64;   /* 0x000 */
+     u8 pad008[1];
+     u8 nId;                      /* 0x009 */
+     u8 pad00a[8];
+@@ -28,7 +29,7 @@ struct Actor {
+     u8 pad014[0x10];
+     u32 nField24;                /* 0x024 */
+     u8 pad028[0x43c];
+-    unsigned long long nFlags2;  /* 0x464 */
++    unsigned long long nFlags2 KH_ALIGN64;  /* 0x464 */
+     u8 pad46c[0x64];
+     signed char nCommandKind;    /* 0x4d0 */
+     u8 pad4d1[1];
+diff --git a/src/overlays/field/ov022_battle/Ov022_UpdateRumble.c b/src/overlays/field/ov022_battle/Ov022_UpdateRumble.c
+index 37fa6b3a8..0feeab2ee 100644
+--- a/src/overlays/field/ov022_battle/Ov022_UpdateRumble.c
++++ b/src/overlays/field/ov022_battle/Ov022_UpdateRumble.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* ov022: drive the rumble pak for one actor.
+  *
+  * Runs from the per-frame tick's common tail. A burst counter throttles how
+@@ -23,7 +24,7 @@
+ #define RUMBLE_ROUND           0x7fd87
+ 
+ struct Rumble {
+-    unsigned long long nDeadline; /* 0x00 */
++    unsigned long long nDeadline KH_ALIGN64; /* 0x00 */
+     int nCooldown;                /* 0x08 */
+     u8 nLastLevel;                /* 0x0c */
+     u8 nBurst;                    /* 0x0d */
+@@ -42,7 +43,7 @@ struct RumbleStatus {
+ };
+ 
+ struct Actor {
+-    unsigned long long nFlags;    /* 0x0000 */
++    unsigned long long nFlags KH_ALIGN64;    /* 0x0000 */
+     u8 nOwner;                    /* 0x0008 */
+     u8 nId;                       /* 0x0009 */
+     u8 pad00a[0x2a9a];
+diff --git a/src/overlays/field/ov022_battle/Ov022_UpdateSubsystems.c b/src/overlays/field/ov022_battle/Ov022_UpdateSubsystems.c
+index 26f5cc2e5..7c2fed22f 100644
+--- a/src/overlays/field/ov022_battle/Ov022_UpdateSubsystems.c
++++ b/src/overlays/field/ov022_battle/Ov022_UpdateSubsystems.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* ov022: run everything the actor's frame still owes.
+  *
+  * The per-frame tick's catch-all step. For the local player it drives the two
+@@ -25,7 +26,7 @@ struct Actor;
+ typedef void (*PfnUpdate)(struct Actor *pActor);
+ 
+ struct Actor {
+-    unsigned long long nFlags;    /* 0x0000 */
++    unsigned long long nFlags KH_ALIGN64;    /* 0x0000 */
+     u8 nOwner;                    /* 0x0008 */
+     u8 nId;                       /* 0x0009 */
+     u8 pad00a[8];
+@@ -37,7 +38,7 @@ struct Actor {
+     short nSlotIndex;             /* 0x0066 */
+     u8 collMain;                  /* 0x0068 */
+     u8 pad069[0x3fb];
+-    unsigned long long nFlags2;   /* 0x0464 */
++    unsigned long long nFlags2 KH_ALIGN64;   /* 0x0464 */
+     u8 pad46c[0x20];
+     VecFx32 vecPos;           /* 0x048c */
+     u8 pad498[0x1d4];
 diff --git a/src/overlays/field/ov023_event_script/Ov023_ApplyScreenBlend.c b/src/overlays/field/ov023_event_script/Ov023_ApplyScreenBlend.c
 index 1edf6e250..46f352ec1 100644
 --- a/src/overlays/field/ov023_event_script/Ov023_ApplyScreenBlend.c
@@ -9213,6 +10151,276 @@ index 4c56ccae7..4455d3b9b 100644
          GX_DisableBankForLCDC();
      }
      StoreToGlobalPtr4FieldE4IfSet(0);
+diff --git a/src/overlays/players/ov032_player_xigbar/Ov032_SpawnAttachEffects.c b/src/overlays/players/ov032_player_xigbar/Ov032_SpawnAttachEffects.c
+index fc70edc38..bb457b35a 100644
+--- a/src/overlays/players/ov032_player_xigbar/Ov032_SpawnAttachEffects.c
++++ b/src/overlays/players/ov032_player_xigbar/Ov032_SpawnAttachEffects.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Spawns the ov032 enemy's two attachment effects (and its byte-identical twins): for each of
+  * the overlay's two 64-bit capability masks that the actor's +0x464 flags carry, the +0x2c2c
+  * extra class is asked for a slot at the origin (a negative answer ends the pass), bound to the
+@@ -10,7 +11,7 @@ struct Masks { long long m[2]; };
+ 
+ struct Ov032Actor {
+     char pad000[0x464];
+-    long long nFlags464;
++    long long nFlags464 KH_ALIGN64;
+     char pad46c[0x528 - 0x46c];
+     char aMatrix528[2][0x30];
+     char pad588[0x6bc - 0x588];
+diff --git a/src/overlays/players/ov033_player_saix/Ov033_UpdateGuardedSlots.c b/src/overlays/players/ov033_player_saix/Ov033_UpdateGuardedSlots.c
+index 48542e941..caca34916 100644
+--- a/src/overlays/players/ov033_player_saix/Ov033_UpdateGuardedSlots.c
++++ b/src/overlays/players/ov033_player_saix/Ov033_UpdateGuardedSlots.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Advances the character's effect block: drops the guard state when the owner leaves it, advances
+  * the main effect (copying the owner's matrix) until its tracks finish, and ticks the six secondary
+  * slots. */
+@@ -9,7 +10,7 @@ extern void Ov033_ClearStateIfReadyWhenActive(int a, int b);
+ 
+ typedef struct {
+     char pad0[0x464];
+-    unsigned long long flags;
++    unsigned long long flags KH_ALIGN64;
+     char pad46c[0x2aba - 0x46c];
+     short f2aba;
+ } Self;
+diff --git a/src/overlays/players/ov038_player_lexaeus/Ov038_StepCharge.c b/src/overlays/players/ov038_player_lexaeus/Ov038_StepCharge.c
+index 56d31567c..62c058959 100644
+--- a/src/overlays/players/ov038_player_lexaeus/Ov038_StepCharge.c
++++ b/src/overlays/players/ov038_player_lexaeus/Ov038_StepCharge.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Drives the ov038 charge sequence. Instruction-for-instruction the same
+  * routine as the matched ov084 driver on a different block layout: the
+  * state/timer pair lives at +0 and +0x10c, the emitter at +4, and each of the
+@@ -23,7 +24,7 @@ extern int data_ov038_020b4ca0;
+ 
+ struct Ov038Self {
+     char pad000[0x464];
+-    long long flags464;
++    long long flags464 KH_ALIGN64;
+     char pad46c[0x250];
+     int nStage6bc;
+ };
+diff --git a/src/overlays/players/ov042_player_vexen/Ov042_UpdateSlotsWithGate.c b/src/overlays/players/ov042_player_vexen/Ov042_UpdateSlotsWithGate.c
+index c40fde68a..c5f5dba5c 100644
+--- a/src/overlays/players/ov042_player_vexen/Ov042_UpdateSlotsWithGate.c
++++ b/src/overlays/players/ov042_player_vexen/Ov042_UpdateSlotsWithGate.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Drops the effect block when the character leaves the guard state, and advances the seven effect
+  * slots. */
+ 
+@@ -6,7 +7,7 @@ extern void Ov042_ClearState1IfReady(int a, int b);
+ 
+ typedef struct {
+     char pad0[0x464];
+-    unsigned long long flags;
++    unsigned long long flags KH_ALIGN64;
+ } Self;
+ 
+ void Ov042_UpdateSlotsWithGate(Self *self, int *node, int arg) {
+diff --git a/src/overlays/players/ov051_player_saix_2/Ov051_UpdateGuardedSlots.c b/src/overlays/players/ov051_player_saix_2/Ov051_UpdateGuardedSlots.c
+index 2394dd437..f3edfe759 100644
+--- a/src/overlays/players/ov051_player_saix_2/Ov051_UpdateGuardedSlots.c
++++ b/src/overlays/players/ov051_player_saix_2/Ov051_UpdateGuardedSlots.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Advances the character's effect block: drops the guard state when the owner leaves it, advances
+  * the main effect (copying the owner's matrix) until its tracks finish, and ticks the six secondary
+  * slots. */
+@@ -9,7 +10,7 @@ extern void Ov051_ClearStateIfReadyWhenActive(int a, int b);
+ 
+ typedef struct {
+     char pad0[0x464];
+-    unsigned long long flags;
++    unsigned long long flags KH_ALIGN64;
+     char pad46c[0x2aba - 0x46c];
+     short f2aba;
+ } Self;
+diff --git a/src/overlays/players/ov052_player_xigbar_2/Ov052_SpawnAttachEffects.c b/src/overlays/players/ov052_player_xigbar_2/Ov052_SpawnAttachEffects.c
+index d167071ac..e27ec1af2 100644
+--- a/src/overlays/players/ov052_player_xigbar_2/Ov052_SpawnAttachEffects.c
++++ b/src/overlays/players/ov052_player_xigbar_2/Ov052_SpawnAttachEffects.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Spawns the ov032 enemy's two attachment effects (and its byte-identical twins): for each of
+  * the overlay's two 64-bit capability masks that the actor's +0x464 flags carry, the +0x2c2c
+  * extra class is asked for a slot at the origin (a negative answer ends the pass), bound to the
+@@ -10,7 +11,7 @@ struct Masks { long long m[2]; };
+ 
+ struct Ov032Actor {
+     char pad000[0x464];
+-    long long nFlags464;
++    long long nFlags464 KH_ALIGN64;
+     char pad46c[0x528 - 0x46c];
+     char aMatrix528[2][0x30];
+     char pad588[0x6bc - 0x588];
+diff --git a/src/overlays/players/ov057_player_lexaeus_2/Ov057_TickChargeSequence.c b/src/overlays/players/ov057_player_lexaeus_2/Ov057_TickChargeSequence.c
+index 0d559449e..16f9c3b17 100644
+--- a/src/overlays/players/ov057_player_lexaeus_2/Ov057_TickChargeSequence.c
++++ b/src/overlays/players/ov057_player_lexaeus_2/Ov057_TickChargeSequence.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Drives the ov057 charge sequence. Instruction-for-instruction the same
+  * routine as the matched ov084 driver on a different block layout: the
+  * state/timer pair lives at +0 and +0x10c, the emitter at +4, and each of the
+@@ -23,7 +24,7 @@ extern int data_ov057_020b74a0;
+ 
+ struct Ov057ActorCodegenView {
+     char pad000[0x464];
+-    long long flags464;
++    long long flags464 KH_ALIGN64;
+     char pad46c[0x250];
+     int nStage6bc;
+ };
+diff --git a/src/overlays/players/ov061_player_vexen_2/Ov061_UpdateSlotsWithGate.c b/src/overlays/players/ov061_player_vexen_2/Ov061_UpdateSlotsWithGate.c
+index acaf4f8dc..2da026fe2 100644
+--- a/src/overlays/players/ov061_player_vexen_2/Ov061_UpdateSlotsWithGate.c
++++ b/src/overlays/players/ov061_player_vexen_2/Ov061_UpdateSlotsWithGate.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Drops the effect block when the character leaves the guard state, and advances the seven effect
+  * slots. */
+ 
+@@ -6,7 +7,7 @@ extern void Ov061_ClearState1IfReady(int a, int b);
+ 
+ typedef struct {
+     char pad0[0x464];
+-    unsigned long long flags;
++    unsigned long long flags KH_ALIGN64;
+ } Self;
+ 
+ void Ov061_UpdateSlotsWithGate(Self *self, int *node, int arg) {
+diff --git a/src/overlays/players/ov071_player_saix_3/Ov071_UpdateGuardedSlots.c b/src/overlays/players/ov071_player_saix_3/Ov071_UpdateGuardedSlots.c
+index 10f220fa3..382aef8db 100644
+--- a/src/overlays/players/ov071_player_saix_3/Ov071_UpdateGuardedSlots.c
++++ b/src/overlays/players/ov071_player_saix_3/Ov071_UpdateGuardedSlots.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Advances the character's effect block: drops the guard state when the owner leaves it, advances
+  * the main effect (copying the owner's matrix) until its tracks finish, and ticks the six secondary
+  * slots. */
+@@ -9,7 +10,7 @@ extern void Ov071_ClearStateIfReadyWhenActive(int a, int b);
+ 
+ typedef struct {
+     char pad0[0x464];
+-    unsigned long long flags;
++    unsigned long long flags KH_ALIGN64;
+     char pad46c[0x2aba - 0x46c];
+     short f2aba;
+ } Self;
+diff --git a/src/overlays/players/ov072_player_xigbar_3/Ov072_SpawnAttachEffects.c b/src/overlays/players/ov072_player_xigbar_3/Ov072_SpawnAttachEffects.c
+index 498501ac8..1117c1f6e 100644
+--- a/src/overlays/players/ov072_player_xigbar_3/Ov072_SpawnAttachEffects.c
++++ b/src/overlays/players/ov072_player_xigbar_3/Ov072_SpawnAttachEffects.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Spawns the ov032 enemy's two attachment effects (and its byte-identical twins): for each of
+  * the overlay's two 64-bit capability masks that the actor's +0x464 flags carry, the +0x2c2c
+  * extra class is asked for a slot at the origin (a negative answer ends the pass), bound to the
+@@ -10,7 +11,7 @@ struct Masks { long long m[2]; };
+ 
+ struct Ov032Actor {
+     char pad000[0x464];
+-    long long nFlags464;
++    long long nFlags464 KH_ALIGN64;
+     char pad46c[0x528 - 0x46c];
+     char aMatrix528[2][0x30];
+     char pad588[0x6bc - 0x588];
+diff --git a/src/overlays/players/ov077_player_lexaeus_3/Ov077_UpdateChargeSequence.c b/src/overlays/players/ov077_player_lexaeus_3/Ov077_UpdateChargeSequence.c
+index 24b51b483..9e019133a 100644
+--- a/src/overlays/players/ov077_player_lexaeus_3/Ov077_UpdateChargeSequence.c
++++ b/src/overlays/players/ov077_player_lexaeus_3/Ov077_UpdateChargeSequence.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Drives the ov077 charge sequence. Instruction-for-instruction the same
+  * routine as the matched overlay-family driver on a different block layout: the
+  * state/timer pair lives at +0 and +0x10c, the emitter at +4, and each of the
+@@ -23,7 +24,7 @@ extern int data_ov077_020b9b80;
+ 
+ struct Ov077Self {
+     char pad000[0x464];
+-    long long flags464;
++    long long flags464 KH_ALIGN64;
+     char pad46c[0x250];
+     int nStage6bc;
+ };
+diff --git a/src/overlays/players/ov081_player_vexen_3/Ov081_UpdateSlotsWithGate.c b/src/overlays/players/ov081_player_vexen_3/Ov081_UpdateSlotsWithGate.c
+index 7906337fb..c7235964e 100644
+--- a/src/overlays/players/ov081_player_vexen_3/Ov081_UpdateSlotsWithGate.c
++++ b/src/overlays/players/ov081_player_vexen_3/Ov081_UpdateSlotsWithGate.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Drops the effect block when the character leaves the guard state, and advances the seven effect
+  * slots. */
+ 
+@@ -6,7 +7,7 @@ extern void Ov081_ClearState1IfReady(int a, int b);
+ 
+ typedef struct {
+     char pad0[0x464];
+-    unsigned long long flags;
++    unsigned long long flags KH_ALIGN64;
+ } Self;
+ 
+ void Ov081_UpdateSlotsWithGate(Self *self, int *node, int arg) {
+diff --git a/src/overlays/players/ov089_player_saix_4/Ov089_UpdateGuardedSlots.c b/src/overlays/players/ov089_player_saix_4/Ov089_UpdateGuardedSlots.c
+index 590ec708a..51404b577 100644
+--- a/src/overlays/players/ov089_player_saix_4/Ov089_UpdateGuardedSlots.c
++++ b/src/overlays/players/ov089_player_saix_4/Ov089_UpdateGuardedSlots.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Advances the character's effect block: drops the guard state when the owner leaves it, advances
+  * the main effect (copying the owner's matrix) until its tracks finish, and ticks the six secondary
+  * slots. */
+@@ -9,7 +10,7 @@ extern void Ov089_ClearStateIfReadyWhenActive(int a, int b);
+ 
+ typedef struct {
+     char pad0[0x464];
+-    unsigned long long flags;
++    unsigned long long flags KH_ALIGN64;
+     char pad46c[0x2aba - 0x46c];
+     short f2aba;
+ } Self;
+diff --git a/src/overlays/players/ov094_player_lexaeus_4/Ov094_StepCharge.c b/src/overlays/players/ov094_player_lexaeus_4/Ov094_StepCharge.c
+index 27d65d2aa..ff4d0cbc6 100644
+--- a/src/overlays/players/ov094_player_lexaeus_4/Ov094_StepCharge.c
++++ b/src/overlays/players/ov094_player_lexaeus_4/Ov094_StepCharge.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Drives the ov038 charge sequence. Instruction-for-instruction the same
+  * routine as the matched ov084 driver on a different block layout: the
+  * state/timer pair lives at +0 and +0x10c, the emitter at +4, and each of the
+@@ -23,7 +24,7 @@ extern int data_ov094_020bc240;
+ 
+ struct Ov094Self {
+     char pad000[0x464];
+-    long long flags464;
++    long long flags464 KH_ALIGN64;
+     char pad46c[0x250];
+     int nStage6bc;
+ };
+diff --git a/src/overlays/players/ov098_player_vexen_4/Ov098_UpdateSlotsWithGate.c b/src/overlays/players/ov098_player_vexen_4/Ov098_UpdateSlotsWithGate.c
+index abc7988ad..2c1d12c1b 100644
+--- a/src/overlays/players/ov098_player_vexen_4/Ov098_UpdateSlotsWithGate.c
++++ b/src/overlays/players/ov098_player_vexen_4/Ov098_UpdateSlotsWithGate.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Drops the effect block when the character leaves the guard state, and advances the seven effect
+  * slots. */
+ 
+@@ -6,7 +7,7 @@ extern void Ov098_ClearState1IfReady(int a, int b);
+ 
+ typedef struct {
+     char pad0[0x464];
+-    unsigned long long flags;
++    unsigned long long flags KH_ALIGN64;
+ } Self;
+ 
+ void Ov098_UpdateSlotsWithGate(Self *self, int *node, int arg) {
 diff --git a/src/overlays/scenes/ov000_title/Ov000_BootFadeAndSubScreenSetup.c b/src/overlays/scenes/ov000_title/Ov000_BootFadeAndSubScreenSetup.c
 index 86892c0f3..f3a70f40b 100644
 --- a/src/overlays/scenes/ov000_title/Ov000_BootFadeAndSubScreenSetup.c
@@ -9361,6 +10569,21 @@ index f762eab20..b44858bda 100644
          sub[0] = (sub[0] & 0x43) | 0x4084;
          sub[1] = (sub[1] & 0x43) | 0x4284;
          sub[2] = (sub[2] & 0x43) | 0x404;
+diff --git a/src/overlays/scenes/ov000_title/Ov000_GetGridMaskExtent.c b/src/overlays/scenes/ov000_title/Ov000_GetGridMaskExtent.c
+index 4e1907269..07f1fd3fd 100644
+--- a/src/overlays/scenes/ov000_title/Ov000_GetGridMaskExtent.c
++++ b/src/overlays/scenes/ov000_title/Ov000_GetGridMaskExtent.c
+@@ -1,8 +1,9 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Width/height of the occupied bounding box of the 8x5 bit grid (40-bit mask). */
+ 
+ struct S {
+     char pad[0x10];
+-    unsigned long long bits;
++    unsigned long long bits KH_ALIGN64;
+ };
+ 
+ void Ov000_GetGridMaskExtent(struct S *s, unsigned short *outW, unsigned short *outH)
 diff --git a/src/overlays/scenes/ov000_title/Ov000_InitializeListScene2dEngines.c b/src/overlays/scenes/ov000_title/Ov000_InitializeListScene2dEngines.c
 index e0708bd7e..d232c3f64 100644
 --- a/src/overlays/scenes/ov000_title/Ov000_InitializeListScene2dEngines.c
@@ -9457,7 +10680,7 @@ index bda91f022..cba29a74c 100644
      NNSi_FndGetCurrentRootHeap();
      trackerConfig = data_ov000_0205a6e0;
 diff --git a/src/overlays/scenes/ov000_title/Ov000_MenuFadeInState.c b/src/overlays/scenes/ov000_title/Ov000_MenuFadeInState.c
-index d79bb7ed4..23e84acbe 100644
+index d79bb7ed4..39cf26952 100644
 --- a/src/overlays/scenes/ov000_title/Ov000_MenuFadeInState.c
 +++ b/src/overlays/scenes/ov000_title/Ov000_MenuFadeInState.c
 @@ -1,3 +1,4 @@
@@ -9465,6 +10688,15 @@ index d79bb7ed4..23e84acbe 100644
  /* Ov000_MenuFadeInState -- fade the ov000 menu back in after a re-entry.
   *
   * The state Ov000_HandoffState hands control to on a non-fresh entry into scene 1, i.e.
+@@ -33,7 +34,7 @@ typedef struct Ov000MenuContext {
+     u8        scrollBounds[0x4b28];
+     int       layoutReady;
+     u8        pad_4c40[0x24];
+-    long long enterTick;
++    long long enterTick KH_ALIGN64;
+ } Ov000MenuContext;
+ 
+ extern Ov000MenuContext *NNSi_FndGetCurrentRootHeap(void);
 @@ -61,7 +62,7 @@ extern void      Ov000_TickMenuLoop(void);
  StateFn Ov000_MenuFadeInState(void) {
      Ov000MenuContext *ctx;
@@ -9712,7 +10944,7 @@ index 02d371caf..a7fae6d25 100644
          context->nStateFrame = 0x79;
          next = Ov000_TickMenuLoop;
 diff --git a/src/overlays/scenes/ov000_title/Ov000_TickMenuLoop.c b/src/overlays/scenes/ov000_title/Ov000_TickMenuLoop.c
-index 9ea959583..551899999 100644
+index 9ea959583..81e09909d 100644
 --- a/src/overlays/scenes/ov000_title/Ov000_TickMenuLoop.c
 +++ b/src/overlays/scenes/ov000_title/Ov000_TickMenuLoop.c
 @@ -1,3 +1,4 @@
@@ -9720,6 +10952,15 @@ index 9ea959583..551899999 100644
  /* Ov000_TickMenuLoop -- the ov000 menu's interactive loop.
   *
   * The state Ov000_MenuFadeInState hands off to once the fade-in finishes, and the one the
+@@ -50,7 +51,7 @@ typedef struct Ov000MenuContext {
+     int       extraOptionAvailable;
+     int       inputReady;
+     u8        pad_4c5c[8];
+-    long long enterTick;
++    long long enterTick KH_ALIGN64;
+ } Ov000MenuContext;
+ 
+ extern unsigned short gPadHeld;
 @@ -97,12 +98,12 @@ StateFn Ov000_TickMenuLoop(void) {
          ctx->counter = ctx->counter + 1;
      } else if (ctx->counter <= 0x5c) {
@@ -9821,6 +11062,64 @@ index 28bb799e6..f014e660c 100644
  #define FS_OVERLAY_ID_ov024 ((FSOverlayID)(u32) & (OVERLAY_24_ID))
  
  typedef struct OverlayStartParams {
+diff --git a/src/overlays/scenes/ov002_field/Ov002_AccumulateEntrySample.c b/src/overlays/scenes/ov002_field/Ov002_AccumulateEntrySample.c
+index 266e058af..cb4aed316 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_AccumulateEntrySample.c
++++ b/src/overlays/scenes/ov002_field/Ov002_AccumulateEntrySample.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Advance one armed entry. Re-reads the sampler: while the reading is unchanged
+  * the accumulator collects the elapsed ticks, and the moment it changes both the
+  * accumulator and the stored reading are reset to the new value. The stamp is
+@@ -8,10 +9,10 @@
+ 
+ typedef struct {
+     u8 pad0000[0x2c];
+-    long long qwAccum;                  /* +0x2c */
+-    long long qwSample;                 /* +0x34 */
++    long long qwAccum KH_ALIGN64;                  /* +0x2c */
++    long long qwSample KH_ALIGN64;                 /* +0x34 */
+     u8 pad003c[8];
+-    unsigned long long qwSampledAt;     /* +0x44 */
++    unsigned long long qwSampledAt KH_ALIGN64;     /* +0x44 */
+     long long (*pfnSample)(void);       /* +0x4c */
+     int bSampling;                      /* +0x50 */
+ } Ov002PoolEntry;
+diff --git a/src/overlays/scenes/ov002_field/Ov002_AdvanceGaugeSlot.c b/src/overlays/scenes/ov002_field/Ov002_AdvanceGaugeSlot.c
+index caffac2ec..379f7e9a5 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_AdvanceGaugeSlot.c
++++ b/src/overlays/scenes/ov002_field/Ov002_AdvanceGaugeSlot.c
+@@ -1,9 +1,10 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ 
+ #include "nitro/types.h"
+ 
+ typedef struct {
+-    unsigned long long qwStart;         /* +0x00 */
+-    unsigned long long qwInterval;      /* +0x08 */
++    unsigned long long qwStart KH_ALIGN64;         /* +0x00 */
++    unsigned long long qwInterval KH_ALIGN64;      /* +0x08 */
+     int bActive;                        /* +0x10 */
+     int nPhase;                         /* +0x14 */
+ } Ov002GaugeSlot;
+diff --git a/src/overlays/scenes/ov002_field/Ov002_ArmCountdown.c b/src/overlays/scenes/ov002_field/Ov002_ArmCountdown.c
+index 4e9d0e653..6e9b274a4 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_ArmCountdown.c
++++ b/src/overlays/scenes/ov002_field/Ov002_ArmCountdown.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Arm the countdown. The kind and the fixed priority 7 are set every time, but
+  * the value and the start timestamp only when it is not already running -- an
+  * armed countdown keeps its own clock. */
+@@ -9,7 +10,7 @@ typedef struct {
+     unsigned short wKind;           /* +4 */
+     unsigned short wPriority;       /* +6 */
+     char pad0008[8];
+-    unsigned long long qwStartedAt; /* +0x10 */
++    unsigned long long qwStartedAt KH_ALIGN64; /* +0x10 */
+     int bRunning;                   /* +0x18 */
+ } Ov002Countdown;
+ 
 diff --git a/src/overlays/scenes/ov002_field/Ov002_BringUpMissionOverlays.c b/src/overlays/scenes/ov002_field/Ov002_BringUpMissionOverlays.c
 index 724319fac..5d6c9adb1 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_BringUpMissionOverlays.c
@@ -9842,6 +11141,42 @@ index 724319fac..5d6c9adb1 100644
  #define FS_OVERLAY_ID_ov022 ((FSOverlayID)(u32) & (OVERLAY_22_ID))
  #define FS_OVERLAY_ID_ov069 ((FSOverlayID)(u32) & (OVERLAY_69_ID))
  
+diff --git a/src/overlays/scenes/ov002_field/Ov002_BumpCounterEntry.c b/src/overlays/scenes/ov002_field/Ov002_BumpCounterEntry.c
+index 09328f6ad..b5d206002 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_BumpCounterEntry.c
++++ b/src/overlays/scenes/ov002_field/Ov002_BumpCounterEntry.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Add to a counter entry on behalf of its owner. A mismatched owner releases the
+  * entry instead and reports that it is gone. On a match the running total grows,
+  * the entry's deadline is pushed one second out, and the new total is redrawn.
+@@ -11,7 +12,7 @@
+ 
+ typedef struct {
+     u8 pad0000[0x24];
+-    unsigned long long qwDeadline;      /* +0x24 */
++    unsigned long long qwDeadline KH_ALIGN64;      /* +0x24 */
+     int nValue;                         /* +0x2c */
+     int nOwner;                         /* +0x30 */
+ } Ov002PoolEntry;
+diff --git a/src/overlays/scenes/ov002_field/Ov002_Camera_UpdateFollow.c b/src/overlays/scenes/ov002_field/Ov002_Camera_UpdateFollow.c
+index a34a3af7b..33a61a41c 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_Camera_UpdateFollow.c
++++ b/src/overlays/scenes/ov002_field/Ov002_Camera_UpdateFollow.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ #include "nitro/fx_types.h"
+ 
+ #include "game/config.h"
+@@ -45,7 +46,7 @@ typedef union {
+ } Ov002WorldState;
+ 
+ typedef struct {
+-  unsigned long long flags;
++  unsigned long long flags KH_ALIGN64;
+   unsigned char unknown08[4];
+   int kind;
+   unsigned char unknown10[0x10];
 diff --git a/src/overlays/scenes/ov002_field/Ov002_ClosePanelScreen.c b/src/overlays/scenes/ov002_field/Ov002_ClosePanelScreen.c
 index a7a3aab9b..c8a556432 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_ClosePanelScreen.c
@@ -9880,6 +11215,32 @@ index 14e7654ec..9f1d64f56 100644
  
  extern void Ov002_SampleBlendTween(void);
  
+diff --git a/src/overlays/scenes/ov002_field/Ov002_CreateEntry.c b/src/overlays/scenes/ov002_field/Ov002_CreateEntry.c
+index 6f803c0ae..6c6b4119b 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_CreateEntry.c
++++ b/src/overlays/scenes/ov002_field/Ov002_CreateEntry.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Build a pool entry from a descriptor and link it into the pool's list.
+  *
+  * A counter descriptor (kind 0) first tries to fold itself into an existing free
+@@ -41,11 +42,11 @@ typedef struct {
+     u8 pad0014[8];
+     int nInitial;                       /* +0x1c */
+     int nRequest;                       /* +0x20 */
+-    long long qwLimit;                  /* +0x24 */
+-    long long qwAccum;                  /* +0x2c */
+-    long long qwSample;                 /* +0x34 */
+-    long long qwLatched;                /* +0x3c */
+-    long long qwSampledAt;              /* +0x44 */
++    long long qwLimit KH_ALIGN64;                  /* +0x24 */
++    long long qwAccum KH_ALIGN64;                  /* +0x2c */
++    long long qwSample KH_ALIGN64;                 /* +0x34 */
++    long long qwLatched KH_ALIGN64;                /* +0x3c */
++    long long qwSampledAt KH_ALIGN64;              /* +0x44 */
+     long long (*pfnSample)(void);       /* +0x4c */
+     int bSampling;                      /* +0x50 */
+ } Ov002PoolEntry;
 diff --git a/src/overlays/scenes/ov002_field/Ov002_CreateUiContext.c b/src/overlays/scenes/ov002_field/Ov002_CreateUiContext.c
 index e2114b256..f4d5a2cb5 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_CreateUiContext.c
@@ -9983,6 +11344,24 @@ index 6bd44aa52..28432eb0b 100644
 +    *(unsigned int *)KH_HW(0x04001000) = 0xffff1fff & *(unsigned int *)KH_HW(0x04001000);
      (&data_ov002_0207f62c)[1] = 0;
  }
+diff --git a/src/overlays/scenes/ov002_field/Ov002_ExpireIfDeadlinePassed.c b/src/overlays/scenes/ov002_field/Ov002_ExpireIfDeadlinePassed.c
+index ee1b75790..4ad2b6b67 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_ExpireIfDeadlinePassed.c
++++ b/src/overlays/scenes/ov002_field/Ov002_ExpireIfDeadlinePassed.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Expire the entry once its deadline has passed. The deadline is a 64-bit tick
+  * count at +0x24, compared against the current tick with the usual cmp/cmpeq
+  * pair -- high words first, low words only if the high words agree. */
+@@ -6,7 +7,7 @@ extern void Ov002_ReleasePoolEntry(void *self, int reason);
+ 
+ typedef struct {
+     char pad0000[0x24];
+-    unsigned long long qwDeadline;  /* +0x24 */
++    unsigned long long qwDeadline KH_ALIGN64;  /* +0x24 */
+ } Ov002TimedEntry;
+ 
+ void Ov002_ExpireIfDeadlinePassed(Ov002TimedEntry *self) {
 diff --git a/src/overlays/scenes/ov002_field/Ov002_FindFreeSpotId.c b/src/overlays/scenes/ov002_field/Ov002_FindFreeSpotId.c
 index bf921fae3..ca611e897 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_FindFreeSpotId.c
@@ -9999,6 +11378,24 @@ index bf921fae3..ca611e897 100644
      return nValue;
  }
  
+diff --git a/src/overlays/scenes/ov002_field/Ov002_FindSharedPlayerExit.c b/src/overlays/scenes/ov002_field/Ov002_FindSharedPlayerExit.c
+index 8d71dd127..dec055f53 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_FindSharedPlayerExit.c
++++ b/src/overlays/scenes/ov002_field/Ov002_FindSharedPlayerExit.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Ov002_FindSharedPlayerExit: all players must overlap the same exit key.
+  * Last matching item wins. Preserve the 64-bit flags test, direct bounds,
+  * X/Y/Z calculation order, and bound-first comparisons for exact codegen.
+@@ -6,7 +7,7 @@
+ #include "nitro/fx_types.h"
+ 
+ typedef struct Ov002SessionActorFlags {
+-    unsigned long long qwFlags;
++    unsigned long long qwFlags KH_ALIGN64;
+     char pad008[0x45c];
+     unsigned int dwStateFlags;
+ } Ov002SessionActorFlags;
 diff --git a/src/overlays/scenes/ov002_field/Ov002_GetItemFlag.c b/src/overlays/scenes/ov002_field/Ov002_GetItemFlag.c
 index fbaaaf9bc..ffe022fed 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_GetItemFlag.c
@@ -10065,6 +11462,26 @@ index 9b39abc8a..fbe43c420 100644
          pSaved = ctx->pSavedBg2Scr;
          pBg2 = G2_GetBG2ScrPtr();
          MIi_CpuCopyFast(pBg2, pSaved, 0x800);
+diff --git a/src/overlays/scenes/ov002_field/Ov002_InitGaugeScene.c b/src/overlays/scenes/ov002_field/Ov002_InitGaugeScene.c
+index 9581f9c1d..7fa3786b5 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_InitGaugeScene.c
++++ b/src/overlays/scenes/ov002_field/Ov002_InitGaugeScene.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Initialize the gauge scene and return its per-frame callback. The local
+  * aggregate copy is load-bearing: it produces the original THUMB ldm/stm copy
+  * and preserves the relocation to data_ov002_0207ddd0. */
+@@ -15,8 +16,8 @@ typedef struct Ov002PanelRecord {
+     u16 wDrawn;
+     u16 wTarget;
+     u16 wSpan;
+-    unsigned long long uStepTicks;
+-    unsigned long long uStartStamp;
++    unsigned long long uStepTicks KH_ALIGN64;
++    unsigned long long uStartStamp KH_ALIGN64;
+     int bActive;
+ } Ov002PanelRecord;
+ 
 diff --git a/src/overlays/scenes/ov002_field/Ov002_InitLoadingScreen.c b/src/overlays/scenes/ov002_field/Ov002_InitLoadingScreen.c
 index 487c9600e..585d22c86 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_InitLoadingScreen.c
@@ -10134,6 +11551,24 @@ index 466162497..244e8f873 100644
  #define FS_OVERLAY_ID_ov025 ((FSOverlayID)(unsigned int)&OVERLAY_25_ID)
  #define FS_OVERLAY_ID_ov026 ((FSOverlayID)(unsigned int)&OVERLAY_26_ID)
  #define FS_OVERLAY_ID_ov027 ((FSOverlayID)(unsigned int)&OVERLAY_27_ID)
+diff --git a/src/overlays/scenes/ov002_field/Ov002_NodeWalkPlayersPhase.c b/src/overlays/scenes/ov002_field/Ov002_NodeWalkPlayersPhase.c
+index 5458b0908..c164c79ab 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_NodeWalkPlayersPhase.c
++++ b/src/overlays/scenes/ov002_field/Ov002_NodeWalkPlayersPhase.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ 
+ #include "nitro/types.h"
+ #include "nitro/fx_types.h"
+@@ -11,7 +12,7 @@ typedef int (*Ov002NodePlayerTest)(Ov002TaskNode *pNode, VecFx32 *pPos);
+ /* Only the leading flag word of a player record matters here: bit 16 takes the
+    player out of the walk. */
+ typedef struct Ov002PlayerRecord {
+-    unsigned long long nFlags;
++    unsigned long long nFlags KH_ALIGN64;
+ } Ov002PlayerRecord;
+ 
+ struct Ov002TaskNode {
 diff --git a/src/overlays/scenes/ov002_field/Ov002_OpenPanelScreen.c b/src/overlays/scenes/ov002_field/Ov002_OpenPanelScreen.c
 index 15013195c..7d42c78cb 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_OpenPanelScreen.c
@@ -10186,6 +11621,24 @@ index 278e396b7..98c40a4f6 100644
  
  void *Ov002_OpenTutorialPage(u16 nTutorial)
  {
+diff --git a/src/overlays/scenes/ov002_field/Ov002_PanelTickLockTimeout.c b/src/overlays/scenes/ov002_field/Ov002_PanelTickLockTimeout.c
+index 87722e714..0cfb8fbef 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_PanelTickLockTimeout.c
++++ b/src/overlays/scenes/ov002_field/Ov002_PanelTickLockTimeout.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Expire the lock at +0x5dc once it has been held longer than the timeout. */
+ extern unsigned long long OS_GetTick(void);
+ 
+@@ -7,7 +8,7 @@ typedef struct {
+     char pad0002[0x5d6];
+     int bHeld;                      /* +0x5d8 */
+     int nOwner;                     /* +0x5dc, 0 = free */
+-    unsigned long long qwTakenAt;   /* +0x5e0 */
++    unsigned long long qwTakenAt KH_ALIGN64;   /* +0x5e0 */
+ } Ov002LockContext;
+ 
+ extern Ov002LockContext *data_ov002_0207f620;
 diff --git a/src/overlays/scenes/ov002_field/Ov002_PollLinkRequest.c b/src/overlays/scenes/ov002_field/Ov002_PollLinkRequest.c
 index 5f755f0b5..a7deae1d7 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_PollLinkRequest.c
@@ -10204,6 +11657,42 @@ index 5f755f0b5..a7deae1d7 100644
                 Ov002_GetPanelField01b0() == 0) {
          Ov002_LinkSyncPostLocal(Ov002_CopySourceBlock(aReq));
      } else {
+diff --git a/src/overlays/scenes/ov002_field/Ov002_RedrawMapPanel.c b/src/overlays/scenes/ov002_field/Ov002_RedrawMapPanel.c
+index 268fa2800..691025756 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_RedrawMapPanel.c
++++ b/src/overlays/scenes/ov002_field/Ov002_RedrawMapPanel.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /*
+  * Redraws the map panel for one frame.
+  *
+@@ -33,7 +34,7 @@ typedef struct Ov002MapScene {
+     void *pTiles;
+     u8 nMode;
+     char pad021[0x17];
+-    unsigned long long llBlinkAt;
++    unsigned long long llBlinkAt KH_ALIGN64;
+     int bBlinkOn;
+ } Ov002MapScene;
+ 
+diff --git a/src/overlays/scenes/ov002_field/Ov002_RefreshSessionMarkerDestinations.c b/src/overlays/scenes/ov002_field/Ov002_RefreshSessionMarkerDestinations.c
+index c6d0cda69..7a426917e 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_RefreshSessionMarkerDestinations.c
++++ b/src/overlays/scenes/ov002_field/Ov002_RefreshSessionMarkerDestinations.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ #include "nitro/fx_types.h"
+ #include "game/engine.h"
+ 
+@@ -12,7 +13,7 @@ typedef struct Ov002SessionBlock {
+     Ov002SessionMarker *pMarkers;
+ } Ov002SessionBlock;
+ typedef struct Ov002SessionActorFlags {
+-    unsigned long long qwFlags;
++    unsigned long long qwFlags KH_ALIGN64;
+     unsigned char pad008[0x45c];
+     unsigned int dwStateFlags;
+ } Ov002SessionActorFlags;
 diff --git a/src/overlays/scenes/ov002_field/Ov002_ReleasePanelSurface.c b/src/overlays/scenes/ov002_field/Ov002_ReleasePanelSurface.c
 index 86b79338a..6b3861655 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_ReleasePanelSurface.c
@@ -10224,6 +11713,44 @@ index 86b79338a..6b3861655 100644
      Obj_InvokeInnerVtable4(ctx->aSurface0264);
      EnqueueObjGfxCommand(ctx->aSurface0264);
      ctx->nField018c = 8;
+diff --git a/src/overlays/scenes/ov002_field/Ov002_ReleaseWorldMusic.c b/src/overlays/scenes/ov002_field/Ov002_ReleaseWorldMusic.c
+index 7fc7063ed..c3fdffa39 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_ReleaseWorldMusic.c
++++ b/src/overlays/scenes/ov002_field/Ov002_ReleaseWorldMusic.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ 
+ /* Only the leading flag word of a player record matters here: bit 16 takes the
+    player out of the walk. */
+@@ -5,7 +6,7 @@
+ #include "nitro/types.h"
+ 
+ typedef struct Ov002PlayerRecord {
+-    unsigned long long nFlags;
++    unsigned long long nFlags KH_ALIGN64;
+ } Ov002PlayerRecord;
+ 
+ /* Index of the local player; zero for the one running the session. */
+diff --git a/src/overlays/scenes/ov002_field/Ov002_RepaintStopwatchEntry.c b/src/overlays/scenes/ov002_field/Ov002_RepaintStopwatchEntry.c
+index 58b2cde3f..4b44fab92 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_RepaintStopwatchEntry.c
++++ b/src/overlays/scenes/ov002_field/Ov002_RepaintStopwatchEntry.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Repaint a stopwatch entry as MM:SS.cc, right-aligned in its buffer.
+  *
+  * The value shown depends on the kind: kind 3 asks the sampler directly, kind 1
+@@ -22,8 +23,8 @@ typedef struct {
+     int nSize;                          /* +0x0c */
+     void *pBufferA;                     /* +0x10 */
+     u8 pad0014[0x10];
+-    unsigned long long qwLimit;         /* +0x24 */
+-    unsigned long long qwAccum;         /* +0x2c */
++    unsigned long long qwLimit KH_ALIGN64;         /* +0x24 */
++    unsigned long long qwAccum KH_ALIGN64;         /* +0x2c */
+     u8 pad0034[0x18];
+     long long (*pfnSample)(void);       /* +0x4c */
+ } Ov002PoolEntry;
 diff --git a/src/overlays/scenes/ov002_field/Ov002_RequestCaption.c b/src/overlays/scenes/ov002_field/Ov002_RequestCaption.c
 index 05d85824c..1f6ccde91 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_RequestCaption.c
@@ -10402,6 +11929,62 @@ index 69fd5d1f6..a8a2b6175 100644
 +    reg304 = (volatile unsigned short *)KH_HW(0x04000304);
      *reg304 = (*reg304 & ~0x8000) | (top << 15);
  }
+diff --git a/src/overlays/scenes/ov002_field/Ov002_SetGaugeSlotShown.c b/src/overlays/scenes/ov002_field/Ov002_SetGaugeSlotShown.c
+index bce0c37bc..aaac730e4 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_SetGaugeSlotShown.c
++++ b/src/overlays/scenes/ov002_field/Ov002_SetGaugeSlotShown.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Turn one fade slot on or off.
+  *
+  * The value the slot reports is the gauge percentage: slot 0 reads it straight
+@@ -15,7 +16,7 @@
+ #include "game/engine.h"
+ 
+ typedef struct {
+-    unsigned long long qwStart;         /* +0x00 */
++    unsigned long long qwStart KH_ALIGN64;         /* +0x00 */
+     int nDuration;                      /* +0x08 */
+     int nPhase;                         /* +0x0c */
+     int bActive;                        /* +0x10 */
+diff --git a/src/overlays/scenes/ov002_field/Ov002_SetGaugeValue.c b/src/overlays/scenes/ov002_field/Ov002_SetGaugeValue.c
+index a4914fc2f..593921031 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_SetGaugeValue.c
++++ b/src/overlays/scenes/ov002_field/Ov002_SetGaugeValue.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Sets a HUD gauge's value: scales it to cells, flashes the slot icon when it drops, and either
+  * tweens the main gauge or redraws the gauge cells (the first gauge also records its shown and
+  * target counts). */
+@@ -24,7 +25,7 @@ typedef struct {
+     u8 pad0029[0x11];
+     u16 wShown003a;                     /* +0x3a */
+     u8 pad003c[0x10];
+-    unsigned long long aHold[4];        /* +0x4c */
++    unsigned long long aHold[4] KH_ALIGN64;        /* +0x4c */
+     u8 pad006c[0x60];
+     Ov002CountPair aCounts[4];          /* +0xcc */
+     u8 pad00dc[0x18];
+diff --git a/src/overlays/scenes/ov002_field/Ov002_SetPageMarkTarget.c b/src/overlays/scenes/ov002_field/Ov002_SetPageMarkTarget.c
+index ad6c16da4..a18d16f23 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_SetPageMarkTarget.c
++++ b/src/overlays/scenes/ov002_field/Ov002_SetPageMarkTarget.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /*
+  * Ov002_SetPageMarkTarget - aim the mark at a new value and let it walk there.
+  *
+@@ -23,8 +24,8 @@ typedef struct {
+     int nTarget;
+     int bMoving;
+     char pad00c[4];
+-    unsigned long long llStamp;
+-    unsigned long long llStep;
++    unsigned long long llStamp KH_ALIGN64;
++    unsigned long long llStep KH_ALIGN64;
+ } Ov002PageMark;
+ 
+ extern int data_ov002_0207f634;
 diff --git a/src/overlays/scenes/ov002_field/Ov002_SetPanelBgLayers.c b/src/overlays/scenes/ov002_field/Ov002_SetPanelBgLayers.c
 index bbafbcd45..40da5f099 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_SetPanelBgLayers.c
@@ -10569,6 +12152,24 @@ index 516e3a913..4c5e3b761 100644
  #define FS_OVERLAY_ID_ov069 ((FSOverlayID)(u32) & (OVERLAY_69_ID))
  
  extern int data_ov002_0207fa00;
+diff --git a/src/overlays/scenes/ov002_field/Ov002_StartGaugeTween.c b/src/overlays/scenes/ov002_field/Ov002_StartGaugeTween.c
+index 80ef354ce..ba7acddde 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_StartGaugeTween.c
++++ b/src/overlays/scenes/ov002_field/Ov002_StartGaugeTween.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Starts a gauge tween between two panel records and repaints the cells the
+  * move uncovers.
+  *
+@@ -21,7 +22,7 @@ typedef struct {
+     u16 wTarget;                        /* +0x04 */
+     u16 wSpan;                          /* +0x06 */
+     u8 pad0008[8];
+-    unsigned long long uStamp;          /* +0x10 */
++    unsigned long long uStamp KH_ALIGN64;          /* +0x10 */
+     int bActive;                        /* +0x18 */
+ } Ov002PanelRecord;
+ 
 diff --git a/src/overlays/scenes/ov002_field/Ov002_StepCaptionFade.c b/src/overlays/scenes/ov002_field/Ov002_StepCaptionFade.c
 index aa68b244f..9286a8f2f 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_StepCaptionFade.c
@@ -10594,6 +12195,26 @@ index aa68b244f..9286a8f2f 100644
 -    G2x_ChangeBlendBrightness_(0x04001050, nLevel >> 12);
 +    G2x_ChangeBlendBrightness_(KH_HW(0x04001050), nLevel >> 12);
  }
+diff --git a/src/overlays/scenes/ov002_field/Ov002_StepGaugePair.c b/src/overlays/scenes/ov002_field/Ov002_StepGaugePair.c
+index 0530996d4..b5ad5a8db 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_StepGaugePair.c
++++ b/src/overlays/scenes/ov002_field/Ov002_StepGaugePair.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /*
+  * Ov002_StepGaugePair - advance one frame of the gauge tween pair and say
+  * whether anything is still moving.
+@@ -30,8 +31,8 @@ typedef struct {
+     u16 wDrawn;                         /* +0x02 */
+     u16 wTarget;                        /* +0x04 */
+     u16 wSpan;                          /* +0x06 */
+-    long long qStepTicks;               /* +0x08 */
+-    long long qStampTicks;              /* +0x10 */
++    long long qStepTicks KH_ALIGN64;               /* +0x08 */
++    long long qStampTicks KH_ALIGN64;              /* +0x10 */
+     int bActive;                        /* +0x18 */
+ } Ov002PanelRecord;                     /* 0x1c */
+ 
 diff --git a/src/overlays/scenes/ov002_field/Ov002_StepPageScroll.c b/src/overlays/scenes/ov002_field/Ov002_StepPageScroll.c
 index fd7b62f92..7d17b1f94 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_StepPageScroll.c
@@ -10612,6 +12233,24 @@ index fd7b62f92..7d17b1f94 100644
  
  typedef struct {
      char pad000[0x10];
+diff --git a/src/overlays/scenes/ov002_field/Ov002_TakeLock.c b/src/overlays/scenes/ov002_field/Ov002_TakeLock.c
+index 2de8d6eb6..d69323e97 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_TakeLock.c
++++ b/src/overlays/scenes/ov002_field/Ov002_TakeLock.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Take the lock at +0x5dc for the given owner, if it is free: raise the held
+  * flag at +0x5d8 and stamp the acquisition time at +0x5e0. A lock that is
+  * already held is left alone and the caller is not told. */
+@@ -7,7 +8,7 @@ typedef struct {
+     char pad0000[0x5d8];
+     int bHeld;                      /* +0x5d8 */
+     int nOwner;                     /* +0x5dc, 0 = free */
+-    unsigned long long qwTakenAt;   /* +0x5e0 */
++    unsigned long long qwTakenAt KH_ALIGN64;   /* +0x5e0 */
+ } Ov002LockContext;
+ 
+ extern Ov002LockContext *data_ov002_0207f620;
 diff --git a/src/overlays/scenes/ov002_field/Ov002_TearDownScreen.c b/src/overlays/scenes/ov002_field/Ov002_TearDownScreen.c
 index 53c1d5cb1..05c8d90ba 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_TearDownScreen.c
@@ -10670,6 +12309,87 @@ index cd544be3e..9fd8e0c53 100644
      if (*(void **)(node + 0x14) != 0) {
          NNSi_FndFreeFromDefaultHeap(*(void **)(node + 0x14));
      }
+diff --git a/src/overlays/scenes/ov002_field/Ov002_TickBlink.c b/src/overlays/scenes/ov002_field/Ov002_TickBlink.c
+index 779179365..0691779d1 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_TickBlink.c
++++ b/src/overlays/scenes/ov002_field/Ov002_TickBlink.c
+@@ -1,5 +1,6 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ typedef struct {
+-    unsigned long long nLastTick;       /* +0x00 */
++    unsigned long long nLastTick KH_ALIGN64;       /* +0x00 */
+     int nPhase;                         /* +0x08 */
+     int pad0c;
+     int nPending;                       /* +0x10 */
+diff --git a/src/overlays/scenes/ov002_field/Ov002_TickEntryPool.c b/src/overlays/scenes/ov002_field/Ov002_TickEntryPool.c
+index 23fffaed3..117d26914 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_TickEntryPool.c
++++ b/src/overlays/scenes/ov002_field/Ov002_TickEntryPool.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Per-frame tick over the entry pool. Nothing runs while the panel field is
+  * busy. Each entry is dispatched on its kind; the next link is taken before the
+  * body runs, so an entry may release itself.
+@@ -18,9 +19,9 @@ typedef struct {
+     u8 pad0000[4];
+     int nKind;                          /* +0x04 */
+     u8 pad0008[0x2c];
+-    long long qwSample;                 /* +0x34 */
+-    long long qwLatched;                /* +0x3c */
+-    unsigned long long qwSampledAt;     /* +0x44 */
++    long long qwSample KH_ALIGN64;                 /* +0x34 */
++    long long qwLatched KH_ALIGN64;                /* +0x3c */
++    unsigned long long qwSampledAt KH_ALIGN64;     /* +0x44 */
+     long long (*pfnSample)(void);       /* +0x4c */
+     int bSampling;                      /* +0x50 */
+ } Ov002PoolEntry;
+diff --git a/src/overlays/scenes/ov002_field/Ov002_TickScene.c b/src/overlays/scenes/ov002_field/Ov002_TickScene.c
+index 245adba49..68540ed70 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_TickScene.c
++++ b/src/overlays/scenes/ov002_field/Ov002_TickScene.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Per-frame HUD tick: steps the gauge tweens and repaints the panels they change, advances the four
+  * gauge slots (uploading their graphics and flashing icons when their hold expires) and handles the
+  * pending prompt sound; returns whether everything is idle. */
+@@ -6,8 +7,8 @@
+ #include "game/engine.h"
+ 
+ typedef struct {
+-    unsigned long long qwStart;
+-    unsigned long long qwInterval;
++    unsigned long long qwStart KH_ALIGN64;
++    unsigned long long qwInterval KH_ALIGN64;
+     int bActive;
+     int nPhase;
+ } Ov002GaugeSlot;
+@@ -27,7 +28,7 @@ typedef struct {
+     int nSoundState;                    /* +0x30 */
+     u8 pad0034[0x14];
+     unsigned bTweenB : 1;               /* +0x48 */
+-    unsigned long long aHold[4];        /* +0x4c */
++    unsigned long long aHold[4] KH_ALIGN64;        /* +0x4c */
+     Ov002GaugeSlot aSlots[4];           /* +0x6c */
+     Ov002CountPair aCounts[4];          /* +0xcc */
+     u8 pad00dc[0x18];
+diff --git a/src/overlays/scenes/ov002_field/Ov002_UpdateGaugeUnits.c b/src/overlays/scenes/ov002_field/Ov002_UpdateGaugeUnits.c
+index fb35ea937..636a0e63b 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_UpdateGaugeUnits.c
++++ b/src/overlays/scenes/ov002_field/Ov002_UpdateGaugeUnits.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Converts the requested unit count into the gauge-cell target, starts a tween between the two
+  * panel records and marks the scene for repaint. The unchanged count exits early. */
+ 
+@@ -11,7 +12,7 @@ typedef struct Ov002PanelRecord {
+     u16 wTarget;
+     u16 wSpan;
+     u8 gap0008[8];
+-    unsigned long long uStamp;
++    unsigned long long uStamp KH_ALIGN64;
+     int bActive;
+ } Ov002PanelRecord;
+ 
 diff --git a/src/overlays/scenes/ov002_field/Ov002_UpdatePanelBlend.c b/src/overlays/scenes/ov002_field/Ov002_UpdatePanelBlend.c
 index a0fa19632..4d0548363 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_UpdatePanelBlend.c
@@ -11100,6 +12820,21 @@ index bec3df95b..a0c368b50 100644
  
      return (void *)Ov004_StepMissionSelectScene;
  }
+diff --git a/src/overlays/scenes/ov004_calendar/Ov004_GetGridMaskExtent.c b/src/overlays/scenes/ov004_calendar/Ov004_GetGridMaskExtent.c
+index bc485e38a..a456c2016 100644
+--- a/src/overlays/scenes/ov004_calendar/Ov004_GetGridMaskExtent.c
++++ b/src/overlays/scenes/ov004_calendar/Ov004_GetGridMaskExtent.c
+@@ -1,8 +1,9 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Width/height of the occupied bounding box of the 8x5 bit grid (40-bit mask). */
+ 
+ struct S {
+     char pad[0x10];
+-    unsigned long long bits;
++    unsigned long long bits KH_ALIGN64;
+ };
+ 
+ void Ov004_GetGridMaskExtent(struct S *s, unsigned short *outW, unsigned short *outH)
 diff --git a/src/overlays/scenes/ov004_calendar/Ov004_ReleaseSceneObjects.c b/src/overlays/scenes/ov004_calendar/Ov004_ReleaseSceneObjects.c
 index c59ab8fc2..6eb4a505c 100644
 --- a/src/overlays/scenes/ov004_calendar/Ov004_ReleaseSceneObjects.c
@@ -11230,8 +12965,26 @@ index 39b975970..7b70600f2 100644
 +    BG_CONTROL(KH_HW(0x0400000e))=(BG_CONTROL(KH_HW(0x0400000e))&~3)|2;
 +    BG_CONTROL(KH_HW(0x0400000c))=BG_CONTROL(KH_HW(0x0400000c))&~3;
  }
+diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_EnterMainScene.c b/src/overlays/scenes/ov005_mission_result/Ov005_EnterMainScene.c
+index 36cc50cbf..0ed05aa6b 100644
+--- a/src/overlays/scenes/ov005_mission_result/Ov005_EnterMainScene.c
++++ b/src/overlays/scenes/ov005_mission_result/Ov005_EnterMainScene.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Scene entry for ov005's big context: 0x62198 bytes (401,816), measured off the
+  * MI_CpuFill8 rather than inferred from the fields.
+  *
+@@ -13,7 +14,7 @@
+  * is what the ROM does and caching it costs the match. */
+ typedef struct {
+     char pad00[0x4bf4];
+-    long long llStartTick;      /* +0x4bf4 */
++    long long llStartTick KH_ALIGN64;      /* +0x4bf4 */
+     char pad4bfc[0x94];
+     int nUnk4c90;               /* +0x4c90 */
+     char pad4c94[0x5d4e4];
 diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_FadeInResultScreen.c b/src/overlays/scenes/ov005_mission_result/Ov005_FadeInResultScreen.c
-index 9e8169b17..30da8e95c 100644
+index 9e8169b17..cb59a6752 100644
 --- a/src/overlays/scenes/ov005_mission_result/Ov005_FadeInResultScreen.c
 +++ b/src/overlays/scenes/ov005_mission_result/Ov005_FadeInResultScreen.c
 @@ -1,3 +1,4 @@
@@ -11239,6 +12992,15 @@ index 9e8169b17..30da8e95c 100644
  /* Fade in the sub-screen and start the first result-count animation. */
  
  #include "nitro/types.h"
+@@ -10,7 +11,7 @@ typedef struct Ov005ResultContext {
+     char unknown00[0x54];
+     Ov005SpriteManager spriteManager;
+     char unknown4ad4[0x88];
+-    long long startTick;
++    long long startTick KH_ALIGN64;
+     char unknown4b64[16];
+     int resultPhase;
+     char unknown4b78[12];
 @@ -23,7 +24,7 @@ extern void Ov005_SelectAndShowResultSprite(int, int);
  extern void *Ov005_FindEntryById(Ov005SpriteManager *, int);
  extern void Ov005_ReleaseTwoSlots_2(Ov005SpriteManager *, void *);
@@ -11248,6 +13010,39 @@ index 9e8169b17..30da8e95c 100644
  void Ov005_FadeInResultScreen(void) {
      u64 elapsed = OS_GetTick() - data_ov005_0205b810->startTick;
      int step = (int)func_02020368(elapsed, 0x7fd8);
+diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_GetGridMaskExtent.c b/src/overlays/scenes/ov005_mission_result/Ov005_GetGridMaskExtent.c
+index c2e844217..2e80ed69b 100644
+--- a/src/overlays/scenes/ov005_mission_result/Ov005_GetGridMaskExtent.c
++++ b/src/overlays/scenes/ov005_mission_result/Ov005_GetGridMaskExtent.c
+@@ -1,8 +1,9 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Width/height of the occupied bounding box of the 8x5 bit grid (40-bit mask). */
+ 
+ struct S {
+     char pad[0x10];
+-    unsigned long long bits;
++    unsigned long long bits KH_ALIGN64;
+ };
+ 
+ void Ov005_GetGridMaskExtent(struct S *s, unsigned short *outW, unsigned short *outH)
+diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_InitResultResources.c b/src/overlays/scenes/ov005_mission_result/Ov005_InitResultResources.c
+index d334c670a..e10e663a8 100644
+--- a/src/overlays/scenes/ov005_mission_result/Ov005_InitResultResources.c
++++ b/src/overlays/scenes/ov005_mission_result/Ov005_InitResultResources.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Initialises the result screen: allocates its row buffers, resets its tweens, loads its text and
+  * archives, and computes the gauge range. */
+ 
+@@ -10,7 +11,7 @@ typedef struct Ov005TextTable {void *resource;int count;void *entries;} Ov005Tex
+ typedef struct Ov005Config {char unknown00[0x48];int gaugeScore;char unknown4c[16];u8 bMode;} Ov005Config;
+ typedef struct Ov005ResultContext {
+  void *resultArchive,*localizedResultArchive;char unknown08[0x4b54];
+- long long startTick;void *rowBuffers[4];char unknown4b74[16];
++ long long startTick KH_ALIGN64;void *rowBuffers[4];char unknown4b74[16];
+  Ov005ResultTween resultTweens[4];char unknown4c34[4];Ov005TextTable menuText;
+  char unknown4c44[8];int gaugeMaximum,gaugeValue;
+ } Ov005ResultContext;
 diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_InitializeGraphics.c b/src/overlays/scenes/ov005_mission_result/Ov005_InitializeGraphics.c
 index c08f783c5..8c85feb4d 100644
 --- a/src/overlays/scenes/ov005_mission_result/Ov005_InitializeGraphics.c
@@ -11274,6 +13069,39 @@ index c08f783c5..8c85feb4d 100644
 +    *(volatile unsigned int *)KH_HW(0x04000000) &= ~0x1f00;
 +    *(volatile unsigned int *)KH_HW(0x04001000) &= ~0x1f00;
  }
+diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_RenderTextSurface.c b/src/overlays/scenes/ov005_mission_result/Ov005_RenderTextSurface.c
+index e20b75336..baa37e4d2 100644
+--- a/src/overlays/scenes/ov005_mission_result/Ov005_RenderTextSurface.c
++++ b/src/overlays/scenes/ov005_mission_result/Ov005_RenderTextSurface.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Redraws one of the reward menu's text surfaces: the header message, the item names and
+  * quantities, the column labels or the selected item's description. */
+ 
+@@ -29,7 +30,7 @@ typedef struct Ov005Context {
+     int activeBufferIndex;
+     void *rowBuffers[3];
+     int menuState;
+-    long long startTick;
++    long long startTick KH_ALIGN64;
+     Ov005SelectionState selection;
+     char opaque4c10[0x2c];
+     u8 dirtyTextBuffers;
+diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_StartStatusTween.c b/src/overlays/scenes/ov005_mission_result/Ov005_StartStatusTween.c
+index ad47c4b65..22b5275fc 100644
+--- a/src/overlays/scenes/ov005_mission_result/Ov005_StartStatusTween.c
++++ b/src/overlays/scenes/ov005_mission_result/Ov005_StartStatusTween.c
+@@ -1,8 +1,9 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Starts the status banner tween for a step (slide in, hold, slide out). */
+ 
+ typedef struct Tween {
+     int mode,duration,from,to;
+-    long long startTick;
++    long long startTick KH_ALIGN64;
+     unsigned int flags;
+ } Tween;
+ typedef struct Ov005Context { char opaque00[0x4c70]; Tween statusTween; } Ov005Context;
 diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_TeardownMissionResult.c b/src/overlays/scenes/ov005_mission_result/Ov005_TeardownMissionResult.c
 index 4d32ed03b..d74cb3d41 100644
 --- a/src/overlays/scenes/ov005_mission_result/Ov005_TeardownMissionResult.c
@@ -11344,6 +13172,24 @@ index 8bacae372..d0618cb0b 100644
  void Ov005_UpdateFadeIn(void) {
      u64 elapsed=OS_GetTick()-data_ov005_0205b80c->startTick;
      int step=(int)func_02020368(elapsed,0x7fd8);
+diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_UpdateRewardPresentation.c b/src/overlays/scenes/ov005_mission_result/Ov005_UpdateRewardPresentation.c
+index a3e72037d..426ca5641 100644
+--- a/src/overlays/scenes/ov005_mission_result/Ov005_UpdateRewardPresentation.c
++++ b/src/overlays/scenes/ov005_mission_result/Ov005_UpdateRewardPresentation.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Runs the reward multiplier presentation: steps the banner tween, multiplies the rewards when it
+  * lands (with a sound) and redraws the list. */
+ 
+@@ -6,7 +7,7 @@
+ 
+ typedef struct Tween {
+     int mode,duration,from,to;
+-    long long startTick;
++    long long startTick KH_ALIGN64;
+     unsigned int unknownBit0:1,unknownBit1:1,complete:1;
+ } Tween;
+ typedef struct Ov005MenuItemHeader {
 diff --git a/src/overlays/scenes/ov006_mission_mode_select/Ov006_BlankScreensAndTeardownText.c b/src/overlays/scenes/ov006_mission_mode_select/Ov006_BlankScreensAndTeardownText.c
 index 62af551c0..c577d953b 100644
 --- a/src/overlays/scenes/ov006_mission_mode_select/Ov006_BlankScreensAndTeardownText.c
@@ -11579,7 +13425,7 @@ index 8909f7db4..9dfc482fa 100644
      switch (state) {
      case 0:
 diff --git a/src/overlays/scenes/ov006_mission_mode_select/Ov006_UpdateCharacterSelectTweens.c b/src/overlays/scenes/ov006_mission_mode_select/Ov006_UpdateCharacterSelectTweens.c
-index e653b29c8..e60013ac7 100644
+index e653b29c8..79b2dd0cc 100644
 --- a/src/overlays/scenes/ov006_mission_mode_select/Ov006_UpdateCharacterSelectTweens.c
 +++ b/src/overlays/scenes/ov006_mission_mode_select/Ov006_UpdateCharacterSelectTweens.c
 @@ -1,3 +1,4 @@
@@ -11587,6 +13433,15 @@ index e653b29c8..e60013ac7 100644
  /* Sample active Mission Mode UI tweens and apply their values. */
  
  #include "nitro/types.h"
+@@ -8,7 +9,7 @@ typedef struct Tween {
+     int duration;
+     int from;
+     int to;
+-    long long startTick;
++    long long startTick KH_ALIGN64;
+     u32 flags;
+ } Tween;
+ 
 @@ -68,12 +69,12 @@ void Ov006_UpdateCharacterSelectTweens(void) {
      case 6:
          if (((context->blendAlphaTween.flags << 0x1d) >> 0x1f) == 0) {
@@ -11687,6 +13542,24 @@ index ce8210078..6deb23314 100644
      }
      if ((gPadPressed & 1) != 0) {
          if (*(int *)(root + 0x20) < 0x20) {
+diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_BeginMenuModeSwitch.c b/src/overlays/scenes/ov008_camp_menu/Ov008_BeginMenuModeSwitch.c
+index d95aae563..d6ab286f4 100644
+--- a/src/overlays/scenes/ov008_camp_menu/Ov008_BeginMenuModeSwitch.c
++++ b/src/overlays/scenes/ov008_camp_menu/Ov008_BeginMenuModeSwitch.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Ov008_BeginMenuModeSwitch -- Ov008_BeginMenuModeSwitch: start switching the grid
+  * menu to mode nMode.  Unless the menu state (+0x10) is already 2 the grid is
+  * reset and state 2 entered.  Mode 0 requests cursor mode 0x14 with 0; mode 1
+@@ -27,7 +28,7 @@ typedef struct Tween {
+     s32 duration;
+     s32 from;
+     s32 to;
+-    long long startTick;
++    long long startTick KH_ALIGN64;
+     u32 flags;
+ } Tween;
+ 
 diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_ConfigDispcntBothEngines.c b/src/overlays/scenes/ov008_camp_menu/Ov008_ConfigDispcntBothEngines.c
 index bf0d0416a..bc09436b5 100644
 --- a/src/overlays/scenes/ov008_camp_menu/Ov008_ConfigDispcntBothEngines.c
@@ -11755,6 +13628,24 @@ index a4d27d207..21ba78f35 100644
 +    G2x_SetBlendBrightness_((void *)KH_HW(0x04000050), 1, brightness);
      G2x_SetBlendBrightness_((char *)pDispcntB + 0x50, (*pDispcntB & 0x1f00) >> 8, brightness);
  }
+diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_FinishMenuModeSwitch.c b/src/overlays/scenes/ov008_camp_menu/Ov008_FinishMenuModeSwitch.c
+index 83de0be37..b2e4d5452 100644
+--- a/src/overlays/scenes/ov008_camp_menu/Ov008_FinishMenuModeSwitch.c
++++ b/src/overlays/scenes/ov008_camp_menu/Ov008_FinishMenuModeSwitch.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Ov008_FinishMenuModeSwitch -- Ov008_FinishMenuModeSwitch: complete a grid menu
+  * mode switch once the slide tween (+0x368) has finished (flag bit 2 set) and
+  * both scroll sentinels (+0x384, +0x388) reached 0x7fffffff.  The grid is
+@@ -28,7 +29,7 @@ typedef struct Tween {
+     s32 duration;
+     s32 from;
+     s32 to;
+-    long long startTick;
++    long long startTick KH_ALIGN64;
+     u32 bPending : 1;
+     u32 bStarted : 1;
+     u32 bDone : 1;
 diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_FlushMissionListGraphics.c b/src/overlays/scenes/ov008_camp_menu/Ov008_FlushMissionListGraphics.c
 index a48ad36da..c94ac2271 100644
 --- a/src/overlays/scenes/ov008_camp_menu/Ov008_FlushMissionListGraphics.c
@@ -11773,6 +13664,21 @@ index a48ad36da..c94ac2271 100644
      int i;
      int nValue;
      TileSurface *pName;
+diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_GetGridMaskExtent.c b/src/overlays/scenes/ov008_camp_menu/Ov008_GetGridMaskExtent.c
+index a2164ec07..387c93a91 100644
+--- a/src/overlays/scenes/ov008_camp_menu/Ov008_GetGridMaskExtent.c
++++ b/src/overlays/scenes/ov008_camp_menu/Ov008_GetGridMaskExtent.c
+@@ -1,8 +1,9 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Width/height of the occupied bounding box of the 8x5 bit grid (40-bit mask). */
+ 
+ struct S {
+     char pad[0x10];
+-    unsigned long long bits;
++    unsigned long long bits KH_ALIGN64;
+ };
+ 
+ void Ov008_GetGridMaskExtent(struct S *s, unsigned short *outW, unsigned short *outH)
 diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_InitCampaignMenuContext.c b/src/overlays/scenes/ov008_camp_menu/Ov008_InitCampaignMenuContext.c
 index 674ce89e4..829ba9534 100644
 --- a/src/overlays/scenes/ov008_camp_menu/Ov008_InitCampaignMenuContext.c
@@ -12530,7 +14436,7 @@ index 9977020af..9807549aa 100644
          win[1] = 0;
          win[2] = 0;
 diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_TickInfoWindowTransition.c b/src/overlays/scenes/ov008_camp_menu/Ov008_TickInfoWindowTransition.c
-index c6d2e8792..3a5b99e80 100644
+index c6d2e8792..430a698dd 100644
 --- a/src/overlays/scenes/ov008_camp_menu/Ov008_TickInfoWindowTransition.c
 +++ b/src/overlays/scenes/ov008_camp_menu/Ov008_TickInfoWindowTransition.c
 @@ -1,3 +1,4 @@
@@ -12538,6 +14444,15 @@ index c6d2e8792..3a5b99e80 100644
  /* Advance or finish the main-menu info-window position transition. */
  
  #include "nitro/types.h"
+@@ -14,7 +15,7 @@ typedef struct Tween {
+     s32 duration;
+     s32 from;
+     s32 to;
+-    long long startTick;
++    long long startTick KH_ALIGN64;
+     TweenFlags flags;
+ } Tween;
+ 
 @@ -54,7 +55,7 @@ int Ov008_TickInfoWindowTransition(void)
      if (context->pendingDisplayMode >= 0) {
          volatile u32 *displayControl;
@@ -12635,7 +14550,7 @@ index 783ea17c1..9393b5529 100644
  void Ov008_UpdateBrightnessAndCallbacks(void)
  {
 diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_UpdateCharacterSelectTweens.c b/src/overlays/scenes/ov008_camp_menu/Ov008_UpdateCharacterSelectTweens.c
-index 23943b55a..4c0675b50 100644
+index 23943b55a..269edd56a 100644
 --- a/src/overlays/scenes/ov008_camp_menu/Ov008_UpdateCharacterSelectTweens.c
 +++ b/src/overlays/scenes/ov008_camp_menu/Ov008_UpdateCharacterSelectTweens.c
 @@ -1,3 +1,4 @@
@@ -12643,6 +14558,15 @@ index 23943b55a..4c0675b50 100644
  /* Sample active Mission Mode UI tweens and apply their values. */
  
  #include "nitro/types.h"
+@@ -8,7 +9,7 @@ typedef struct Tween {
+     int duration;
+     int from;
+     int to;
+-    long long startTick;
++    long long startTick KH_ALIGN64;
+     u32 flags;
+ } Tween;
+ 
 @@ -68,12 +69,12 @@ void Ov008_UpdateCharacterSelectTweens(void) {
      case 6:
          if (((context->blendAlphaTween.flags << 0x1d) >> 0x1f) == 0) {
@@ -12658,6 +14582,39 @@ index 23943b55a..4c0675b50 100644
          }
  
          index = 0;
+diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_UpdatePanelBrightnessTweens.c b/src/overlays/scenes/ov008_camp_menu/Ov008_UpdatePanelBrightnessTweens.c
+index 88a80068f..b581bc331 100644
+--- a/src/overlays/scenes/ov008_camp_menu/Ov008_UpdatePanelBrightnessTweens.c
++++ b/src/overlays/scenes/ov008_camp_menu/Ov008_UpdatePanelBrightnessTweens.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ 
+ #include "nitro/types.h"
+ 
+@@ -13,7 +14,7 @@ typedef struct Tween {
+     s32 duration;
+     s32 from;
+     s32 to;
+-    long long startTick;
++    long long startTick KH_ALIGN64;
+     TweenFlags flags;
+ } Tween;
+ 
+diff --git a/src/overlays/scenes/ov009_camp_save/Ov009_GetGridMaskExtent.c b/src/overlays/scenes/ov009_camp_save/Ov009_GetGridMaskExtent.c
+index ccde21a9f..fdda1e092 100644
+--- a/src/overlays/scenes/ov009_camp_save/Ov009_GetGridMaskExtent.c
++++ b/src/overlays/scenes/ov009_camp_save/Ov009_GetGridMaskExtent.c
+@@ -1,8 +1,9 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Width/height of the occupied bounding box of the 8x5 bit grid (40-bit mask). */
+ 
+ struct S {
+     char pad[0x10];
+-    unsigned long long bits;
++    unsigned long long bits KH_ALIGN64;
+ };
+ 
+ void Ov009_GetGridMaskExtent(struct S *s, unsigned short *outW, unsigned short *outH)
 diff --git a/src/overlays/scenes/ov009_camp_save/Ov009_InitSubScreenGraphics.c b/src/overlays/scenes/ov009_camp_save/Ov009_InitSubScreenGraphics.c
 index f7d0fe600..0d4556eee 100644
 --- a/src/overlays/scenes/ov009_camp_save/Ov009_InitSubScreenGraphics.c
@@ -13512,6 +15469,24 @@ index 1037d4866..36f94e9e4 100644
  
  void Ov012_UpdateOpeningBrightness(char *context) {
      char *base;
+diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_BeginMenuModeSwitch.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_BeginMenuModeSwitch.c
+index e069ce4e8..90e2b4f70 100644
+--- a/src/overlays/screens/ov025_camp_menu_2/Ov025_BeginMenuModeSwitch.c
++++ b/src/overlays/screens/ov025_camp_menu_2/Ov025_BeginMenuModeSwitch.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Ov025_BeginMenuModeSwitch -- Ov008_BeginMenuModeSwitch: start switching the grid
+  * menu to mode nMode.  Unless the menu state (+0x10) is already 2 the grid is
+  * reset and state 2 entered.  Mode 0 requests cursor mode 0x14 with 0; mode 1
+@@ -27,7 +28,7 @@ typedef struct Tween {
+     s32 duration;
+     s32 from;
+     s32 to;
+-    long long startTick;
++    long long startTick KH_ALIGN64;
+     u32 flags;
+ } Tween;
+ 
 diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_DestroyGridMenu.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_DestroyGridMenu.c
 index 750579a98..616e1ef83 100644
 --- a/src/overlays/screens/ov025_camp_menu_2/Ov025_DestroyGridMenu.c
@@ -13549,6 +15524,24 @@ index 0c948b781..35f778fe2 100644
 +    G2x_SetBlendBrightness_((void *)KH_HW(0x04000050), 1, brightness);
      G2x_SetBlendBrightness_((char *)pDispcntB + 0x50, (*pDispcntB & 0x1f00) >> 8, brightness);
  }
+diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_FinishMenuModeSwitch.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_FinishMenuModeSwitch.c
+index d7a105d75..831b6ba7a 100644
+--- a/src/overlays/screens/ov025_camp_menu_2/Ov025_FinishMenuModeSwitch.c
++++ b/src/overlays/screens/ov025_camp_menu_2/Ov025_FinishMenuModeSwitch.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Ov025_FinishMenuModeSwitch -- Ov008_FinishMenuModeSwitch: complete a grid menu
+  * mode switch once the slide tween (+0x368) has finished (flag bit 2 set) and
+  * both scroll sentinels (+0x384, +0x388) reached 0x7fffffff.  The grid is
+@@ -28,7 +29,7 @@ typedef struct Tween {
+     s32 duration;
+     s32 from;
+     s32 to;
+-    long long startTick;
++    long long startTick KH_ALIGN64;
+     u32 bPending : 1;
+     u32 bStarted : 1;
+     u32 bDone : 1;
 diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_FlushMissionListGraphics.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_FlushMissionListGraphics.c
 index 1f7050c17..9444904d2 100644
 --- a/src/overlays/screens/ov025_camp_menu_2/Ov025_FlushMissionListGraphics.c
@@ -13567,6 +15560,21 @@ index 1f7050c17..9444904d2 100644
      int i;
      int nValue;
      TileSurface *pName;
+diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_GetGridMaskExtent.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_GetGridMaskExtent.c
+index e4ba7aa22..5608eb3e1 100644
+--- a/src/overlays/screens/ov025_camp_menu_2/Ov025_GetGridMaskExtent.c
++++ b/src/overlays/screens/ov025_camp_menu_2/Ov025_GetGridMaskExtent.c
+@@ -1,8 +1,9 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Width/height of the occupied bounding box of the 8x5 bit grid (40-bit mask). */
+ 
+ struct S {
+     char pad[0x10];
+-    unsigned long long bits;
++    unsigned long long bits KH_ALIGN64;
+ };
+ 
+ void Ov025_GetGridMaskExtent(struct S *s, unsigned short *outW, unsigned short *outH)
 diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_Hub_SetupGraphics.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_Hub_SetupGraphics.c
 index cee0b4dc4..823664bd3 100644
 --- a/src/overlays/screens/ov025_camp_menu_2/Ov025_Hub_SetupGraphics.c
@@ -14068,7 +16076,7 @@ index 2323dd73a..62e7606b6 100644
          win[1] = 0;
          win[2] = 0;
 diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_TickInfoWindowTransition.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_TickInfoWindowTransition.c
-index eea23e8e0..a3ed1941a 100644
+index eea23e8e0..3e097997f 100644
 --- a/src/overlays/screens/ov025_camp_menu_2/Ov025_TickInfoWindowTransition.c
 +++ b/src/overlays/screens/ov025_camp_menu_2/Ov025_TickInfoWindowTransition.c
 @@ -1,3 +1,4 @@
@@ -14076,6 +16084,15 @@ index eea23e8e0..a3ed1941a 100644
  /* Advance or finish the main-menu info-window position transition. */
  
  #include "nitro/types.h"
+@@ -14,7 +15,7 @@ typedef struct Tween {
+     s32 duration;
+     s32 from;
+     s32 to;
+-    long long startTick;
++    long long startTick KH_ALIGN64;
+     TweenFlags flags;
+ } Tween;
+ 
 @@ -54,7 +55,7 @@ int Ov025_TickInfoWindowTransition(void)
      if (context->pendingDisplayMode >= 0) {
          volatile u32 *displayControl;
@@ -14198,6 +16215,24 @@ index 235a13c7a..5e90cfc9d 100644
  
  void Ov025_UpdateBrightnessAndCallbacks(void)
  {
+diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_UpdatePanelBrightnessTweens.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_UpdatePanelBrightnessTweens.c
+index 453a42ebc..f6c6308b7 100644
+--- a/src/overlays/screens/ov025_camp_menu_2/Ov025_UpdatePanelBrightnessTweens.c
++++ b/src/overlays/screens/ov025_camp_menu_2/Ov025_UpdatePanelBrightnessTweens.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ 
+ #include "nitro/types.h"
+ 
+@@ -13,7 +14,7 @@ typedef struct Tween {
+     s32 duration;
+     s32 from;
+     s32 to;
+-    long long startTick;
++    long long startTick KH_ALIGN64;
+     TweenFlags flags;
+ } Tween;
+ 
 diff --git a/src/overlays/screens/ov026_shop/Ov026_BlankScreens.c b/src/overlays/screens/ov026_shop/Ov026_BlankScreens.c
 index cc6059c74..69bcae544 100644
 --- a/src/overlays/screens/ov026_shop/Ov026_BlankScreens.c
@@ -14370,6 +16405,21 @@ index 152d7e3ea..07263baf4 100644
  
  extern long long func_02020400(int nNum, int nDen);                 /* _s32_div_f: remainder in the high word */
  /* khdays: shared-bss */
+diff --git a/src/overlays/screens/ov069/Ov069_GetGridMaskExtent.c b/src/overlays/screens/ov069/Ov069_GetGridMaskExtent.c
+index 618da23ed..d08227172 100644
+--- a/src/overlays/screens/ov069/Ov069_GetGridMaskExtent.c
++++ b/src/overlays/screens/ov069/Ov069_GetGridMaskExtent.c
+@@ -1,8 +1,9 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Width/height of the occupied bounding box of the 8x5 bit grid (40-bit mask). */
+ 
+ struct S {
+     char pad[0x10];
+-    unsigned long long bits;
++    unsigned long long bits KH_ALIGN64;
+ };
+ 
+ void Ov069_GetGridMaskExtent(struct S *s, unsigned short *outW, unsigned short *outH)
 diff --git a/src/overlays/screens/ov069/Ov069_ScriptCmd_SetupBgLayer.c b/src/overlays/screens/ov069/Ov069_ScriptCmd_SetupBgLayer.c
 index a9e8d9e0e..2f359ec8f 100644
 --- a/src/overlays/screens/ov069/Ov069_ScriptCmd_SetupBgLayer.c

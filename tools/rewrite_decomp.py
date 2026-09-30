@@ -21,6 +21,9 @@ Passes:
                 `--report` lists every remaining in-range literal for review.
   vram-sync     The NitroSDK functions that write VRAMCNT get KH_VRAM_SYNC_ON_EXIT() at the top
                 of their body, so the port moves the VRAM banks when they return.
+  align64       Struct and union members declared as a plain `long long` get KH_ALIGN64: the
+                DS's 4-byte alignment for them on the Vita (GCC would use 8 and pad the struct
+                differently). u64/s64 members need nothing: the typedefs carry it.
 """
 import argparse
 import re
@@ -338,7 +341,67 @@ def pass_vram_sync(tree):
     return changed
 
 
-PASSES = {"abs-symbols": pass_abs_symbols, "hw": pass_hw, "vram-sync": pass_vram_sync}
+# ---- align64 -------------------------------------------------------------------------------
+
+RAW64 = re.compile(r"^\s*(?:volatile\s+|const\s+)*(?:(?:unsigned|signed)\s+)?"
+                   r"long\s+long(?:\s+int)?\s+\**\s*\w+[^;(]*;")
+ALIGN64 = "KH_ALIGN64"
+
+
+def raw64_member_lines(text):
+    """1-based numbers of the lines that declare a plain long long member of a struct/union."""
+    t = re.sub(r"/\*.*?\*/", lambda m: "\n" * m.group(0).count("\n"), text, flags=re.S)
+    t = re.sub(r"//[^\n]*", "", t)
+    stack, pending, out = [], "", []
+    for no, line in enumerate(t.split("\n"), 1):
+        for i, ch in enumerate(line):
+            if ch == "{":
+                head = (pending + line[:i])[-200:]
+                stack.append(bool(re.search(r"\b(struct|union)\b[^;{}()]*$", head)))
+                pending = ""
+            elif ch == "}":
+                if stack:
+                    stack.pop()
+                pending = ""
+            elif ch == ";":
+                pending = ""
+        pending += line + "\n"
+        if stack and stack[-1] and RAW64.match(line):
+            out.append(no)
+    return out
+
+
+def pass_align64(tree):
+    changed = 0
+    for path in sorted(tree.rglob("*")):
+        if path.suffix not in (".c", ".h", ".cpp") or not path.is_file():
+            continue
+        rel = path.relative_to(tree).as_posix()
+        if not rel.startswith(("include/", "libs/", "src/")):
+            continue
+        text = path.read_text(encoding="utf-8", errors="surrogateescape")
+        if "long long" not in text:
+            continue
+        lines = text.split("\n")
+        dirty = False
+        for no in raw64_member_lines(text):
+            line = lines[no - 1]
+            if ALIGN64 in line:
+                continue
+            at = line.index(";")
+            lines[no - 1] = line[:at].rstrip() + " " + ALIGN64 + line[at:]
+            dirty = True
+        if dirty:
+            text = "\n".join(lines)
+            if HW_INCLUDE not in text:
+                text = HW_INCLUDE + "  /* PLATFORM_VITA: KH_ALIGN64 */\n" + text
+            path.write_text(text, encoding="utf-8", errors="surrogateescape")
+            changed += 1
+    return changed
+
+
+PASSES = {"abs-symbols": pass_abs_symbols, "hw": pass_hw, "vram-sync": pass_vram_sync,
+          "align64": pass_align64}
 
 
 def main():

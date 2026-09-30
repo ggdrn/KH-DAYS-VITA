@@ -73,7 +73,8 @@ def main():
     major, minor, patch = (version.split(".") + ["0", "0"])[:3]
     app_ver = f"{int(major):02d}.{int(minor) * 10 + int(patch):02d}"
 
-    port_srcs = sorted((ROOT / "platform").rglob("*.c"))
+    # abi_check.c needs the decomp's headers: built with the game's flags below
+    port_srcs = sorted(p for p in (ROOT / "platform").rglob("*.c") if p.name != "abi_check.c")
     game_srcs = []
     defines = [f'-DKH_VERSION="{version}"']
     includes = [f"-I{ROOT / 'platform' / 'core'}", f"-I{ROOT / 'platform'}",
@@ -164,7 +165,9 @@ def main():
     if game_srcs:
         w("build build/gen/ds_bss.o: as build/gen/ds_bss.S")
         w("build build/gen/overlays.o: cc_port build/gen/overlays.c")
-        objs += ["build/gen/ds_bss.o", "build/gen/overlays.o"]
+        # static asserts on the decomp's struct layouts (game flags and headers)
+        w("build build/gen/abi_check.o: cc_game platform/nitro/abi_check.c")
+        objs += ["build/gen/ds_bss.o", "build/gen/overlays.o", "build/gen/abi_check.o"]
         link_extra = "@build/gen/link.rsp -Wl,-T,build/gen/overlays.ld"
     game_libs = []
     for name, mobjs in sorted(modules.items()):
