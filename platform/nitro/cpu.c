@@ -33,7 +33,8 @@
 
 typedef void (*IrqFn)(void);
 extern IrqFn data_027e0000[22];                  /* OS_IRQTable, at the start of DTCM */
-extern struct { void *head, *tail; } data_027e0058; /* OSi_IrqThreadQueue */
+/* OSi_IrqThreadQueue: the queue OS_WaitIrq sleeps on (OS_InitIrqTable clears it) */
+extern struct { void *head, *tail; } data_027e006c;
 extern struct {
     uint16_t isNeedRescheduling;
     uint16_t irqDepth;
@@ -198,8 +199,8 @@ static void run_handlers(void)
         }
         kh_cpu_irqs_delivered++;
         /* OS_IrqHandler_ThreadSwitch: threads waiting in OS_WaitIrq become ready */
-        if (data_027e0058.head)
-            OS_WakeupThread(&data_027e0058);
+        if (data_027e006c.head)
+            OS_WakeupThread(&data_027e006c);
     }
     s_irq_thread = -1;
 }

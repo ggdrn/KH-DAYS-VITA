@@ -184,8 +184,10 @@ void kh_game_run(void)
         video_set_overlay(s_console ? console_render(status) : NULL);
         present(); /* waits for the Vita's VBlank */
 
-        /* watchdog: the game side has done nothing observable for 5 s */
-        progress = kh_cpu_irqs_delivered + kh_cpu_switches + kh_card_reads;
+        /* watchdog: the game side has done nothing observable for 5 s. Interrupts do not
+         * count: VBlanks keep arriving while every NitroSDK thread is stuck (0.0.18: the main
+         * thread asleep in OS_WaitIrq); a running frame loop switches threads every frame. */
+        progress = kh_cpu_switches + kh_card_reads;
         if (progress != s_last_progress) {
             s_last_progress = progress;
             s_stuck_frames = 0;
