@@ -377,10 +377,10 @@ index 54d1b93a3..ab5f0d8a9 100644
  
 diff --git a/include/nitro/kh_hw.h b/include/nitro/kh_hw.h
 new file mode 100644
-index 000000000..f368de5b1
+index 000000000..a829ddce9
 --- /dev/null
 +++ b/include/nitro/kh_hw.h
-@@ -0,0 +1,33 @@
+@@ -0,0 +1,45 @@
 +/* KH_HW(addr): a fixed hardware address of the DS, as the code uses it.
 + *
 + * On the DS this is the address itself, so every source compiles to the same bytes as before.
@@ -394,6 +394,18 @@ index 000000000..f368de5b1
 +#include "kh_hw_map.h"
 +#else
 +#define KH_HW(addr) (addr)
++#endif
++
++/* KH_DS_PTR(addr): a pointer the game packed into 24 bits and unpacked as a DS address.
++ * Archive handles keep ((ptr + 0x8000) & 0xfffffc) << 7 and add 0x01ff8000 back, which only
++ * works while every pointer lies in the DS's 16 MiB from 0x01ff8000. On the Vita the port finds
++ * the host pointer those 24 bits belong to (the main or ITCM arena). The DS address itself on
++ * the DS. */
++#ifdef PLATFORM_VITA
++unsigned long kh_ds_unpack_ptr(unsigned long ds_addr);
++#define KH_DS_PTR(addr) kh_ds_unpack_ptr(addr)
++#else
++#define KH_DS_PTR(addr) (addr)
 +#endif
 +
 +/* KH_TRACE("..."): a boot milestone in the port's log (printf format). Nothing on the DS. */
@@ -7442,6 +7454,42 @@ index f1befb352..3b28cdb6b 100644
                      }
  
                      end = blockOffsetSample + samples;
+diff --git a/src/engine/Archive_OpenSubfileByHandle.c b/src/engine/Archive_OpenSubfileByHandle.c
+index 986fcfea2..dc071897f 100644
+--- a/src/engine/Archive_OpenSubfileByHandle.c
++++ b/src/engine/Archive_OpenSubfileByHandle.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_DS_PTR */
+ /* Opens a file inside a packed archive by its handle: the handle encodes the archive header's
+  * address and the entry index, whose offset and size are read from the header's tables. */
+ 
+@@ -12,7 +13,7 @@ extern BOOL FS_OpenFileDirect(FSFile *file, FSArchive *archive, u32 image_top, u
+ BOOL Archive_OpenSubfileByHandle(FSFile *file, u32 id)
+ {
+     u32 mask = 0x00fffffc;
+-    u32 base = ((id >> 7) & mask) + 0x01ff8000;
++    u32 base = KH_DS_PTR(((id >> 7) & mask) + 0x01ff8000);
+     u16 idx  = (u16)(id & (mask >> 15));
+     u8 *p = (u8 *)base;
+     u32 top = *(u32 *)(p + 0xc) + ((u32)*(u16 *)(p + idx * 2 + 0x10) << 9);
+diff --git a/src/engine/Archive_SubfileIsCompressed.c b/src/engine/Archive_SubfileIsCompressed.c
+index 5bfbce1ab..68051a5b7 100644
+--- a/src/engine/Archive_SubfileIsCompressed.c
++++ b/src/engine/Archive_SubfileIsCompressed.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_DS_PTR */
+ /* Archive_SubfileIsCompressed -- read the sign bit of a tile-map entry for a packed coordinate.
+  * Selects the 0x1ff8000 map row from bits 7.. of the packed coordinate, reads that row's
+  * 16-bit header at +2, and indexes the row by (header + 1) / 2 words plus the coordinate's
+@@ -14,7 +15,7 @@
+  * The `(e + 1) / 2` is a SIGNED divide -- the ROM's `add r0,r0,r0,lsr#31 ; asr r0,r0,#1`. */
+ unsigned int Archive_SubfileIsCompressed(unsigned int param_1) {
+     unsigned int mask = 0xfffffc;
+-    unsigned int base = (param_1 >> 7 & mask) + 0x1ff8000;
++    unsigned int base = KH_DS_PTR((param_1 >> 7 & mask) + 0x1ff8000);
+     unsigned short lo = param_1 & (mask >> 15);
+     int e = *(unsigned short *)(base + 2) & (mask >> 15);
+ 
 diff --git a/src/engine/Bg_LoadPaletteForScreen.c b/src/engine/Bg_LoadPaletteForScreen.c
 index c779484f1..eadf18971 100644
 --- a/src/engine/Bg_LoadPaletteForScreen.c

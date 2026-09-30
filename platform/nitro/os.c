@@ -66,6 +66,34 @@ void *OS_GetInitArenaHi(int id)
     }
 }
 
+/* ---- packed pointers ----------------------------------------------------------------------------
+ * KH_DS_PTR in the decomp (nitro/kh_hw.h). The game packs a pointer's low 24 bits, offset by
+ * 0x8000, into archive handles and unpacks them as 0x01ff8000 + those bits: right on the DS,
+ * where all of RAM lies in that 16 MiB. Here the top byte is recovered from where such pointers
+ * can be: the arenas the game's heaps are carved from (each smaller than 16 MiB, so at most one
+ * candidate falls inside). */
+unsigned long kh_ds_unpack_ptr(unsigned long ds_addr)
+{
+    const uint32_t low = ((uint32_t)ds_addr - 0x01ff8000u) & 0x00ffffffu; /* (ptr + 0x8000) */
+    const struct { uintptr_t lo, hi; } regions[] = {
+        { (uintptr_t)main_arena(), (uintptr_t)main_arena() + DS_MAIN_ARENA_SIZE },
+        { (uintptr_t)s_itcm_arena, (uintptr_t)s_itcm_arena + DS_ITCM_ARENA_SIZE },
+    };
+    static int warned;
+    unsigned i;
+
+    for (i = 0; i < sizeof(regions) / sizeof(regions[0]); i++) {
+        uintptr_t c = (((regions[i].lo + 0x8000u) & ~(uintptr_t)0x00ffffffu) | low) - 0x8000u;
+        if (c < regions[i].lo)
+            c += 0x01000000u;
+        if (c < regions[i].hi)
+            return c;
+    }
+    if (warned++ < 8)
+        LOG("os: packed pointer %08lx is in no arena", ds_addr);
+    return ds_addr;
+}
+
 /* ---- tick ------------------------------------------------------------------------------------ */
 
 extern uint16_t data_02044664; /* the tick system's "initialized" flag (OS_IsTickAvailable) */
