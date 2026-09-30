@@ -49,10 +49,10 @@ GAME_CXXFLAGS = ["-std=gnu++11", "-O2", "-w", "-fno-exceptions", "-fpermissive"]
 
 LIBS = [
     "-lvitaGL", "-lvitashark", "-lSceShaccCgExt", "-lmathneon", "-lstdc++", "-lm", "-lc",
-    "-ltaihen_stub", "-lSceShaccCg_stub", "-lSceKernelDmacMgr_stub",
+    "-lkubridge_stub_weak", "-ltaihen_stub", "-lSceShaccCg_stub", "-lSceKernelDmacMgr_stub",
     "-lSceCommonDialog_stub", "-lSceGxm_stub", "-lSceDisplay_stub", "-lSceAppMgr_stub",
     "-lSceAppUtil_stub", "-lSceCtrl_stub", "-lSceTouch_stub", "-lSceAudio_stub",
-    "-lScePower_stub", "-lSceSysmodule_stub", "-lSceLibKernel_stub",
+    "-lScePower_stub", "-lSceRtc_stub", "-lSceSysmodule_stub", "-lSceLibKernel_stub",
 ]
 
 
@@ -105,8 +105,10 @@ def main():
     w(f"cc = {BIN / 'arm-vita-eabi-gcc'}")
     w(f"cxx = {BIN / 'arm-vita-eabi-g++'}")
     w(f"ar = {BIN / 'arm-vita-eabi-gcc-ar'}")
-    w(f"common = {q(COMMON_CFLAGS + defines)}")
-    w(f"port_cflags = {q(PORT_CFLAGS + includes)}")
+    # the version and the game switch only concern the port's code: a new VERSION must not
+    # recompile the 24k game sources
+    w(f"common = {q(COMMON_CFLAGS)}")
+    w(f"port_cflags = {q(PORT_CFLAGS + defines + includes)}")
     w(f"game_cflags = {q(GAME_CFLAGS + game_includes)}")
     w(f"game_cxxflags = {q(GAME_CXXFLAGS + game_includes)}")
     w(f"libs = {q(LIBS)}")
@@ -163,7 +165,7 @@ def main():
         w("build build/gen/overlays.o: cc_port build/gen/overlays.c")
         objs += ["build/gen/ds_bss.o", "build/gen/overlays.o"]
         # the shared area's named words (platform/hw/shared_area.c)
-        link_extra = ("@build/gen/link.rsp"
+        link_extra = ("@build/gen/link.rsp -Wl,-T,build/gen/overlays.ld"
                       " -Wl,--defsym=data_027ffff0=kh_ds_shared_area+0xff0")
     game_libs = []
     for name, mobjs in sorted(modules.items()):

@@ -3,6 +3,8 @@
 #include "hw/memmap.h"
 
 #include "hw/io.h"
+#include "hw/timers.h"
+#include "nitro/cpu.h"
 
 #include <psp2/kernel/processmgr.h>
 #include <string.h>
@@ -150,5 +152,22 @@ uintptr_t kh_hw_sync_disp(void)
         stat |= 4;
     KH_IO16(0x04000004) = stat;
     KH_IO16(0x04000006) = (uint16_t)line;
+    /* code that spins on the display status is where the DS would take the VBlank IRQ */
+    kh_cpu_poll();
     return (uintptr_t)KH_IO_PTR(0x04000004);
+}
+
+uintptr_t kh_hw_sync_timers(void)
+{
+    kh_timers_update();
+    return (uintptr_t)KH_IO_PTR(0x04000100);
+}
+
+/* GXSTAT: until the geometry engine exists the FIFO is always empty and idle. The IRQ mode
+ * bits (30-31) are the game's; a write that dropped the "under half full" and "empty" bits
+ * would otherwise leave MI_SendGXCommandAsync waiting forever. */
+uintptr_t kh_hw_sync_gxstat(void)
+{
+    KH_IO32(0x04000600) = (KH_IO32(0x04000600) & 0xc0000000u) | 0x06000000u;
+    return (uintptr_t)KH_IO_PTR(0x04000600);
 }

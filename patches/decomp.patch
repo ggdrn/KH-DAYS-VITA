@@ -1,5 +1,5 @@
 diff --git a/include/nitro/hw.h b/include/nitro/hw.h
-index 54d1b93a3..83252a55a 100644
+index 54d1b93a3..a42996bab 100644
 --- a/include/nitro/hw.h
 +++ b/include/nitro/hw.h
 @@ -1,3 +1,4 @@
@@ -201,7 +201,8 @@ index 54d1b93a3..83252a55a 100644
 -#define HW_MAIN_MEM_SHARED               0x27ff000
 +#define HW_MAIN_MEM_SHARED               KH_HW(0x27ff000)
  
- #define HW_MAIN_MEM_SUB                  0x27e0000
+-#define HW_MAIN_MEM_SUB                  0x27e0000
++#define HW_MAIN_MEM_SUB                  KH_HW(0x27e0000)
  
 -#define HW_REG_BASE                 0x04000000
 +#define HW_REG_BASE                 KH_HW(0x04000000)
@@ -229,7 +230,7 @@ index 54d1b93a3..83252a55a 100644
  
  #define HW_MAIN_MEM_MAIN_END 0x023e0000
  
-@@ -357,7 +358,7 @@ enum {
+@@ -357,23 +358,23 @@ enum {
  
  #define HW_ITCM_ARENA_HI_DEFAULT 0x02000000
  
@@ -238,7 +239,13 @@ index 54d1b93a3..83252a55a 100644
  
  #define HW_WRAM 0x037f8000
  
-@@ -369,11 +370,11 @@ enum {
+-#define HW_DTCM_IRQ_STACK_END 0x027e3f80
++#define HW_DTCM_IRQ_STACK_END KH_HW(0x027e3f80)
+ 
+-#define HW_DTCM_SVC_STACK     0x027e3f80
++#define HW_DTCM_SVC_STACK     KH_HW(0x027e3f80)
+ 
+ #define HW_DTCM_SVC_STACK_ADDR (HW_DTCM + 0x3f80)
  
  #define HW_DTCM_IRQ_STACK_END_ADDR (HW_DTCM + 0x3f80)
  
@@ -6149,6 +6156,42 @@ index c198967b4..904f3e061 100644
      const u32 control =
          (*cachedGameCode & ~CARD_CTRL_CMD_MASK) |
          (CARD_CTRL_CMD_PAGE | CARD_CTRL_READ | CARD_CTRL_START |
+diff --git a/libs/nitro/os/auto/os_irq_table_027e0000.c b/libs/nitro/os/auto/os_irq_table_027e0000.c
+index 2c629b185..d26935393 100644
+--- a/libs/nitro/os/auto/os_irq_table_027e0000.c
++++ b/libs/nitro/os/auto/os_irq_table_027e0000.c
+@@ -23,7 +23,15 @@ extern void OSi_IrqDma2(void);
+ extern void OSi_IrqDma3(void);
+ 
+ /* OS_IRQTable */
++#ifdef PLATFORM_VITA
++/* The port keeps all of DTCM as one block with the DS layout (its build/gen/ds_bss.S), so the
++ * table's storage is there and these initial values are copied in before main. */
++extern OSIrqFunction data_027e0000[OS_IRQ_TABLE_MAX];
++static void kh_init_irq_table(void) __attribute__((constructor));
++static const OSIrqFunction kh_irq_table_initial[OS_IRQ_TABLE_MAX] = {
++#else
+ OSIrqFunction data_027e0000[OS_IRQ_TABLE_MAX] = {
++#endif
+     OS_IrqDummy,  /* VBlank */
+     OS_IrqDummy,  /* HBlank */
+     OS_IrqDummy,  /* VCounter */
+@@ -48,6 +56,15 @@ OSIrqFunction data_027e0000[OS_IRQ_TABLE_MAX] = {
+     OS_IrqDummy,  /* geometry command FIFO */
+ };
+ 
++#ifdef PLATFORM_VITA
++static void kh_init_irq_table(void)
++{
++    int i;
++    for (i = 0; i < OS_IRQ_TABLE_MAX; i++)
++        data_027e0000[i] = kh_irq_table_initial[i];
++}
++#endif
++
+ /* OSi_IrqThreadQueue: threads sleeping in OS_WaitIrq (empty). */
+ #pragma explicit_zero_data on
+ OSThreadQueue data_027e0058 = { 0, 0 };
 diff --git a/libs/nitro/os/calls/Boot_ReloadModules.c b/libs/nitro/os/calls/Boot_ReloadModules.c
 index bb5850198..1e395f523 100644
 --- a/libs/nitro/os/calls/Boot_ReloadModules.c
@@ -6226,7 +6269,7 @@ index 9b4ff1cc1..e0e9f51ca 100644
      r0[1] = ((SrcB *)p)->bits4;
      r0[2] = p[3];
 diff --git a/libs/nitro/os/calls/OS_GetInitArenaHi.c b/libs/nitro/os/calls/OS_GetInitArenaHi.c
-index f5da0fd10..d58972216 100644
+index f5da0fd10..b2b3837c7 100644
 --- a/libs/nitro/os/calls/OS_GetInitArenaHi.c
 +++ b/libs/nitro/os/calls/OS_GetInitArenaHi.c
 @@ -1,3 +1,4 @@
@@ -6249,7 +6292,7 @@ index f5da0fd10..d58972216 100644
  extern void SDK_IRQ_STACKSIZE(void);
 +#endif
 +#ifdef PLATFORM_VITA
-+#define SDK_SECTION_ARENA_DTCM_START ((void (*)(void))0x27e0e60) /* PLATFORM_VITA: absolute symbol */
++#define SDK_SECTION_ARENA_DTCM_START ((void (*)(void))KH_HW(0x27e0e60)) /* PLATFORM_VITA: absolute symbol */
 +#else
  extern void SDK_SECTION_ARENA_DTCM_START(void);
 +#endif
@@ -6266,7 +6309,7 @@ index f5da0fd10..d58972216 100644
  #define OS_SetSwitchThreadCallback OS_SetIrqWorkField30
  extern void OS_CreateThread(OSThread *thread, void (*func)(void *), void *arg, void *stack, u32 stackSize, u32 prio);
 diff --git a/libs/nitro/os/calls/OS_GetInitArenaLo.c b/libs/nitro/os/calls/OS_GetInitArenaLo.c
-index e731d440f..6d3920e99 100644
+index e731d440f..2901204a4 100644
 --- a/libs/nitro/os/calls/OS_GetInitArenaLo.c
 +++ b/libs/nitro/os/calls/OS_GetInitArenaLo.c
 @@ -1,3 +1,4 @@
@@ -6274,8 +6317,12 @@ index e731d440f..6d3920e99 100644
  
  /* Bit 0..1 of the console type is the main-memory size; 1 means the 4 MB retail
     part, which has no extended region above it. */
-@@ -37,7 +38,7 @@ void *OS_GetInitArenaLo(int nArena)
-         return (void *)0x027e0e60;
+@@ -34,10 +35,10 @@ void *OS_GetInitArenaLo(int nArena)
+         return (void *)0x01fffee0;
+ 
+     case 4:
+-        return (void *)0x027e0e60;
++        return (void *)KH_HW(0x027e0e60);
  
      case 5:
 -        return (void *)0x027ff000;
@@ -6305,7 +6352,7 @@ index d30c5abd8..0338973ff 100644
  
  extern volatile u64 data_0204466c;   /* OSi_TickCounter */
 diff --git a/libs/nitro/os/calls/OS_GetMacAddress.c b/libs/nitro/os/calls/OS_GetMacAddress.c
-index b8a7d115f..3a1de25b4 100644
+index b8a7d115f..fde573c3f 100644
 --- a/libs/nitro/os/calls/OS_GetMacAddress.c
 +++ b/libs/nitro/os/calls/OS_GetMacAddress.c
 @@ -1,3 +1,4 @@
@@ -6328,7 +6375,7 @@ index b8a7d115f..3a1de25b4 100644
  extern void SDK_IRQ_STACKSIZE(void);
 +#endif
 +#ifdef PLATFORM_VITA
-+#define SDK_SECTION_ARENA_DTCM_START ((void (*)(void))0x27e0e60) /* PLATFORM_VITA: absolute symbol */
++#define SDK_SECTION_ARENA_DTCM_START ((void (*)(void))KH_HW(0x27e0e60)) /* PLATFORM_VITA: absolute symbol */
 +#else
  extern void SDK_SECTION_ARENA_DTCM_START(void);
 +#endif
@@ -6393,7 +6440,7 @@ index a9d5b4327..d89610057 100644
  #define OS_LOCKID_INIT   0x7e
  #define OS_LOCKID_ERROR  0x7f
 diff --git a/libs/nitro/os/calls/OS_InitThread.c b/libs/nitro/os/calls/OS_InitThread.c
-index bd269d3bf..5cae5be32 100644
+index bd269d3bf..c897a3ba2 100644
 --- a/libs/nitro/os/calls/OS_InitThread.c
 +++ b/libs/nitro/os/calls/OS_InitThread.c
 @@ -1,3 +1,4 @@
@@ -6416,7 +6463,7 @@ index bd269d3bf..5cae5be32 100644
  extern void SDK_IRQ_STACKSIZE(void);
 +#endif
 +#ifdef PLATFORM_VITA
-+#define SDK_SECTION_ARENA_DTCM_START ((void (*)(void))0x27e0e60) /* PLATFORM_VITA: absolute symbol */
++#define SDK_SECTION_ARENA_DTCM_START ((void (*)(void))KH_HW(0x27e0e60)) /* PLATFORM_VITA: absolute symbol */
 +#else
  extern void SDK_SECTION_ARENA_DTCM_START(void);
 +#endif
@@ -6515,10 +6562,10 @@ index d65765f5b..15a0fd22b 100644
  #define HW_DTCM_IRQ_STACK_END           ((u32)data_027e0000 + 0x3f80)
  #define OSi_IRQ_STACK_BOTTOM            HW_DTCM_IRQ_STACK_END
 diff --git a/libs/nitro/os/calls/OSi_InstallExceptionVector.c b/libs/nitro/os/calls/OSi_InstallExceptionVector.c
-index 1a382aeff..da1b91e12 100644
+index 1a382aeff..335d93616 100644
 --- a/libs/nitro/os/calls/OSi_InstallExceptionVector.c
 +++ b/libs/nitro/os/calls/OSi_InstallExceptionVector.c
-@@ -1,16 +1,17 @@
+@@ -1,18 +1,19 @@
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: fixed DS addresses */
  extern void OSi_ExceptionHandler(void);
  extern char data_020445b4[];
@@ -6536,8 +6583,11 @@ index 1a382aeff..da1b91e12 100644
 -        *(volatile void **)0x027FFD9Cu = (void *)OSi_ExceptionHandler;
 +        *(volatile void **)KH_HW(0x027FFD9Cu) = (void *)OSi_ExceptionHandler;
          {
-             volatile char *base = (volatile char *)0x027E3000u;
+-            volatile char *base = (volatile char *)0x027E3000u;
++            volatile char *base = (volatile char *)KH_HW(0x027E3000u);
              *(volatile void **)(base + 0xFDC) = (void *)OSi_ExceptionHandler;
+         }
+     }
 diff --git a/libs/nitro/os/calls/OSi_VBlankInterruptHandler.c b/libs/nitro/os/calls/OSi_VBlankInterruptHandler.c
 index c2ba12197..3f78c33fc 100644
 --- a/libs/nitro/os/calls/OSi_VBlankInterruptHandler.c

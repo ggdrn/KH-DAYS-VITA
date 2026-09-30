@@ -1,4 +1,5 @@
 /* Native versions of the library functions the decomp keeps as CodeWarrior assembly
+ * (interrupt state, halting and context switching are in cpu.c)
  * (asm_stubs/ C files, excluded from the Vita build by tools/decomp_sources.py).
  *
  * Each one reproduces what the original routine leaves in memory, not just its intent: copy
@@ -7,6 +8,7 @@
  * busy loops) becomes a no-op. Thread contexts belong to the NitroSDK scheduler, which the port
  * replaces with its own (platform/nitro/os_*.c); until then those entries only log. */
 #include "hw/io.h"
+#include "hw/memmap.h"
 #include "hw/shared_area.h"
 #include "log.h"
 
@@ -495,58 +497,6 @@ void GXi_NopClearFifo128_(volatile void *port)
         kh_io_fifo_write32(port, 0);
 }
 
-/* ---- CPU state -------------------------------------------------------------------------------
- * The port runs NitroSDK threads one at a time under a single lock, so "interrupts disabled"
- * is a flag the IRQ dispatcher honours (platform/nitro/os_irq.c) rather than a CPU state. The
- * return values follow CPSR: 0x80 = IRQ masked, 0x40 = FIQ masked. */
-
-volatile uint32_t kh_cpsr_if;
-
-uint32_t OS_DisableInterrupts(void)
-{
-    uint32_t old = kh_cpsr_if & 0x80;
-    kh_cpsr_if |= 0x80;
-    return old;
-}
-
-uint32_t OS_EnableInterrupts(void)
-{
-    uint32_t old = kh_cpsr_if & 0x80;
-    kh_cpsr_if &= ~0x80u;
-    return old;
-}
-
-uint32_t OS_RestoreInterrupts(uint32_t state)
-{
-    uint32_t old = kh_cpsr_if & 0x80;
-    kh_cpsr_if = (kh_cpsr_if & ~0x80u) | (state & 0x80);
-    return old;
-}
-
-uint32_t OS_DisableInterrupts_IrqAndFiq(void)
-{
-    uint32_t old = kh_cpsr_if & 0xc0;
-    kh_cpsr_if |= 0xc0;
-    return old;
-}
-
-uint32_t OS_RestoreInterrupts_IrqAndFiq(uint32_t state)
-{
-    uint32_t old = kh_cpsr_if & 0xc0;
-    kh_cpsr_if = (kh_cpsr_if & ~0xc0u) | (state & 0xc0);
-    return old;
-}
-
-uint32_t OS_GetCpsrIrq(void)
-{
-    return kh_cpsr_if & 0x80;
-}
-
-uint32_t OS_GetProcMode(void)
-{
-    return 0x1f; /* system mode: game code never runs in IRQ mode on the port */
-}
-
 uint32_t OsCountZeroBits(uint32_t x)
 {
     return x ? (uint32_t)__builtin_clz(x) : 32;
@@ -598,12 +548,6 @@ void RtcWaitBusy(void)
 {
 }
 
-void OS_Halt(void)
-{
-    /* TODO(os): wait for the next emulated interrupt (platform/nitro/os_irq.c) */
-    sceKernelDelayThread(100);
-}
-
 void OS_ResetSystem(uint32_t param)
 {
     (void)param;
@@ -626,35 +570,13 @@ void OS_SetProtectionRegion1(uint32_t param) { (void)param; }
 void OS_SetProtectionRegion2(uint32_t param) { (void)param; }
 void OSi_CancelDma0(void) {}
 
-/* The DTCM arena (16 KiB on the DS). Game variables placed in DTCM are ordinary globals on the
- * port; only the arena the SDK carves out of it needs memory. */
-static uint8_t s_dtcm[0x4000] __attribute__((aligned(32)));
-
+/* CP15's DTCM base: the port's DTCM block (build/gen/ds_bss.S) */
 uint32_t OS_GetDTCMAddress(void)
 {
-    return (uint32_t)(uintptr_t)s_dtcm;
+    return (uint32_t)(uintptr_t)kh_ds_dtcm;
 }
 
-/* ---- the NitroSDK scheduler's context switching: replaced wholesale by platform/nitro/os ---- */
-
-void OS_InitContext(void *context, uint32_t newpc, uint32_t newsp)
-{
-    (void)context, (void)newpc, (void)newsp;
-    UNIMPLEMENTED();
-}
-
-int OS_SaveContext(void *context)
-{
-    (void)context;
-    UNIMPLEMENTED();
-    return 0;
-}
-
-void OS_LoadContext(void *context)
-{
-    (void)context;
-    UNIMPLEMENTED();
-}
+/* ---- exceptions and alarms -------------------------------------------------------------- */
 
 void OSi_ExceptionHandler(void)
 {

@@ -7,6 +7,12 @@
 #include <stdint.h>
 
 typedef struct {
+    char *start, *end;
+} KhRange;
+
+enum { KH_OV_TEXT, KH_OV_RODATA, KH_OV_DATA, KH_OV_BSS, KH_OV_KINDS };
+
+typedef struct {
     uint32_t id;
     uint32_t ds_ram;    /* where the DS loaded it */
     uint32_t ds_size;   /* .text + .rodata + .data */
@@ -15,6 +21,7 @@ typedef struct {
     char *bss_end;
     void (*entry)(void); /* the function at ds_ram: the game calls an overlay's load address */
     void (*sinit)(void); /* NitroSDK static initializer, or NULL */
+    KhRange host[KH_OV_KINDS]; /* where the port's link put its sections (build/gen/overlays.ld) */
 } KhOverlay;
 
 extern const KhOverlay kh_overlays[];

@@ -20,7 +20,7 @@ Phases follow the generic "port a decompiled game to the Vita" plan. ✅ done ·
 - ✅ `tools/rewrite_decomp.py hw`: fixed DS addresses wrapped in `KH_HW()` wherever they are
   used as addresses (461 files; masks and flags with the same values left alone, reviewed with
   `--report`); `vram-sync`: VRAMCNT writers move the banks on exit
-- ⬜ `platform/compat/`: CodeWarrior-isms (`#pragma thumb`, `asm` qualifiers) neutralised
+- ✅ CodeWarrior pragmas (`#pragma thumb`, `opt_*`) need nothing: GCC ignores them
 
 ## 5. Vita build 🔶
 - ✅ `configure_vita.py` → ninja → ELF → velf → eboot → param.sfo → VPK, versioned from `VERSION`
@@ -35,8 +35,7 @@ Phases follow the generic "port a decompiled game to the Vita" plan. ✅ done ·
     (copies, matrices, MATH_QSort, streaming LZ, SHA-1, CP context, interrupt state, MobiClip
     blit); `platform/nitro/dsprotect.c`: DS Protect answers "genuine"
 - ✅ Hardware addresses translated; a scan of the linked ELF finds no DS address left
-- ⬜ It does not run yet: `OS_Init` and the rest of the NitroSDK's OS/FS/interrupt layer still
-  expect the DS (next: platform/nitro)
+- 🔶 Boot path desk-checked through `Ov001_BootInit`; first console run pending
 
 ## 6. Platform layer 🔶
 - ✅ main/system: clocks, data dir, log + previous log, ROM open/verify (cached SHA-1), msg dialog
@@ -47,16 +46,26 @@ Phases follow the generic "port a decompiled game to the Vita" plan. ✅ done ·
   DISPSTAT/VCOUNT computed on read; power-on register values
 - ✅ VRAM banks A–I (`platform/hw/vram.c`): home in LCDC, copied into the CPU-visible view they are
   mapped to and back on remap
-- ⬜ platform/nitro: OS (threads, IRQ/VBlank, alarms, ticks), MI (DMA/copies), CP (div/sqrt), GX/G3
-  (FIFO → geometry engine), CARD (ROM reads, backup), PXI/SND hookup, BIOS SWIs, cache no-ops
+- ✅ platform/nitro/cpu.c: NitroSDK threads on Vita threads (one baton, the SDK's scheduler),
+  interrupt delivery (IME/IE/IF, IRQ mode, IRQ thread queue, deferred reschedule), OS_Halt
+- ✅ timers 0-3 from the Vita clock; OS tick from the clock; DTCM as one DS-layout block; arenas
+- ✅ DMA performed at start (immediate, GX FIFO); async completions as interrupts
+- ✅ CARD ROM reads from the dump; card ID; overlays resident with per-overlay sections
+  (`build/gen/overlays.ld`): .data restore, .bss clear, entry as ram_address, destructors
+- ✅ ARM7 over PXI: every tag ready; SOUND command lists acknowledged; RTC (Vita local time);
+  touch/PM/NVRAM requests acknowledged; touch sampling with calibration
+- ⬜ GX/G3: geometry FIFO → geometry engine (the FIFO only latches words for now)
+- ⬜ VBlank/HBlank DMA timings, backup (save) over PXI, wireless
 - ⬜ 2D renderer (engines A/B)
 - ⬜ 3D: geometry engine + vitaGL rasterisation + texture cache
 - ⬜ Sound: native ARM7 SND (sequence player, channels, ADPCM/PSG, mixer, 48 kHz out)
 - ⬜ MobiClip videos (the decoder is C in ov024: needs only frame output + audio)
 - ⬜ Save: backup ↔ `days.sav`, atomic writes, save on suspend
 
-## 7. Diagnostics ⬜
-- ⬜ kubridge fault handler, watchdog, `psp2dmp` reader, log-address mapper (addr2line)
+## 7. Diagnostics 🔶
+- ✅ kubridge fault handler (all registers, run-time `main` for the load bias)
+- ✅ `tools/symbolize.py`: log addresses → function, file, line
+- ⬜ watchdog, `psp2dmp` reader
 
 ## 8–10. Bring-up loop, performance, enhancements ⬜
 - First milestone: title screen (ov000) with 2D, input and music

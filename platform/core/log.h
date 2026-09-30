@@ -6,6 +6,8 @@
 void log_init(const char *dir);
 void log_printf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 void log_flush(void);
+/* Write and sync without locking: for fault handlers, which may interrupt a logging thread. */
+void log_write_raw(const char *buf, int len);
 
 #define LOG(...) log_printf(__VA_ARGS__)
 

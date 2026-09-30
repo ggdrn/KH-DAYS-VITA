@@ -103,6 +103,7 @@ HW_RANGES = (
     (0x06000000, 0x068a4000),  # VRAM views and LCDC
     (0x07000000, 0x07000800),  # OAM
     (0x027ff000, 0x02800000),  # main RAM shared area
+    (0x027e0000, 0x027e4000),  # DTCM
 )
 HW_INCLUDE = '#include "nitro/kh_hw.h"'
 HW_MARK = "KH_HW("
@@ -156,6 +157,9 @@ def classify(text, start, end):
     """'cast', 'define' or 'bare' for the literal at text[start:end]."""
     before = text[max(0, start - 200):start]
     if re.search(r"\*\s*\)\s*\(*\s*$", before):
+        return "cast"
+    # `((void (*)(void))0x027e0e60)`: a cast to a function pointer (abs-symbols' SDK constants)
+    if re.search(r"\(\s*\*\s*\)\s*\([^()]*\)\s*\)\s*$", before):
         return "cast"
     # `(T *)(offset + 0x06000000)`: the last term of a sum that is cast to a pointer
     if re.search(r"\*\s*\)\s*\(\s*[\w\s+*()]*?\+\s*$", before):

@@ -51,3 +51,11 @@ void log_flush(void)
     if (s_fd >= 0)
         sceIoSyncByFd(s_fd, 0);
 }
+
+void log_write_raw(const char *buf, int len)
+{
+    if (s_fd >= 0) {
+        sceIoWrite(s_fd, buf, len);
+        sceIoSyncByFd(s_fd, 0);
+    }
+}

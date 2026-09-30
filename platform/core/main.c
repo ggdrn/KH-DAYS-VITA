@@ -2,6 +2,7 @@
  *
  * Until the decomp is linked in (KH_WITH_GAME), the shell boots, verifies the dump and shows
  * a diagnostic screen: the ROM header and the controls, so the install can be tested alone. */
+#include "fault.h"
 #include "input.h"
 #include "log.h"
 #include "msgdialog.h"
@@ -126,6 +127,7 @@ int main(void)
     init_system();
     log_init(KH_DATA_DIR);
     LOG("khdays-vita %s", KH_VERSION);
+    fault_init();
 
     video_init();
     check_rom();

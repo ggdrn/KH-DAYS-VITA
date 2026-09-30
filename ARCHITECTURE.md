@@ -75,34 +75,81 @@ Rendering:
 - **Presentation**: `video.c` draws both screens scaled; the layouts are side by side, top
   focus and bottom focus.
 
-## Threads and timing
+## The ARM9 as the NitroSDK sees it (platform/nitro/cpu.c)
 
-The DS main loop waits for VBlank (`OS_WaitVBlankIntr`). The port runs the game on core 0 at
-60 Hz. A VBlank thread raises the emulated VBlank IRQ, runs the registered handlers and
-presents the frame. NitroSDK threads (`OS_CreateThread`, used by the file loader and sound)
-become Vita threads with the same priorities mapped onto the Vita's range.
+**Threads.** Each NitroSDK thread (`OSThread`) runs on its own Vita thread, but only one holds
+the baton at a time. The others wait on a semaphore. The SDK's own scheduler, compiled from the
+decomp, still picks who runs. The port replaces only the switch:
+- `OS_SaveContext` binds the calling Vita thread to its `OSThread`.
+- `OS_LoadContext` hands the baton to the next thread and parks the caller.
 
-## Linking the game
+When a parked thread is chosen again, `OS_LoadContext` returns into `OSi_RescheduleThread`.
+That lands where `OS_SaveContext` would have returned TRUE on the DS.
 
-- Game objects are archived per module (main, each overlay, each library) and linked with
-  `--whole-archive`; `--gc-sections` then drops what nothing reaches.
-- Some variables are defined in two sources (the function that uses one and the `data/` file
-  for its address). dsd's `delinks.txt` says which file each section comes from, and
-  `tools/weaken_unowned.py` applies the same rule by making the other copies weak.
-- Most `.bss` exists in the decomp only as addresses. `tools/gen_link_support.py` emits each
-  module's `.bss` as one block with the DS layout, a label per symbol, so that neighbours stay
-  adjacent. It also emits `kh_overlays[]` from the ROM's overlay table.
-- The game enters an overlay by calling its load address (`FSOverlayInfo.ram_address`), so each
-  entry in `kh_overlays[]` carries the function at that address. The native `FS_*Overlay*` hands
-  that out instead of a DS address.
+**Interrupts.** Hardware events set IF bits from any Vita thread: VBlank from the display loop,
+timer overflows, DMA ends, and card and ARM7 completions. They are delivered on the baton holder
+at the points where the DS could take them and the port can observe:
+- interrupts being re-enabled;
+- the idle thread's `OS_Halt`, which sleeps until something is pending;
+- code spinning on DISPSTAT or VCOUNT.
 
-## Files and the card
+Delivery follows `OS_IrqHandler`. The lowest bit goes first and IF is acknowledged. The handler
+from the DTCM vector table runs in IRQ mode (`OS_GetProcMode` reports it, so reschedules are
+deferred). Then `OSi_IrqThreadQueue` is woken and a pending reschedule is done.
 
-The NitroSDK FS library keeps working unchanged: it walks the ROM's FNT/FAT itself. Only the
-bottom of the card path (`CARD_ReadRom` and friends) is replaced with `rom_read()`, which reads
-from the dump with `sceIoPread`. Overlays are all linked in. `FS_LoadOverlay` becomes "reset
-that overlay's `.data`/`.bss` and run its static initializers", which is what loading one did on
-the DS.
+**Timers** (`platform/hw/timers.c`) run from the Vita's microsecond clock. They notice how they
+were programmed on their next access or at the next delivery point. The tick (`OS_GetTick`) reads
+the clock directly.
+
+**DTCM** is one 16 KiB block with the DS layout (`kh_ds_dtcm`): the SDK reaches its vector table,
+check word and stacks as base + offset.
+
+**Arenas** are host memory of the DS's sizes (`platform/nitro/os.c`).
+
+**DMA** (`platform/nitro/dma.c`). The MI functions perform a transfer when it is started, because
+the SDK waits on the enable bit through saved pointers. Immediate transfers copy. GX-FIFO transfers
+feed the geometry FIFO. Asynchronous ones complete like the DMA-end interrupt.
+
+## The ARM7 (platform/nitro/arm7.c)
+
+The ARM9 talks to the ARM7 only through the PXI FIFO. The port replaces `PXI_InitFifo` and
+`PXI_SendWordByFifo` and answers on the ARM7's behalf. A reply runs the tag's receive callback
+like the IPC interrupt did. Every tag reports a handler. What each tag does so far:
+- **SOUND:** walks the command lists and advances the finished-command tag. The sound engine
+  proper is still to come.
+- **RTC:** returns the Vita's local time.
+- **Touch panel, power management and NVRAM:** requests are acknowledged, and touch sampling
+  reports the front panel. The boot writes touch calibration points so that raw = pixel × 16 / 21.
+
+## Display loop (platform/hw/game.c)
+
+The Vita's main thread is the DS's display. Every Vita VBlank it:
+- writes the controls into KEYINPUT, the X/Y word and the touch sample;
+- stamps the VBlank start for VCOUNT;
+- raises the VBlank interrupt when DISPSTAT enables it;
+- presents the screens.
+
+Until the 2D engines exist, each screen shows its engine's backdrop colour under master
+brightness, which is enough to follow the game's fades.
+
+## Diagnostics
+
+The kubridge fault handler (`platform/core/fault.c`) logs every register and the run-time address
+of `main`. `tools/symbolize.py log.txt` maps them to functions and lines in the matching ELF.
+
+## Files, the card and overlays
+
+The NitroSDK FS library keeps working unchanged: it walks the ROM's FNT/FAT itself. Only
+`CARDi_ReadRom`, the single path every ROM read takes, is replaced (`platform/nitro/card.c`). It
+reads from the dump and completes asynchronous reads at the next interrupt point.
+`CARDi_ReadRomIDCore` answers with the card ID the boot left in the shared area.
+
+All overlays are linked in. `build/gen/overlays.ld` groups each overlay's sections, so the port
+knows where an overlay lives (`platform/nitro/overlay.c`):
+- `FS_LoadOverlayImage` restores the overlay's `.data` from a snapshot taken at boot and clears
+  its `.bss`.
+- `FS_StartOverlay` reports the overlay's entry function as `ram_address` (the game jumps there).
+- `FS_EndOverlay` runs the global destructors registered from inside the overlay.
 
 ## Sound
 
@@ -117,9 +164,3 @@ It runs on a `sceAudioOut` thread. The ARM7 functions are listed in the decomp's
 The game's backup (card EEPROM/flash) goes through `CARD_*Backup*`. The port keeps it in
 memory and writes it to `ux0:data/khdays/days.sav` with a temporary file and a rename. It also
 writes on suspend, from the `scePowerRegisterCallback` callback.
-
-## Diagnostics
-
-`log.txt`/`log_prev.txt`, a kubridge fault handler for invalid accesses, a watchdog that forces
-a core dump when the game thread stops advancing, and `tools/` scripts that map crash addresses
-to file and line with `addr2line` on the build's ELF.

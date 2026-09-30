@@ -32,6 +32,25 @@ REPLACED = {
     "libs/msl/c/auto/strcpy.c",
 }
 
+# Library functions (one file each, named after the function) that platform/nitro defines
+# natively because their DS versions drive hardware or return DS addresses.
+REPLACED_FUNCS = {
+    # os.c: arenas in host memory, the tick from the Vita's clock
+    "OS_GetInitArenaLo", "OS_GetInitArenaHi", "OS_InitTick", "OS_GetTick", "OS_GetTickLo",
+    # cpu.c: IF is write-1-to-clear
+    "OS_ResetRequestIrqMask",
+    # arm7.c: the PXI FIFO goes to the port's ARM7
+    "PXI_InitFifo", "PXI_SendWordByFifo",
+    # card.c: ROM reads from the dump
+    "CARDi_ReadRom", "CARDi_ReadRomIDCore",
+    # dma.c: transfers happen when they are started
+    "MI_DmaCopy16", "MI_DmaCopy32", "MI_DmaCopy32Async", "MI_DmaFill32", "MI_DmaFill32Async",
+    "MI_SendGXCommandAsync", "MI_SendGXCommandAsyncFast", "MIi_CardDmaCopy32", "MI_StopDma",
+    "MI_WaitDma", "MIi_DmaSetParams", "MIi_DmaSetChannelRegs", "func_01ff85d0", "func_01ff8664",
+    # overlay.c: overlays are resident; loading resets their state
+    "FS_LoadOverlayImage", "FS_StartOverlay", "FS_EndOverlay", "FS_ClearOverlayImage",
+}
+
 
 def game_sources(decomp: Path):
     """(path, kind) with kind "c", "cpp" or "s"."""
@@ -49,6 +68,8 @@ def game_sources(decomp: Path):
                 if "/portable/" in rel:
                     continue
                 if rel in REPLACED:
+                    continue
+                if rel.startswith("libs/") and p.stem in REPLACED_FUNCS:
                     continue
                 srcs.append((p, kind))
     return srcs
