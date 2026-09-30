@@ -55,10 +55,14 @@ vdpm install vitaShaRK libmathneon kubridge taihen SceShaccCgExt
 # port shell only
 python3 configure_vita.py && ninja
 
-# with the game code (work in progress)
+# with the game code (work in progress: links, does not run yet)
 ./setup.sh                      # decomp at DECOMP_COMMIT + patches/decomp.patch -> build/decomp
-python3 configure_vita.py --with-game && ninja
+python3 tools/rewrite_decomp.py # mechanical PLATFORM_VITA rewrites (idempotent)
+python3 configure_vita.py --with-game --rom ../days.nds && ninja
 ```
+
+`--rom` (default `../days.nds`, or `$KH_ROM`) is read at configure time for the overlay table
+only: load addresses, resolved to function names. No ROM bytes go into the build from it.
 
 The VPK version comes from `VERSION`. Bump it for every build you put on the console.
 

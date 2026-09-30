@@ -1,18 +1,22 @@
 """Which of the decomp's sources the Vita build compiles.
 
-Everything under src/ and libs/ is game or library C and is compiled, except:
+Everything under src/ and libs/ is game or library code and is compiled: C, the MobiClip
+player's C++ (ov024), and the assembly already in GNU syntax (`.s`: the CodeWarrior runtime's
+division helpers, MobiClip's audio transform and its hand-written ARM kept as data). Except:
 
-- the libraries' own assembly (`asm_stubs/`): CodeWarrior `asm` functions for BIOS calls, the
-  boot code, cache and CP15 maintenance. platform/nitro provides native versions;
+- CodeWarrior-syntax assembly (`asm_stubs/*.c`): BIOS calls, boot code, cache and CP15
+  maintenance, interrupt state, the MI copy/fill primitives. platform/nitro/asm_replacements.c
+  provides native versions;
 - DS Protect (ov028): the cartridge anti-tamper checks, meaningless off a DS card. The port
   reports "genuine" to its callers;
 - REPLACED: library functions that drive hardware with side effects (GX FIFO, DMA, divider,
   interrupts, card). platform/nitro defines them instead.
 
 First trial compile (decomp 497f599a9, GCC 15.2, GAME_CFLAGS): 24,610 files, 130 failures. 98
-are asm_stubs and 4 are DS Protect. The other 28 need a PLATFORM_VITA change in the decomp patch:
-CodeWarrior inline `asm { clz }` (5) and cache flush (1), `static` after an `extern`
-declaration (18), CodeWarrior's cast-as-lvalue `((u8 *)p)++` (3), assignment to an array (1).
+are asm_stubs and 4 are DS Protect. Of the other 28, MSL's strcmp/strcpy are replaced by newlib's
+and 26 are fixed under PLATFORM_VITA in patches/decomp.patch: CodeWarrior inline `asm { clz }` (5)
+and cache flush (1), `static` after an `extern` declaration (18), CodeWarrior's cast-as-lvalue
+`((T *)p)++` (1), assignment through an array type (1).
 """
 from pathlib import Path
 
@@ -22,17 +26,40 @@ EXCLUDED_DIRS = (
 )
 
 # Paths relative to the decomp root. Grows as platform/nitro takes functions over.
-REPLACED = set()
+REPLACED = {
+    # MSL's word-at-a-time string routines use CodeWarrior's cast-as-lvalue; newlib has them
+    "libs/msl/c/auto/strcmp.c",
+    "libs/msl/c/auto/strcpy.c",
+}
 
 
 def game_sources(decomp: Path):
+    """(path, kind) with kind "c", "cpp" or "s"."""
     srcs = []
     for top in ("src", "libs"):
-        for p in sorted((decomp / top).rglob("*.c")):
-            rel = p.relative_to(decomp).as_posix()
-            if any(f"/{d}/" in f"/{rel}" for d in EXCLUDED_DIRS):
-                continue
-            if rel in REPLACED:
-                continue
-            srcs.append(p)
+        for ext, kind in (("c", "c"), ("cpp", "cpp"), ("s", "s")):
+            for p in sorted((decomp / top).rglob(f"*.{ext}")):
+                rel = p.relative_to(decomp).as_posix()
+                # .s under asm_stubs is GNU syntax and stays; only CodeWarrior .c asm goes
+                if kind != "s" and any(f"/{d}/" in f"/{rel}" for d in EXCLUDED_DIRS):
+                    continue
+                if kind == "s" and "ov028_dsprotect" in rel:
+                    continue
+                # the portable MobiClip decoder is a host model of the payload, not DS code
+                if "/portable/" in rel:
+                    continue
+                if rel in REPLACED:
+                    continue
+                srcs.append((p, kind))
     return srcs
+
+
+def module_of(rel):
+    """Archive a source is linked from: src/engine -> main, src/overlays/<kind>/ovNNN_x ->
+    ovNNN_x, libs/<vendor>/<module> -> <vendor>_<module>."""
+    parts = Path(rel).parts
+    if parts[0] == "src" and parts[1] == "engine":
+        return "main"
+    if parts[0] == "src" and parts[1] == "overlays":
+        return parts[3]
+    return f"{parts[1]}_{parts[2]}"

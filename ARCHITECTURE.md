@@ -75,6 +75,20 @@ The DS main loop waits for VBlank (`OS_WaitVBlankIntr`). The port runs the game 
 presents the frame. NitroSDK threads (`OS_CreateThread`, used by the file loader and sound)
 become Vita threads with the same priorities mapped onto the Vita's range.
 
+## Linking the game
+
+- Game objects are archived per module (main, each overlay, each library) and linked with
+  `--whole-archive`; `--gc-sections` then drops what nothing reaches.
+- Some variables are defined in two sources (the function that uses one and the `data/` file
+  for its address). dsd's `delinks.txt` says which file each section comes from, and
+  `tools/weaken_unowned.py` applies the same rule by making the other copies weak.
+- Most `.bss` exists in the decomp only as addresses. `tools/gen_link_support.py` emits each
+  module's `.bss` as one block with the DS layout, a label per symbol, so that neighbours stay
+  adjacent. It also emits `kh_overlays[]` from the ROM's overlay table.
+- The game enters an overlay by calling its load address (`FSOverlayInfo.ram_address`), so each
+  entry in `kh_overlays[]` carries the function at that address. The native `FS_*Overlay*` hands
+  that out instead of a DS address.
+
 ## Files and the card
 
 The NitroSDK FS library keeps working unchanged: it walks the ROM's FNT/FAT itself. Only the

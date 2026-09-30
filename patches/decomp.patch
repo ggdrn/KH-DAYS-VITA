@@ -1,0 +1,1077 @@
+diff --git a/libs/nitro/os/calls/DC_FlushRange.c b/libs/nitro/os/calls/DC_FlushRange.c
+index fa3431be2..121871b9a 100644
+--- a/libs/nitro/os/calls/DC_FlushRange.c
++++ b/libs/nitro/os/calls/DC_FlushRange.c
+@@ -9,12 +9,20 @@
+  * in MsgQueue_Contains.c / MsgQueue_ResendForPeer.c.
+  */
+ 
++#ifndef PLATFORM_VITA
+ static inline void ZeroIp(void) { asm { mov ip, #0 } }
+ static inline void DrainWriteBuffer(void) { asm { mcr p15, 0, ip, c7, c10, 4 } }
+ static inline void CleanAndInvalidateDCacheLine(void *addr) { asm { mcr p15, 0, addr, c7, c14, 1 } }
+ 
++#endif
++
+ void DC_FlushRange(void *address, unsigned int size)
+ {
++#ifdef PLATFORM_VITA
++    /* no DMA engine reads RAM behind the CPU's back on the port: nothing to flush */
++    (void)address;
++    (void)size;
++#else
+     int end;
+     void *line;
+ 
+@@ -26,4 +34,5 @@ void DC_FlushRange(void *address, unsigned int size)
+         CleanAndInvalidateDCacheLine(line);
+         line = (char *)line + 0x20;
+     } while ((int)line < end);
++#endif
+ }
+diff --git a/libs/nitro/os/calls/OS_GetInitArenaHi.c b/libs/nitro/os/calls/OS_GetInitArenaHi.c
+index f5da0fd10..efefbacac 100644
+--- a/libs/nitro/os/calls/OS_GetInitArenaHi.c
++++ b/libs/nitro/os/calls/OS_GetInitArenaHi.c
+@@ -16,9 +16,21 @@ enum { OS_ARENA_MAIN = 0, OS_ARENA_MAIN_SUBPRIV, OS_ARENA_MAINEX, OS_ARENA_ITCM,
+ /* Link-time constants of the SDK build (linker-absolute symbols, declared in tools/configure.py
+  * ABSOLUTE_SYMBOLS with the ROM's values: SDK_SYS_STACKSIZE 0, SDK_IRQ_STACKSIZE 0x800,
+  * SDK_SECTION_ARENA_DTCM_START 0x027e0e60): the code must keep testing them at run time. */
++#ifdef PLATFORM_VITA
++#define SDK_SYS_STACKSIZE ((void (*)(void))0x0) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern void SDK_SYS_STACKSIZE(void);
++#endif
++#ifdef PLATFORM_VITA
++#define SDK_IRQ_STACKSIZE ((void (*)(void))0x800) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern void SDK_IRQ_STACKSIZE(void);
++#endif
++#ifdef PLATFORM_VITA
++#define SDK_SECTION_ARENA_DTCM_START ((void (*)(void))0x27e0e60) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern void SDK_SECTION_ARENA_DTCM_START(void);
++#endif
+ #define OSi_SYS_STACKSIZE ((s32)SDK_SYS_STACKSIZE)
+ #define OSi_IRQ_STACKSIZE ((s32)SDK_IRQ_STACKSIZE)
+ #define OSi_MAIN_ARENA_HI_DEFAULT   HW_MAIN_MEM_MAIN_END
+diff --git a/libs/nitro/os/calls/OS_GetMacAddress.c b/libs/nitro/os/calls/OS_GetMacAddress.c
+index b8a7d115f..78e9584a2 100644
+--- a/libs/nitro/os/calls/OS_GetMacAddress.c
++++ b/libs/nitro/os/calls/OS_GetMacAddress.c
+@@ -16,9 +16,21 @@ enum { OS_ARENA_MAIN = 0, OS_ARENA_MAIN_SUBPRIV, OS_ARENA_MAINEX, OS_ARENA_ITCM,
+ /* Link-time constants of the SDK build (linker-absolute symbols, declared in tools/configure.py
+  * ABSOLUTE_SYMBOLS with the ROM's values: SDK_SYS_STACKSIZE 0, SDK_IRQ_STACKSIZE 0x800,
+  * SDK_SECTION_ARENA_DTCM_START 0x027e0e60): the code must keep testing them at run time. */
++#ifdef PLATFORM_VITA
++#define SDK_SYS_STACKSIZE ((void (*)(void))0x0) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern void SDK_SYS_STACKSIZE(void);
++#endif
++#ifdef PLATFORM_VITA
++#define SDK_IRQ_STACKSIZE ((void (*)(void))0x800) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern void SDK_IRQ_STACKSIZE(void);
++#endif
++#ifdef PLATFORM_VITA
++#define SDK_SECTION_ARENA_DTCM_START ((void (*)(void))0x27e0e60) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern void SDK_SECTION_ARENA_DTCM_START(void);
++#endif
+ #define OSi_SYS_STACKSIZE ((s32)SDK_SYS_STACKSIZE)
+ #define OSi_IRQ_STACKSIZE ((s32)SDK_IRQ_STACKSIZE)
+ #define OSi_MAIN_ARENA_HI_DEFAULT   HW_MAIN_MEM_MAIN_END
+diff --git a/libs/nitro/os/calls/OS_InitThread.c b/libs/nitro/os/calls/OS_InitThread.c
+index bd269d3bf..9a7811529 100644
+--- a/libs/nitro/os/calls/OS_InitThread.c
++++ b/libs/nitro/os/calls/OS_InitThread.c
+@@ -16,9 +16,21 @@ enum { OS_ARENA_MAIN = 0, OS_ARENA_MAIN_SUBPRIV, OS_ARENA_MAINEX, OS_ARENA_ITCM,
+ /* Link-time constants of the SDK build (linker-absolute symbols, declared in tools/configure.py
+  * ABSOLUTE_SYMBOLS with the ROM's values: SDK_SYS_STACKSIZE 0, SDK_IRQ_STACKSIZE 0x800,
+  * SDK_SECTION_ARENA_DTCM_START 0x027e0e60): the code must keep testing them at run time. */
++#ifdef PLATFORM_VITA
++#define SDK_SYS_STACKSIZE ((void (*)(void))0x0) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern void SDK_SYS_STACKSIZE(void);
++#endif
++#ifdef PLATFORM_VITA
++#define SDK_IRQ_STACKSIZE ((void (*)(void))0x800) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern void SDK_IRQ_STACKSIZE(void);
++#endif
++#ifdef PLATFORM_VITA
++#define SDK_SECTION_ARENA_DTCM_START ((void (*)(void))0x27e0e60) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern void SDK_SECTION_ARENA_DTCM_START(void);
++#endif
+ #define OSi_SYS_STACKSIZE ((s32)SDK_SYS_STACKSIZE)
+ #define OSi_IRQ_STACKSIZE ((s32)SDK_IRQ_STACKSIZE)
+ #define OSi_MAIN_ARENA_HI_DEFAULT   HW_MAIN_MEM_MAIN_END
+diff --git a/libs/nitro/os/calls/OSi_InitStackChecker.c b/libs/nitro/os/calls/OSi_InitStackChecker.c
+index d65765f5b..15a0fd22b 100644
+--- a/libs/nitro/os/calls/OSi_InitStackChecker.c
++++ b/libs/nitro/os/calls/OSi_InitStackChecker.c
+@@ -5,7 +5,11 @@
+ #include "nitro/types.h"
+ 
+ extern unsigned char data_027e0000[];          /* SDK_AUTOLOAD_DTCM_START */
++#ifdef PLATFORM_VITA
++#define SDK_IRQ_STACKSIZE ((void (*)(void))0x800) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern void SDK_IRQ_STACKSIZE(void);           /* linker-defined: 0x800 */
++#endif
+ 
+ #define HW_DTCM_IRQ_STACK_END           ((u32)data_027e0000 + 0x3f80)
+ #define OSi_IRQ_STACK_BOTTOM            HW_DTCM_IRQ_STACK_END
+diff --git a/libs/nns/g2d/auto/NNS_G2dInitImagePaletteProxy.c b/libs/nns/g2d/auto/NNS_G2dInitImagePaletteProxy.c
+index bca72892b..4ba3333e5 100644
+--- a/libs/nns/g2d/auto/NNS_G2dInitImagePaletteProxy.c
++++ b/libs/nns/g2d/auto/NNS_G2dInitImagePaletteProxy.c
+@@ -4,7 +4,9 @@
+ #include "nitro/os.h"
+ #include "nnsys/g2d.h"
+ 
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern void InitializeVRamLocation_(NNSG2dVRamLocation * pVramLocation);
++#endif
+ static inline void InitializeVRamLocation_ (NNSG2dVRamLocation * pVramLocation)
+ {
+     int i;
+diff --git a/libs/nns/g2d/auto/NNS_G2dInitImageProxy.c b/libs/nns/g2d/auto/NNS_G2dInitImageProxy.c
+index 9b5509142..b0c03bcb8 100644
+--- a/libs/nns/g2d/auto/NNS_G2dInitImageProxy.c
++++ b/libs/nns/g2d/auto/NNS_G2dInitImageProxy.c
+@@ -66,7 +66,9 @@ typedef struct NNSG2dImageProxy {
+     NNSG2dVRamLocation vramLocation;
+     NNSG2dImageAttr attr;
+ } NNSG2dImageProxy;
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern void InitializeVRamLocation_(NNSG2dVRamLocation * pVramLocation);
++#endif
+ static inline void InitializeVRamLocation_ (NNSG2dVRamLocation * pVramLocation)
+ {
+     int i;
+diff --git a/libs/nns/g2d/calls/NNS_G2dLoadImage1DMapping.c b/libs/nns/g2d/calls/NNS_G2dLoadImage1DMapping.c
+index 87906a3e7..52560003f 100644
+--- a/libs/nns/g2d/calls/NNS_G2dLoadImage1DMapping.c
++++ b/libs/nns/g2d/calls/NNS_G2dLoadImage1DMapping.c
+@@ -49,8 +49,12 @@ typedef enum {
+     GX_OBJVRAMMODE_CHAR_1D_128K = (1 << 4 ) | (2 << 20 ),
+     GX_OBJVRAMMODE_CHAR_1D_256K = (1 << 4 ) | (3 << 20 )
+ } GXOBJVRamModeChar;
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern void GX_SetOBJVRamModeChar(GXOBJVRamModeChar mode);
++#endif
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern void GXS_SetOBJVRamModeChar(GXOBJVRamModeChar mode);
++#endif
+ static inline void GX_SetOBJVRamModeChar (GXOBJVRamModeChar mode)
+ {
+     (*( REGType32v *) (0x04000000 + 0x000)) = (u32)((*( REGType32v *) (0x04000000 + 0x000)) &
+diff --git a/libs/nns/g3d/auto/NNSi_G3dAnmCalcNsBva.c b/libs/nns/g3d/auto/NNSi_G3dAnmCalcNsBva.c
+index aa05611bf..f074b770c 100644
+--- a/libs/nns/g3d/auto/NNSi_G3dAnmCalcNsBva.c
++++ b/libs/nns/g3d/auto/NNSi_G3dAnmCalcNsBva.c
+@@ -10,7 +10,9 @@
+ #include "nitro/wm.h"
+ #include "nnsys/g3d.h"
+ 
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern s32 FX_Whole(fx32 v);
++#endif
+ static inline s32 FX_Whole (fx32 v)
+     {
+         return (s32)(v >> 12 );
+diff --git a/libs/nns/g3d/auto/getTransDataEx_.c b/libs/nns/g3d/auto/getTransDataEx_.c
+index 195b23851..61ac91f88 100644
+--- a/libs/nns/g3d/auto/getTransDataEx_.c
++++ b/libs/nns/g3d/auto/getTransDataEx_.c
+@@ -4,7 +4,9 @@
+ #include "nitro/fx.h"
+ #include "nitro/os.h"
+ 
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern s32 FX_Whole(fx32 v);
++#endif
+ static inline s32 FX_Whole (fx32 v)
+     {
+         return (s32)(v >> 12 );
+diff --git a/libs/nns/g3d/auto/getTransData_.c b/libs/nns/g3d/auto/getTransData_.c
+index 030d5f375..7fa807eee 100644
+--- a/libs/nns/g3d/auto/getTransData_.c
++++ b/libs/nns/g3d/auto/getTransData_.c
+@@ -4,7 +4,9 @@
+ #include "nitro/fx_types.h"
+ #include "nitro/os.h"
+ 
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern s32 FX_Whole(fx32 v);
++#endif
+ static inline s32 FX_Whole (fx32 v)
+     {
+         return (s32)(v >> 12 );
+diff --git a/libs/nns/g3d/calls/NNS_G3dGetCurrentMtx.c b/libs/nns/g3d/calls/NNS_G3dGetCurrentMtx.c
+index e04975e75..a741cab5e 100644
+--- a/libs/nns/g3d/calls/NNS_G3dGetCurrentMtx.c
++++ b/libs/nns/g3d/calls/NNS_G3dGetCurrentMtx.c
+@@ -38,10 +38,18 @@ typedef union {
+     } MtxFx33;
+ int G3X_GetClipMtx(MtxFx44 * m);
+ int G3X_GetVectorMtx(MtxFx33 * m);
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern void G3_MtxMode(GXMtxMode mode);
++#endif
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern void G3_PushMtx(void);
++#endif
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern void G3_PopMtx(int num);
++#endif
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern void G3_Identity(void);
++#endif
+ static inline void G3_MtxMode (GXMtxMode mode)
+ {
+     (*( REGType32v *) (0x04000000 + 0x440)) = ((u32) ((mode) << 0)) ;
+@@ -58,7 +66,9 @@ static inline void G3_Identity ()
+ {
+     (*( REGType32v *) (0x04000000 + 0x454)) = 0;
+ }
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern void MTX_Copy44To43(const MtxFx44 * pSrc, MtxFx43 * pDst);
++#endif
+ void MTX_Copy44To43_(register const MtxFx44 * pSrc, register MtxFx43 * pDst);
+ static inline void MTX_Copy44To43 (const MtxFx44 * pSrc, MtxFx43 * pDst)
+ {
+diff --git a/libs/nns/g3d/calls/NNS_G3dInit.c b/libs/nns/g3d/calls/NNS_G3dInit.c
+index bec5beecf..6da752aa7 100644
+--- a/libs/nns/g3d/calls/NNS_G3dInit.c
++++ b/libs/nns/g3d/calls/NNS_G3dInit.c
+@@ -7,7 +7,9 @@
+ #define offsetof(type, member) ((u32)&(((type *)0)->member))
+ 
+ void G3X_Init(void);
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern void G3X_SetFifoIntrCond(GXFifoIntrCond cond);
++#endif
+ static inline void G3X_SetFifoIntrCond (GXFifoIntrCond cond)
+ {
+     (*( REGType32v *) (0x04000000 + 0x600)) = (((*( REGType32v *) (0x04000000 + 0x600)) & ~0xc0000000 ) |
+diff --git a/libs/nns/g3d/calls/NNSi_G3dAnmCalcNsBma.c b/libs/nns/g3d/calls/NNSi_G3dAnmCalcNsBma.c
+index aa4c0bafb..26a3ff76d 100644
+--- a/libs/nns/g3d/calls/NNSi_G3dAnmCalcNsBma.c
++++ b/libs/nns/g3d/calls/NNSi_G3dAnmCalcNsBma.c
+@@ -6,7 +6,9 @@
+ #include "nitro/pxi.h"
+ #include "nnsys/g3d.h"
+ 
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern s32 FX_Whole(fx32 v);
++#endif
+ static inline s32 FX_Whole (fx32 v)
+     {
+         return (s32)(v >> 12 );
+diff --git a/libs/nns/g3d/calls/NNSi_G3dAnmCalcNsBta.c b/libs/nns/g3d/calls/NNSi_G3dAnmCalcNsBta.c
+index ff91df830..89daefa91 100644
+--- a/libs/nns/g3d/calls/NNSi_G3dAnmCalcNsBta.c
++++ b/libs/nns/g3d/calls/NNSi_G3dAnmCalcNsBta.c
+@@ -5,7 +5,9 @@
+ #include "nitro/os.h"
+ #include "nnsys/g3d.h"
+ 
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern s32 FX_Whole(fx32 v);
++#endif
+ static inline s32 FX_Whole (fx32 v)
+     {
+         return (s32)(v >> 12 );
+diff --git a/libs/nns/g3d/calls/NNSi_G3dAnmCalcNsBtp.c b/libs/nns/g3d/calls/NNSi_G3dAnmCalcNsBtp.c
+index d6dc91b64..51201b7f4 100644
+--- a/libs/nns/g3d/calls/NNSi_G3dAnmCalcNsBtp.c
++++ b/libs/nns/g3d/calls/NNSi_G3dAnmCalcNsBtp.c
+@@ -5,7 +5,9 @@
+ #include "nitro/os.h"
+ #include "nnsys/g3d.h"
+ 
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern s32 FX_Whole(fx32 v);
++#endif
+ static inline s32 FX_Whole (fx32 v)
+     {
+         return (s32)(v >> 12 );
+diff --git a/libs/nns/snd/calls/NNS_SndArcGetBankInfo.c b/libs/nns/snd/calls/NNS_SndArcGetBankInfo.c
+index 5fc8c8039..827ac91cc 100644
+--- a/libs/nns/snd/calls/NNS_SndArcGetBankInfo.c
++++ b/libs/nns/snd/calls/NNS_SndArcGetBankInfo.c
+@@ -4,8 +4,12 @@
+ #include "nitro/os_types.h"
+ #include "nnsys/snd.h"
+ 
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern const void * GetPtrConst(const void * base, u32 offset);
++#endif
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern const NNSSndArcOffsetTable * GetOffsetTable(const NNSSndArcInfo * info, u32 offset);
++#endif
+ static inline
+ const void * GetPtrConst (const void * base, u32 offset)
+ {
+diff --git a/libs/nns/snd/calls/NNS_SndArcGetPlayerInfo.c b/libs/nns/snd/calls/NNS_SndArcGetPlayerInfo.c
+index 70ace693c..672bd40dd 100644
+--- a/libs/nns/snd/calls/NNS_SndArcGetPlayerInfo.c
++++ b/libs/nns/snd/calls/NNS_SndArcGetPlayerInfo.c
+@@ -4,8 +4,12 @@
+ #include "nitro/os_types.h"
+ #include "nnsys/snd.h"
+ 
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern const void * GetPtrConst(const void * base, u32 offset);
++#endif
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern const NNSSndArcOffsetTable * GetOffsetTable(const NNSSndArcInfo * info, u32 offset);
++#endif
+ static inline
+ const void * GetPtrConst (const void * base, u32 offset)
+ {
+diff --git a/libs/nns/snd/calls/NNS_SndArcGetSeqArcInfo.c b/libs/nns/snd/calls/NNS_SndArcGetSeqArcInfo.c
+index 9175415ec..76b6cea91 100644
+--- a/libs/nns/snd/calls/NNS_SndArcGetSeqArcInfo.c
++++ b/libs/nns/snd/calls/NNS_SndArcGetSeqArcInfo.c
+@@ -4,8 +4,12 @@
+ #include "nitro/os_types.h"
+ #include "nnsys/snd.h"
+ 
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern const void * GetPtrConst(const void * base, u32 offset);
++#endif
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern const NNSSndArcOffsetTable * GetOffsetTable(const NNSSndArcInfo * info, u32 offset);
++#endif
+ static inline
+ const void * GetPtrConst (const void * base, u32 offset)
+ {
+diff --git a/libs/nns/snd/calls/NNS_SndArcGetSeqInfo.c b/libs/nns/snd/calls/NNS_SndArcGetSeqInfo.c
+index f4222541d..4c79859d2 100644
+--- a/libs/nns/snd/calls/NNS_SndArcGetSeqInfo.c
++++ b/libs/nns/snd/calls/NNS_SndArcGetSeqInfo.c
+@@ -4,8 +4,12 @@
+ #include "nitro/os_types.h"
+ #include "nnsys/snd.h"
+ 
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern const void * GetPtrConst(const void * base, u32 offset);
++#endif
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern const NNSSndArcOffsetTable * GetOffsetTable(const NNSSndArcInfo * info, u32 offset);
++#endif
+ static inline
+ const void * GetPtrConst (const void * base, u32 offset)
+ {
+diff --git a/libs/nns/snd/calls/NNS_SndArcGetStrmInfo.c b/libs/nns/snd/calls/NNS_SndArcGetStrmInfo.c
+index 2ba10a2f1..797ca112f 100644
+--- a/libs/nns/snd/calls/NNS_SndArcGetStrmInfo.c
++++ b/libs/nns/snd/calls/NNS_SndArcGetStrmInfo.c
+@@ -4,8 +4,12 @@
+ #include "nitro/os_types.h"
+ #include "nnsys/snd.h"
+ 
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern const void * GetPtrConst(const void * base, u32 offset);
++#endif
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern const NNSSndArcOffsetTable * GetOffsetTable(const NNSSndArcInfo * info, u32 offset);
++#endif
+ static inline
+ const void * GetPtrConst (const void * base, u32 offset)
+ {
+diff --git a/libs/nns/snd/calls/NNS_SndArcGetStrmPlayerInfo.c b/libs/nns/snd/calls/NNS_SndArcGetStrmPlayerInfo.c
+index 40d5895bc..67d7eecda 100644
+--- a/libs/nns/snd/calls/NNS_SndArcGetStrmPlayerInfo.c
++++ b/libs/nns/snd/calls/NNS_SndArcGetStrmPlayerInfo.c
+@@ -4,8 +4,12 @@
+ #include "nitro/os_types.h"
+ #include "nnsys/snd.h"
+ 
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern const void * GetPtrConst(const void * base, u32 offset);
++#endif
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern const NNSSndArcOffsetTable * GetOffsetTable(const NNSSndArcInfo * info, u32 offset);
++#endif
+ static inline
+ const void * GetPtrConst (const void * base, u32 offset)
+ {
+diff --git a/libs/nns/snd/calls/NNS_SndArcGetWaveArcInfo.c b/libs/nns/snd/calls/NNS_SndArcGetWaveArcInfo.c
+index c8d1bf7c5..f4b9b59d3 100644
+--- a/libs/nns/snd/calls/NNS_SndArcGetWaveArcInfo.c
++++ b/libs/nns/snd/calls/NNS_SndArcGetWaveArcInfo.c
+@@ -4,8 +4,12 @@
+ #include "nitro/os_types.h"
+ #include "nnsys/snd.h"
+ 
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern const void * GetPtrConst(const void * base, u32 offset);
++#endif
++#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
+ extern const NNSSndArcOffsetTable * GetOffsetTable(const NNSSndArcInfo * info, u32 offset);
++#endif
+ static inline
+ const void * GetPtrConst (const void * base, u32 offset)
+ {
+diff --git a/libs/nns/snd/calls/NNSi_SndArcStrm_MakeWaveData.c b/libs/nns/snd/calls/NNSi_SndArcStrm_MakeWaveData.c
+index f1befb352..3b28cdb6b 100644
+--- a/libs/nns/snd/calls/NNSi_SndArcStrm_MakeWaveData.c
++++ b/libs/nns/snd/calls/NNSi_SndArcStrm_MakeWaveData.c
+@@ -533,7 +533,12 @@ void NNSi_SndArcStrm_MakeWaveData (LoadCommand * command)
+                     u32 end;
+ 
+                     if (blockOffsetSample == 0) {
++#ifdef PLATFORM_VITA
++                        *state = *(AdpcmState *)srcp;
++                        srcp = (void *)((AdpcmState *)srcp + 1);
++#else
+                         *state = *((AdpcmState *)srcp)++;
++#endif
+                     }
+ 
+                     end = blockOffsetSample + samples;
+diff --git a/src/engine/LoadActorOverlay.c b/src/engine/LoadActorOverlay.c
+index ed25e0ad7..1250af5d1 100644
+--- a/src/engine/LoadActorOverlay.c
++++ b/src/engine/LoadActorOverlay.c
+@@ -7,7 +7,11 @@ typedef u32 FSOverlayID;
+  * idiom, which dsd emits into arm9.lcf as `OVERLAY_107_ID = 107;`. Spelled as the plain
+  * integer 107 the pool word disappears and the function comes out 4 bytes short, even
+  * though 107 is perfectly encodable as an ARM immediate. */
++#ifdef PLATFORM_VITA
++#define OVERLAY_107_ID (*(u32 (*)[1])0x6b) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_107_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov107 ((FSOverlayID)(u32) & (OVERLAY_107_ID))
+ 
+ void LoadActorOverlay(void)
+diff --git a/src/engine/MsgQueue_Contains.c b/src/engine/MsgQueue_Contains.c
+index 1ef3cf5be..446e295ad 100644
+--- a/src/engine/MsgQueue_Contains.c
++++ b/src/engine/MsgQueue_Contains.c
+@@ -15,7 +15,11 @@
+  * asm helper -- the minimal primitive needed for the byte-exact match.
+  */
+ 
++#ifdef PLATFORM_VITA
++static inline unsigned int Clz(unsigned int x) { __asm__("clz %0, %1" : "=r"(x) : "r"(x)); return x; }
++#else
+ static inline unsigned int Clz(unsigned int x) { asm { clz x, x } return x; }
++#endif
+ 
+ extern int *data_0204c230;
+ 
+diff --git a/src/engine/MsgQueue_Post.c b/src/engine/MsgQueue_Post.c
+index b9321fb56..c6ed1755e 100644
+--- a/src/engine/MsgQueue_Post.c
++++ b/src/engine/MsgQueue_Post.c
+@@ -19,7 +19,11 @@
+  * as in the sibling MsgQueue_Contains.c.
+  */
+ 
++#ifdef PLATFORM_VITA
++static inline unsigned int Clz(unsigned int x) { __asm__("clz %0, %1" : "=r"(x) : "r"(x)); return x; }
++#else
+ static inline unsigned int Clz(unsigned int x) { asm { clz x, x } return x; }
++#endif
+ 
+ extern char *data_0204c230;
+ extern void MI_CpuCopy8(const void *src, void *dst, unsigned int size);
+diff --git a/src/engine/MsgQueue_ResendForPeer.c b/src/engine/MsgQueue_ResendForPeer.c
+index 65b5573aa..5ecb294d1 100644
+--- a/src/engine/MsgQueue_ResendForPeer.c
++++ b/src/engine/MsgQueue_ResendForPeer.c
+@@ -18,7 +18,11 @@
+ 
+ #include "game/engine.h"
+ 
++#ifdef PLATFORM_VITA
++static inline unsigned int Clz(unsigned int x) { __asm__("clz %0, %1" : "=r"(x) : "r"(x)); return x; }
++#else
+ static inline unsigned int Clz(unsigned int x) { asm { clz x, x } return x; }
++#endif
+ 
+ extern int *data_0204c230;
+ 
+diff --git a/src/engine/Overlay105_Load.c b/src/engine/Overlay105_Load.c
+index 2e48c97f4..f01d7fa00 100644
+--- a/src/engine/Overlay105_Load.c
++++ b/src/engine/Overlay105_Load.c
+@@ -14,7 +14,11 @@
+ 
+ typedef u32 FSOverlayID;
+ 
++#ifdef PLATFORM_VITA
++#define OVERLAY_105_ID (*(u32 (*)[1])0x69) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_105_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov105 ((FSOverlayID)(u32) & (OVERLAY_105_ID))
+ 
+ extern s8 data_027e0060;
+diff --git a/src/engine/Overlay105_Release.c b/src/engine/Overlay105_Release.c
+index 6551af634..5936ff675 100644
+--- a/src/engine/Overlay105_Release.c
++++ b/src/engine/Overlay105_Release.c
+@@ -9,7 +9,11 @@
+ 
+ typedef u32 FSOverlayID;
+ 
++#ifdef PLATFORM_VITA
++#define OVERLAY_105_ID (*(u32 (*)[1])0x69) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_105_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov105 ((FSOverlayID)(u32) & (OVERLAY_105_ID))
+ 
+ extern s8 data_027e0060;
+diff --git a/src/engine/UnloadActorOverlay.c b/src/engine/UnloadActorOverlay.c
+index 937fb230a..7470a129b 100644
+--- a/src/engine/UnloadActorOverlay.c
++++ b/src/engine/UnloadActorOverlay.c
+@@ -5,7 +5,11 @@
+ 
+ typedef u32 FSOverlayID;
+ 
++#ifdef PLATFORM_VITA
++#define OVERLAY_107_ID (*(u32 (*)[1])0x6b) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_107_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov107 ((FSOverlayID)(u32) & (OVERLAY_107_ID))
+ 
+ void UnloadActorOverlay(void) {
+diff --git a/src/engine/main.c b/src/engine/main.c
+index abea507c3..7ca01325a 100644
+--- a/src/engine/main.c
++++ b/src/engine/main.c
+@@ -29,7 +29,11 @@
+ 
+ typedef u32 FSOverlayID;
+ 
++#ifdef PLATFORM_VITA
++#define OVERLAY_1_ID (*(u32 (*)[1])0x1) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_1_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov001 ((FSOverlayID)(u32)&OVERLAY_1_ID)
+ 
+ /* ---- core services / overlays ---- */
+diff --git a/src/overlays/enemies/ov252_enemy_4c/Ov252_PlaceBodyParts.c b/src/overlays/enemies/ov252_enemy_4c/Ov252_PlaceBodyParts.c
+index e201c905f..dd031b5c8 100644
+--- a/src/overlays/enemies/ov252_enemy_4c/Ov252_PlaceBodyParts.c
++++ b/src/overlays/enemies/ov252_enemy_4c/Ov252_PlaceBodyParts.c
+@@ -176,7 +176,11 @@ void Ov252_PlaceBodyParts(Ov252Boss *self)
+             break;
+         }
+     }
++#ifdef PLATFORM_VITA
++    __builtin_memcpy((void *)(self->pStateDst + 4), (const void *)self->aState, sizeof(int[4]));
++#else
+     *(int (*)[4])(self->pStateDst + 4) = *(int (*)[4])self->aState;
++#endif
+     if (self->nPhase != 5) {
+         self->nPhaseTimer = 0;
+     }
+diff --git a/src/overlays/field/ov022_battle/Ov022_EndKeySharingSession.c b/src/overlays/field/ov022_battle/Ov022_EndKeySharingSession.c
+index 489f7c75e..0d011b961 100644
+--- a/src/overlays/field/ov022_battle/Ov022_EndKeySharingSession.c
++++ b/src/overlays/field/ov022_battle/Ov022_EndKeySharingSession.c
+@@ -16,7 +16,11 @@
+ typedef u32 FSOverlayID;
+ 
+ /* FS_EXTERN_OVERLAY(ov106) -- dsd names the absolute symbol OVERLAY_106_ID. */
++#ifdef PLATFORM_VITA
++#define OVERLAY_106_ID (*(u32 (*)[1])0x6a) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_106_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov106 ((FSOverlayID)(u32) & (OVERLAY_106_ID))
+ 
+ extern void func_02023ad0(int handle);
+diff --git a/src/overlays/field/ov022_battle/Ov022_LoadSceneResources.c b/src/overlays/field/ov022_battle/Ov022_LoadSceneResources.c
+index 6912804eb..2fae5ed4f 100644
+--- a/src/overlays/field/ov022_battle/Ov022_LoadSceneResources.c
++++ b/src/overlays/field/ov022_battle/Ov022_LoadSceneResources.c
+@@ -4,7 +4,11 @@
+ #include "nitro/types.h"
+ #include "game/engine.h"
+ 
++#ifdef PLATFORM_VITA
++#define OVERLAY_106_ID (*(u32 (*)[1])0x6a) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_106_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov106 ((u32)(u32)&OVERLAY_106_ID)
+ 
+ typedef struct Ov022RegistrationBuffer {
+diff --git a/src/overlays/field/ov022_battle/Ov022_ResetCameraState.c b/src/overlays/field/ov022_battle/Ov022_ResetCameraState.c
+index d18086d57..dfe59829f 100644
+--- a/src/overlays/field/ov022_battle/Ov022_ResetCameraState.c
++++ b/src/overlays/field/ov022_battle/Ov022_ResetCameraState.c
+@@ -32,7 +32,11 @@ typedef struct Ov022CameraState {
+ typedef int (*Ov022SceneCallback)(void);
+ typedef unsigned int FSOverlayID;
+ 
++#ifdef PLATFORM_VITA
++#define OVERLAY_29_ID (*(unsigned int *)0x1d) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern unsigned int OVERLAY_29_ID;
++#endif
+ #define FS_OVERLAY_ID_ov029 ((FSOverlayID)(unsigned int)&OVERLAY_29_ID)
+ 
+ extern Ov022CameraState *NNSi_FndGetCurrentRootHeap(void);
+diff --git a/src/overlays/field/ov023_event_script/Ov023_SceneLeave.c b/src/overlays/field/ov023_event_script/Ov023_SceneLeave.c
+index 2b987aeb7..34edc0623 100644
+--- a/src/overlays/field/ov023_event_script/Ov023_SceneLeave.c
++++ b/src/overlays/field/ov023_event_script/Ov023_SceneLeave.c
+@@ -17,7 +17,11 @@ typedef struct Ov023SceneContext {
+ } Ov023SceneContext;
+ 
+ /* FS_EXTERN_OVERLAY(ov028) -- dsd names the absolute symbol OVERLAY_28_ID. */
++#ifdef PLATFORM_VITA
++#define OVERLAY_28_ID (*(u32 (*)[1])0x1c) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_28_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov028 ((FSOverlayID)(u32) & (OVERLAY_28_ID))
+ 
+ extern Ov023SceneContext *NNSi_FndGetCurrentRootHeap(void);
+diff --git a/src/overlays/scenes/ov000_title/Ov000_BootRunSelector.c b/src/overlays/scenes/ov000_title/Ov000_BootRunSelector.c
+index 394d40eab..4a50ffabc 100644
+--- a/src/overlays/scenes/ov000_title/Ov000_BootRunSelector.c
++++ b/src/overlays/scenes/ov000_title/Ov000_BootRunSelector.c
+@@ -20,7 +20,11 @@
+ 
+ typedef u32 FSOverlayID;
+ 
++#ifdef PLATFORM_VITA
++#define OVERLAY_28_ID (*(u32 (*)[1])0x1c) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_28_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov028 ((FSOverlayID)(u32) & (OVERLAY_28_ID))
+ 
+ typedef struct Ov000DisplayConfig {
+diff --git a/src/overlays/scenes/ov000_title/Ov000_FadeOutAndStartMovie.c b/src/overlays/scenes/ov000_title/Ov000_FadeOutAndStartMovie.c
+index 5c81755b5..e81bd56f8 100644
+--- a/src/overlays/scenes/ov000_title/Ov000_FadeOutAndStartMovie.c
++++ b/src/overlays/scenes/ov000_title/Ov000_FadeOutAndStartMovie.c
+@@ -18,7 +18,11 @@
+ typedef u32 FSOverlayID;
+ typedef void *StateFn;
+ 
++#ifdef PLATFORM_VITA
++#define OVERLAY_12_ID (*(u32 (*)[1])0xc) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_12_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov012 ((FSOverlayID)(u32) & (OVERLAY_12_ID))
+ 
+ extern void *NNSi_FndGetCurrentRootHeap(void);
+diff --git a/src/overlays/scenes/ov000_title/Ov000_FinishMoviePlayback_2.c b/src/overlays/scenes/ov000_title/Ov000_FinishMoviePlayback_2.c
+index cb269eade..8483a70bb 100644
+--- a/src/overlays/scenes/ov000_title/Ov000_FinishMoviePlayback_2.c
++++ b/src/overlays/scenes/ov000_title/Ov000_FinishMoviePlayback_2.c
+@@ -20,7 +20,11 @@ typedef u32 FSOverlayID;
+ typedef void *StateFn;
+ 
+ /* FS_EXTERN_OVERLAY(ov012) -- dsd names the absolute symbol OVERLAY_12_ID. */
++#ifdef PLATFORM_VITA
++#define OVERLAY_12_ID (*(u32 (*)[1])0xc) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_12_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov012 ((FSOverlayID)(u32) & (OVERLAY_12_ID))
+ 
+ extern void *NNSi_FndGetCurrentRootHeap(void);
+diff --git a/src/overlays/scenes/ov000_title/Ov000_LeaveTitleForScene.c b/src/overlays/scenes/ov000_title/Ov000_LeaveTitleForScene.c
+index 9fb19a577..7d4b4bd8d 100644
+--- a/src/overlays/scenes/ov000_title/Ov000_LeaveTitleForScene.c
++++ b/src/overlays/scenes/ov000_title/Ov000_LeaveTitleForScene.c
+@@ -18,8 +18,16 @@
+ typedef u32 FSOverlayID;
+ typedef void *StateFn;
+ 
++#ifdef PLATFORM_VITA
++#define OVERLAY_11_ID (*(u32 (*)[1])0xb) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_11_ID[1];
++#endif
++#ifdef PLATFORM_VITA
++#define OVERLAY_12_ID (*(u32 (*)[1])0xc) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_12_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov011 ((FSOverlayID)(u32) & (OVERLAY_11_ID))
+ #define FS_OVERLAY_ID_ov012 ((FSOverlayID)(u32) & (OVERLAY_12_ID))
+ 
+diff --git a/src/overlays/scenes/ov000_title/Ov000_StartMovieFromMenuRow.c b/src/overlays/scenes/ov000_title/Ov000_StartMovieFromMenuRow.c
+index 700e12d49..d3a7c9211 100644
+--- a/src/overlays/scenes/ov000_title/Ov000_StartMovieFromMenuRow.c
++++ b/src/overlays/scenes/ov000_title/Ov000_StartMovieFromMenuRow.c
+@@ -17,7 +17,11 @@
+ typedef u32 FSOverlayID;
+ typedef void (*Ov000StateFn)(void);
+ 
++#ifdef PLATFORM_VITA
++#define OVERLAY_24_ID (*(u32 (*)[1])0x18) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_24_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov024 ((FSOverlayID)(u32) & (OVERLAY_24_ID))
+ 
+ typedef struct Ov000RowDescriptor {
+diff --git a/src/overlays/scenes/ov000_title/Ov000_WaitLaunchedSceneThenMenu.c b/src/overlays/scenes/ov000_title/Ov000_WaitLaunchedSceneThenMenu.c
+index e206cc0fe..8f1ca57ff 100644
+--- a/src/overlays/scenes/ov000_title/Ov000_WaitLaunchedSceneThenMenu.c
++++ b/src/overlays/scenes/ov000_title/Ov000_WaitLaunchedSceneThenMenu.c
+@@ -18,8 +18,16 @@
+ typedef u32 FSOverlayID;
+ typedef void (*Ov000StateFn)(void);
+ 
++#ifdef PLATFORM_VITA
++#define OVERLAY_11_ID (*(u32 (*)[1])0xb) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_11_ID[1];
++#endif
++#ifdef PLATFORM_VITA
++#define OVERLAY_12_ID (*(u32 (*)[1])0xc) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_12_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov011 ((FSOverlayID)(u32) & (OVERLAY_11_ID))
+ #define FS_OVERLAY_ID_ov012 ((FSOverlayID)(u32) & (OVERLAY_12_ID))
+ 
+diff --git a/src/overlays/scenes/ov000_title/Ov000_WaitSubSceneThenMenu.c b/src/overlays/scenes/ov000_title/Ov000_WaitSubSceneThenMenu.c
+index 28bb799e6..f014e660c 100644
+--- a/src/overlays/scenes/ov000_title/Ov000_WaitSubSceneThenMenu.c
++++ b/src/overlays/scenes/ov000_title/Ov000_WaitSubSceneThenMenu.c
+@@ -17,7 +17,11 @@
+ typedef u32 FSOverlayID;
+ typedef void (*Ov000StateFn)(void);
+ 
++#ifdef PLATFORM_VITA
++#define OVERLAY_24_ID (*(u32 (*)[1])0x18) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_24_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov024 ((FSOverlayID)(u32) & (OVERLAY_24_ID))
+ 
+ typedef struct OverlayStartParams {
+diff --git a/src/overlays/scenes/ov002_field/Ov002_BringUpMissionOverlays.c b/src/overlays/scenes/ov002_field/Ov002_BringUpMissionOverlays.c
+index 724319fac..5d6c9adb1 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_BringUpMissionOverlays.c
++++ b/src/overlays/scenes/ov002_field/Ov002_BringUpMissionOverlays.c
+@@ -14,8 +14,16 @@
+ 
+ typedef u32 FSOverlayID;
+ 
++#ifdef PLATFORM_VITA
++#define OVERLAY_22_ID (*(u32 (*)[1])0x16) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_22_ID[1];
++#endif
++#ifdef PLATFORM_VITA
++#define OVERLAY_69_ID (*(u32 (*)[1])0x45) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_69_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov022 ((FSOverlayID)(u32) & (OVERLAY_22_ID))
+ #define FS_OVERLAY_ID_ov069 ((FSOverlayID)(u32) & (OVERLAY_69_ID))
+ 
+diff --git a/src/overlays/scenes/ov002_field/Ov002_EnterOverlay23.c b/src/overlays/scenes/ov002_field/Ov002_EnterOverlay23.c
+index 8e74004bf..7229e903f 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_EnterOverlay23.c
++++ b/src/overlays/scenes/ov002_field/Ov002_EnterOverlay23.c
+@@ -5,7 +5,11 @@
+ typedef void (*Ov002OverlayHook)(void);
+ typedef unsigned int FSOverlayID;
+ 
++#ifdef PLATFORM_VITA
++#define OVERLAY_23_ID (*(unsigned int (*)[1])0x17) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern unsigned int OVERLAY_23_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov023 ((FSOverlayID)(unsigned int)&OVERLAY_23_ID)
+ 
+ typedef struct {
+diff --git a/src/overlays/scenes/ov002_field/Ov002_EnterOverlay24.c b/src/overlays/scenes/ov002_field/Ov002_EnterOverlay24.c
+index db699cdc6..826534b1c 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_EnterOverlay24.c
++++ b/src/overlays/scenes/ov002_field/Ov002_EnterOverlay24.c
+@@ -6,7 +6,11 @@
+ typedef void (*Ov002OverlayHook)(void);
+ typedef unsigned int FSOverlayID;
+ 
++#ifdef PLATFORM_VITA
++#define OVERLAY_24_ID (*(unsigned int (*)[1])0x18) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern unsigned int OVERLAY_24_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov024 ((FSOverlayID)(unsigned int)&OVERLAY_24_ID)
+ 
+ typedef struct {
+diff --git a/src/overlays/scenes/ov002_field/Ov002_FindFreeSpotId.c b/src/overlays/scenes/ov002_field/Ov002_FindFreeSpotId.c
+index bf921fae3..ca611e897 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_FindFreeSpotId.c
++++ b/src/overlays/scenes/ov002_field/Ov002_FindFreeSpotId.c
+@@ -20,7 +20,11 @@ extern Ov002SpotHolder data_ov002_0207fa28;
+  * See config/arm9/asm_exceptions.json. */
+ static inline u32 Clz(u32 nValue)
+ {
++#ifdef PLATFORM_VITA
++    __asm__("clz %0, %1" : "=r"(nValue) : "r"(nValue));
++#else
+     asm { clz nValue, nValue }
++#endif
+     return nValue;
+ }
+ 
+diff --git a/src/overlays/scenes/ov002_field/Ov002_LoadSubFlowOverlay.c b/src/overlays/scenes/ov002_field/Ov002_LoadSubFlowOverlay.c
+index 466162497..244e8f873 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_LoadSubFlowOverlay.c
++++ b/src/overlays/scenes/ov002_field/Ov002_LoadSubFlowOverlay.c
+@@ -3,9 +3,21 @@
+ typedef void (*Ov002OverlayHook)(void);
+ typedef unsigned int FSOverlayID;
+ 
++#ifdef PLATFORM_VITA
++#define OVERLAY_25_ID (*(unsigned int (*)[1])0x19) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern unsigned int OVERLAY_25_ID[1];
++#endif
++#ifdef PLATFORM_VITA
++#define OVERLAY_26_ID (*(unsigned int (*)[1])0x1a) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern unsigned int OVERLAY_26_ID[1];
++#endif
++#ifdef PLATFORM_VITA
++#define OVERLAY_27_ID (*(unsigned int (*)[1])0x1b) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern unsigned int OVERLAY_27_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov025 ((FSOverlayID)(unsigned int)&OVERLAY_25_ID)
+ #define FS_OVERLAY_ID_ov026 ((FSOverlayID)(unsigned int)&OVERLAY_26_ID)
+ #define FS_OVERLAY_ID_ov027 ((FSOverlayID)(unsigned int)&OVERLAY_27_ID)
+diff --git a/src/overlays/scenes/ov002_field/Ov002_ShutDownMissionScene.c b/src/overlays/scenes/ov002_field/Ov002_ShutDownMissionScene.c
+index 516e3a913..4c5e3b761 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_ShutDownMissionScene.c
++++ b/src/overlays/scenes/ov002_field/Ov002_ShutDownMissionScene.c
+@@ -20,7 +20,11 @@
+ 
+ typedef u32 FSOverlayID;
+ 
++#ifdef PLATFORM_VITA
++#define OVERLAY_69_ID (*(u32 (*)[1])0x45) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_69_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov069 ((FSOverlayID)(u32) & (OVERLAY_69_ID))
+ 
+ extern int data_ov002_0207fa00;
+diff --git a/src/overlays/scenes/ov003/Ov003_RankPlayers.c b/src/overlays/scenes/ov003/Ov003_RankPlayers.c
+index ad43d7aad..292162b53 100644
+--- a/src/overlays/scenes/ov003/Ov003_RankPlayers.c
++++ b/src/overlays/scenes/ov003/Ov003_RankPlayers.c
+@@ -44,7 +44,11 @@ extern int Ov003_ComparePlayerScores(const void *pLeft, const void *pRight);
+ /* Authorized single-instruction exception; this source is not pure C. */
+ static inline unsigned int Clz(unsigned int nValue)
+ {
++#ifdef PLATFORM_VITA
++    __asm__("clz %0, %1" : "=r"(nValue) : "r"(nValue));
++#else
+     asm { clz nValue, nValue }
++#endif
+     return nValue;
+ }
+ 
+diff --git a/src/overlays/scenes/ov004_calendar/Ov004_RunDelayedProtectionChecks.c b/src/overlays/scenes/ov004_calendar/Ov004_RunDelayedProtectionChecks.c
+index 1deceddd6..2aee7d7c6 100644
+--- a/src/overlays/scenes/ov004_calendar/Ov004_RunDelayedProtectionChecks.c
++++ b/src/overlays/scenes/ov004_calendar/Ov004_RunDelayedProtectionChecks.c
+@@ -14,7 +14,11 @@ typedef struct {
+     int sourceSlotState;
+ } Ov004Context;
+ extern Ov004Context *data_ov004_02051384;
++#ifdef PLATFORM_VITA
++#define OVERLAY_28_ID (*(char (*)[1])0x1c) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern char OVERLAY_28_ID[];
++#endif
+ extern u64 OS_GetTick(void);
+ extern int func_ov028_0208b490(Ov004AlarmCallback callback);
+ extern int func_ov028_0208b040(Ov004AlarmCallback callback);
+diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_CommitMenuRewards.c b/src/overlays/scenes/ov005_mission_result/Ov005_CommitMenuRewards.c
+index e55f45e12..03698be6c 100644
+--- a/src/overlays/scenes/ov005_mission_result/Ov005_CommitMenuRewards.c
++++ b/src/overlays/scenes/ov005_mission_result/Ov005_CommitMenuRewards.c
+@@ -35,7 +35,11 @@ typedef struct Ov005Config {
+ extern GameState *data_0204be18;
+ extern Ov005Context *data_ov005_0205b80c;
+ extern Ov005Config data_ov005_0205b85c;
++#ifdef PLATFORM_VITA
++#define OVERLAY_28_ID (*(u32 (*)[1])0x1c) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_28_ID[1];
++#endif
+ extern int Ov005_StartTouchSampling(void);
+ extern int func_ov028_0208b3c0(int (*)(void));
+ extern int func_ov028_0208b040(int (*)(void));
+diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_UpdateCompletionMilestones.c b/src/overlays/scenes/ov005_mission_result/Ov005_UpdateCompletionMilestones.c
+index 11b15fb55..79b002e36 100644
+--- a/src/overlays/scenes/ov005_mission_result/Ov005_UpdateCompletionMilestones.c
++++ b/src/overlays/scenes/ov005_mission_result/Ov005_UpdateCompletionMilestones.c
+@@ -6,7 +6,11 @@
+ 
+ typedef u32 FSOverlayID;
+ 
++#ifdef PLATFORM_VITA
++#define OVERLAY_302_ID (*(u32 (*)[1])0x12e) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_302_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov302 ((FSOverlayID)(u32)&OVERLAY_302_ID)
+ 
+ typedef struct Ov009ListConfig {
+diff --git a/src/overlays/scenes/ov009_camp_save/Ov009_UpdateCompletionMilestones.c b/src/overlays/scenes/ov009_camp_save/Ov009_UpdateCompletionMilestones.c
+index ddebd93ec..dbfb962df 100644
+--- a/src/overlays/scenes/ov009_camp_save/Ov009_UpdateCompletionMilestones.c
++++ b/src/overlays/scenes/ov009_camp_save/Ov009_UpdateCompletionMilestones.c
+@@ -6,7 +6,11 @@
+ 
+ typedef u32 FSOverlayID;
+ 
++#ifdef PLATFORM_VITA
++#define OVERLAY_302_ID (*(u32 (*)[1])0x12e) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_302_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov302 ((FSOverlayID)(u32)&OVERLAY_302_ID)
+ 
+ typedef struct Ov009ListConfig {
+diff --git a/src/overlays/scenes/ov011/Ov011_CreateScene.c b/src/overlays/scenes/ov011/Ov011_CreateScene.c
+index d039081b6..d03e9cf99 100644
+--- a/src/overlays/scenes/ov011/Ov011_CreateScene.c
++++ b/src/overlays/scenes/ov011/Ov011_CreateScene.c
+@@ -23,7 +23,11 @@
+ typedef u32 FSOverlayID;
+ typedef void (*Ov011StateFn)(void);
+ 
++#ifdef PLATFORM_VITA
++#define OVERLAY_24_ID (*(u32 (*)[1])0x18) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_24_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov024 ((FSOverlayID)(u32) & (OVERLAY_24_ID))
+ 
+ typedef struct Ov011StreamOpenParams {
+diff --git a/src/overlays/scenes/ov011/Ov011_DestroyScene.c b/src/overlays/scenes/ov011/Ov011_DestroyScene.c
+index c2c31300a..524e1b4b6 100644
+--- a/src/overlays/scenes/ov011/Ov011_DestroyScene.c
++++ b/src/overlays/scenes/ov011/Ov011_DestroyScene.c
+@@ -12,7 +12,11 @@
+ 
+ typedef u32 FSOverlayID;
+ 
++#ifdef PLATFORM_VITA
++#define OVERLAY_24_ID (*(u32 (*)[1])0x18) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_24_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov024 ((FSOverlayID)(u32) & (OVERLAY_24_ID))
+ 
+ typedef struct Ov011SceneFlags {
+diff --git a/src/overlays/scenes/ov012_opening/Ov012_DestroyOpeningScene.c b/src/overlays/scenes/ov012_opening/Ov012_DestroyOpeningScene.c
+index c0acda2fc..23910b9a6 100644
+--- a/src/overlays/scenes/ov012_opening/Ov012_DestroyOpeningScene.c
++++ b/src/overlays/scenes/ov012_opening/Ov012_DestroyOpeningScene.c
+@@ -7,7 +7,11 @@ extern char *NNSi_FndGetCurrentRootHeap(void);
+ extern void NNSi_FndFreeFromDefaultHeap(void *block);
+ extern int func_ov012_0205bb78(void *renderer);
+ 
++#ifdef PLATFORM_VITA
++#define OVERLAY_24_ID (*(unsigned int (*)[1])0x18) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern unsigned int OVERLAY_24_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov024 ((unsigned int)&OVERLAY_24_ID)
+ 
+ extern int data_ov012_0205c2a0;
+diff --git a/src/overlays/scenes/ov012_opening/Ov012_InitOpeningScene.c b/src/overlays/scenes/ov012_opening/Ov012_InitOpeningScene.c
+index dd306faed..e15812fa7 100644
+--- a/src/overlays/scenes/ov012_opening/Ov012_InitOpeningScene.c
++++ b/src/overlays/scenes/ov012_opening/Ov012_InitOpeningScene.c
+@@ -14,7 +14,11 @@ extern int data_ov012_0205c2d0;
+ extern char data_ov012_0205cadc[];
+ extern int data_ov012_0205caf4;
+ extern char data_ov012_0205cae8[];
++#ifdef PLATFORM_VITA
++#define OVERLAY_24_ID (*(u32 (*)[1])0x18) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_24_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov024 ((u32)&OVERLAY_24_ID)
+ 
+ extern void *NNSi_FndGetCurrentRootHeap(void);
+diff --git a/src/overlays/system/ov001_boot/Ov001_CreateMainAndSubHeaps.c b/src/overlays/system/ov001_boot/Ov001_CreateMainAndSubHeaps.c
+index 7c2c435f8..fc93bd52c 100644
+--- a/src/overlays/system/ov001_boot/Ov001_CreateMainAndSubHeaps.c
++++ b/src/overlays/system/ov001_boot/Ov001_CreateMainAndSubHeaps.c
+@@ -24,7 +24,11 @@ typedef enum { MI_PROCESSOR_ARM9 = 0, MI_PROCESSOR_ARM7 = 1 } MIProcessor;
+ typedef enum { OS_ARENA_MAIN = 0 } OSArenaId;
+ 
+ /* FS_EXTERN_OVERLAY(ov028) -- dsd names the absolute symbol OVERLAY_28_ID. */
++#ifdef PLATFORM_VITA
++#define OVERLAY_28_ID (*(u32 (*)[1])0x1c) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_28_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov028 ((FSOverlayID)(u32) & (OVERLAY_28_ID))
+ 
+ extern BOOL FS_LoadOverlay(MIProcessor target, FSOverlayID id);
+diff --git a/src/overlays/system/ov107_enemy_common/Ov107_LoadEnemyOverlay.c b/src/overlays/system/ov107_enemy_common/Ov107_LoadEnemyOverlay.c
+index fca290d63..6dc3a27cf 100644
+--- a/src/overlays/system/ov107_enemy_common/Ov107_LoadEnemyOverlay.c
++++ b/src/overlays/system/ov107_enemy_common/Ov107_LoadEnemyOverlay.c
+@@ -15,7 +15,11 @@ extern int data_ov107_020cb610[6];
+ extern void *data_ov107_020cb5f8[6];
+ extern unsigned char data_ov107_020cb6a4[];
+ 
++#ifdef PLATFORM_VITA
++#define OVERLAY_113_ID (*(u32 (*)[1])0x71) /* PLATFORM_VITA: absolute symbol */
++#else
+ extern u32 OVERLAY_113_ID[1];
++#endif
+ #define FS_OVERLAY_ID_ov113 ((int)(u32)&(OVERLAY_113_ID))
+ 
+ typedef struct { int w[6]; } Block24;
+diff --git a/src/overlays/system/ov107_enemy_common/data/ov107_tables_020cb630.c b/src/overlays/system/ov107_enemy_common/data/ov107_tables_020cb630.c
+index 1a7489ad8..a8e51c148 100644
+--- a/src/overlays/system/ov107_enemy_common/data/ov107_tables_020cb630.c
++++ b/src/overlays/system/ov107_enemy_common/data/ov107_tables_020cb630.c
+@@ -7,6 +7,18 @@
+ 
+ #include "nitro/types.h"
+ 
++#ifdef PLATFORM_VITA
++/* On the DS, the 8 bytes before this table are the initializers of Ov107_AiState_ApplyHit's
++ * local masks/values arrays, and three functions read the pair as one object at 0x020cb628
++ * (a ReactionConstants, Notification[2], HalfPair[3]). GCC keeps local initializers elsewhere,
++ * so the port spells the 16 bytes out as that object; data_ov107_020cb630 is its second half
++ * (configure_vita.py aliases it). */
++const u8 data_ov107_020cb628[16] = {
++    7, 3, 11, 2, 1, 2, 4, 8,
++    0, 0, 8, 9, 0, 0, 8, 4,
++};
++#else
+ const u8 data_ov107_020cb630[8] = {
+     0, 0, 8, 9, 0, 0, 8, 4,
+ };
++#endif

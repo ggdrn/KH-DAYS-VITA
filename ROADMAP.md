@@ -13,17 +13,26 @@ Phases follow the generic "port a decompiled game to the Vita" plan. ✅ done ·
 - ⬜ mwccarm + dsd available (Windows tools: wine or a Windows machine)
 
 ## 3–4. Strategy / game code changes 🔶
-- ✅ Trial compile of the whole decomp for the Vita: 24,610 files, 28 real C failures (see
-  `tools/decomp_sources.py`)
-- ⬜ Fix the 28 under `PLATFORM_VITA` (clz/cache asm, static-after-extern, cast-lvalue)
+- ✅ Whole decomp compiles for the Vita (24,514 C/C++/asm sources); the 26 C failures fixed under
+  `PLATFORM_VITA`, MSL strcmp/strcpy replaced by newlib's (`tools/decomp_sources.py`)
+- ✅ `tools/rewrite_decomp.py abs-symbols`: linker-absolute constants (OVERLAY_n_ID, SDK_*) as
+  address-typed macros (35 files)
 - ⬜ `tools/hwrewrite.py`: wrap fixed DS addresses in `KH_HW()` (373 files)
 - ⬜ `platform/compat/`: CodeWarrior-isms (`#pragma thumb`, `asm` qualifiers) neutralised
 
 ## 5. Vita build 🔶
 - ✅ `configure_vita.py` → ninja → ELF → velf → eboot → param.sfo → VPK, versioned from `VERSION`
 - ✅ LiveArea placeholders (8-bit palettized, exact sizes) from `tools/make_livearea.py`
-- ⬜ Link the game: resolve symbol clashes and unresolved externs, overlay `.data`/`.bss` sections
-  with start/end symbols for `FS_LoadOverlay` resets
+- ✅ The whole game links into the VPK (5.2 MB of code, 0 unresolved symbols):
+  - one archive per module (host file-descriptor limit), `-Dmain=NitroMain`
+  - `tools/weaken_unowned.py`: delinks.txt section ownership for data defined twice
+  - `tools/gen_link_support.py`: every module's .bss as one block with the DS layout (487
+    symbols), aliases, and `kh_overlays[]` (load address, sizes, .bss block, entry function)
+    from the ROM's overlay table
+  - `platform/nitro/asm_replacements.c`: the 70 CodeWarrior-asm library routines in C
+    (copies, matrices, MATH_QSort, streaming LZ, SHA-1, CP context, interrupt state, MobiClip
+    blit); `platform/nitro/dsprotect.c`: DS Protect answers "genuine"
+- ⬜ It does not run yet: the hardware addresses are not translated (next: `KH_HW`)
 
 ## 6. Platform layer 🔶
 - ✅ main/system: clocks, data dir, log + previous log, ROM open/verify (cached SHA-1), msg dialog
@@ -47,7 +56,9 @@ Phases follow the generic "port a decompiled game to the Vita" plan. ✅ done ·
 ## 11. Distribution
 - ✅ Repository holds no game data, no decomp sources (patch only), no Sony modules
 - ✅ ROM read from `ux0:data/khdays/` at runtime, SHA-1 checked
-- ⬜ Audit step that fails the build if ROM bytes end up in the ELF
+- ⬜ Audit step that fails the build if ROM bytes end up in the ELF. Known today: MobiClip's
+  hand-written ARM kept as data (`ov024/data/mobiclip_*.s`) is linked in; replace it with the
+  decomp's portable decoder (`libs/mobiclip/video/portable`) before any release
 
 ## 12. Organisation ✅
 - ✅ `setup.sh` / `export_patch.sh` / `DECOMP_COMMIT`, README, ARCHITECTURE
