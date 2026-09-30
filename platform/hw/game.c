@@ -113,6 +113,20 @@ static void sample_input(void)
 
 static uint32_t s_last_progress, s_stuck_frames;
 
+/* The registers code busy-waits on, for the watchdog: a loop that calls nothing of the port
+ * is usually waiting for one of these to change. */
+static void log_wait_registers(void)
+{
+    LOG("regs: DMA0 %08x DMA1 %08x DMA2 %08x DMA3 %08x", (unsigned)KH_IO32(0x040000b8),
+        (unsigned)KH_IO32(0x040000c4), (unsigned)KH_IO32(0x040000d0), (unsigned)KH_IO32(0x040000dc));
+    LOG("regs: DISPSTAT %04x VCOUNT %04x GXSTAT %08x IF %08x IPCSYNC %04x IPCFIFOCNT %04x",
+        KH_IO16(0x04000004), KH_IO16(0x04000006), (unsigned)KH_IO32(0x04000600),
+        (unsigned)KH_IO32(0x04000214), KH_IO16(0x04000180), KH_IO16(0x04000184));
+    LOG("regs: ROMCTRL %08x AUXSPICNT %04x EXMEMCNT %04x DIVCNT %04x SQRTCNT %04x",
+        (unsigned)KH_IO32(0x040001a4), KH_IO16(0x040001a0), KH_IO16(0x04000204),
+        KH_IO16(0x04000280), KH_IO16(0x040002b0));
+}
+
 /* The registers that mark the boot's progress, compared once per frame: every change is
  * logged (interrupts switched on, screens configured, VRAM banks mapped). */
 static void watch_registers(uint32_t frame)
@@ -195,7 +209,18 @@ void kh_game_run(void)
         } else if (++s_stuck_frames == 300) {
             LOG("watchdog: no progress for 5 s (%s)", status);
             kh_cpu_log_state();
+            log_wait_registers();
+            kh_probe_arm();
             log_flush();
+        }
+        if (s_stuck_frames > 300) {
+            if (kh_probe_report()) {
+                log_flush();
+            } else if (s_stuck_frames == 420) {
+                LOG("probe: no port call from the running thread in 2 s: it spins on memory "
+                    "(see the registers above)");
+                log_flush();
+            }
         }
         if ((++frame % 600) == 0) {
             LOG("game: %s 2d %uus", status, (unsigned)s_render_us);

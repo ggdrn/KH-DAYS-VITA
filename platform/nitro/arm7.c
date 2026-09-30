@@ -203,6 +203,7 @@ void PXI_InitFifo(void)
 
 int32_t PXI_SendWordByFifo(uint32_t tag, uint32_t data, uint32_t err)
 {
+    KH_PROBE("PXI_SendWordByFifo");
     receive((int)(tag & 31), data, (int)err);
     return 0; /* PXI_FIFO_SUCCESS */
 }

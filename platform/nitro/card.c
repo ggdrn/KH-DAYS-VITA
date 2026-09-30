@@ -30,6 +30,7 @@ static void complete(void *cb, void *arg, void *unused)
 void CARDi_ReadRom(uint32_t dma, const void *src, void *dst, uint32_t len, CARDCallback cb,
                    void *arg, int async)
 {
+    KH_PROBE("CARDi_ReadRom");
     uint32_t off = (uint32_t)(uintptr_t)src + data_02046b00;
     int n;
     (void)dma;

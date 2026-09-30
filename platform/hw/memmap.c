@@ -49,6 +49,7 @@ static void wr64(uint32_t a, int64_t v) { memcpy(KH_IO_PTR(a), &v, 8); }
 
 uintptr_t kh_hw_sync_div(void)
 {
+    KH_PROBE("DIV registers");
     uint16_t cnt = KH_IO16(DIVCNT);
     int64_t num = rd64(DIV_NUMER), den = rd64(DIV_DENOM), quo, rem;
 
@@ -123,6 +124,7 @@ static uint32_t isqrt64(uint64_t v)
 
 uintptr_t kh_hw_sync_sqrt(void)
 {
+    KH_PROBE("SQRT registers");
     uint64_t param = (uint64_t)rd64(SQRT_PARAM);
     if (!(KH_IO16(SQRTCNT) & 1))
         param = (uint32_t)param;
@@ -139,6 +141,7 @@ uintptr_t kh_hw_sync_sqrt(void)
 
 uintptr_t kh_hw_sync_disp(void)
 {
+    KH_PROBE("DISPSTAT/VCOUNT");
     uint64_t now = sceKernelGetProcessTimeWide();
     uint64_t base = kh_hw_vblank_start_us ? kh_hw_vblank_start_us : 0;
     /* the VBlank starts at line 192 */
@@ -162,6 +165,7 @@ uintptr_t kh_hw_sync_disp(void)
 
 uintptr_t kh_hw_sync_timers(void)
 {
+    KH_PROBE("timer registers");
     kh_timers_update();
     return (uintptr_t)KH_IO_PTR(0x04000100);
 }
@@ -171,6 +175,7 @@ uintptr_t kh_hw_sync_timers(void)
  * would otherwise leave MI_SendGXCommandAsync waiting forever. */
 uintptr_t kh_hw_sync_gxstat(void)
 {
+    KH_PROBE("GXSTAT");
     KH_IO32(0x04000600) = (KH_IO32(0x04000600) & 0xc0000000u) | 0x06000000u;
     return (uintptr_t)KH_IO_PTR(0x04000600);
 }

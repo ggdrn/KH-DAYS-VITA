@@ -94,6 +94,7 @@ static void run(uint32_t ch, uint32_t src, uint32_t dst, uint32_t ctrl)
 
 static void set_regs(uint32_t ch, uint32_t src, uint32_t dst, uint32_t ctrl)
 {
+    KH_PROBE("a DMA start");
     if (ch < 4) {
         KH_IO32(0x040000b0 + ch * 12) = src;
         KH_IO32(0x040000b4 + ch * 12) = dst;

@@ -87,7 +87,7 @@ def main():
     m = re.search(r"\(main=([0-9a-f]{8})\)", text)
     if m:
         bias = int(m.group(1), 16) - elf_main
-        pat = re.compile(r"(?:entry|at) ([0-9a-f]{8})")
+        pat = re.compile(r"(?:entry| at) ([0-9a-f]{8})")
         # a return address ("at") points after the call: look up the call itself
         keyed = [(l, int(pat.search(l).group(1), 16) - bias - (2 if " at " in l else 0))
                  for l in text.splitlines() if pat.search(l)]

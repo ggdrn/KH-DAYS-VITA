@@ -7,6 +7,7 @@
  * 0xc0 apart in the ROM (OSi_IdleThread, OSi_LauncherThread, OSi_IdleThreadStack). */
 #include "nitro/types.h"
 #include "nitro/cp.h"
+#include "nitro/hw.h"
 #include "nitro/os.h"
 
 #include <stddef.h>
@@ -17,3 +18,8 @@ _Static_assert(sizeof(OSContext) == 0x64, "OSContext");
 _Static_assert(offsetof(OSThread, state) == 0x64, "OSThread.state");
 _Static_assert(offsetof(OSThread, queue) == 0x78, "OSThread.queue");
 _Static_assert(sizeof(OSThread) == 0xc0, "OSThread");
+
+/* Register fields stay plain numbers: tools/rewrite_decomp.py once wrapped this mask in KH_HW
+ * because its value is the GBA slot's base, and the geometry engine read as busy forever
+ * (0.0.19 hung in G3X_ResetMtxStack on the first frame). */
+_Static_assert(REG_G3X_GXSTAT_GE_MASK == 0x08000000, "REG_G3X_GXSTAT_GE_MASK");

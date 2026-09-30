@@ -298,6 +298,7 @@ static void wait_for_handler(void)
 
 uint32_t OS_DisableInterrupts(void)
 {
+    KH_PROBE("OS_DisableInterrupts");
     uint32_t old = __atomic_fetch_or(&kh_cpsr_if, 0x80, __ATOMIC_SEQ_CST) & 0x80;
     wait_for_handler();
     return old;
@@ -305,6 +306,7 @@ uint32_t OS_DisableInterrupts(void)
 
 uint32_t OS_EnableInterrupts(void)
 {
+    KH_PROBE("OS_EnableInterrupts");
     uint32_t old = __atomic_fetch_and(&kh_cpsr_if, ~0x80u, __ATOMIC_SEQ_CST) & 0x80;
     kh_cpu_poll();
     return old;
@@ -312,6 +314,7 @@ uint32_t OS_EnableInterrupts(void)
 
 uint32_t OS_RestoreInterrupts(uint32_t state)
 {
+    KH_PROBE("OS_RestoreInterrupts");
     uint32_t old;
     if (state & 0x80) {
         old = __atomic_fetch_or(&kh_cpsr_if, 0x80, __ATOMIC_SEQ_CST) & 0x80;
@@ -325,6 +328,7 @@ uint32_t OS_RestoreInterrupts(uint32_t state)
 
 uint32_t OS_DisableInterrupts_IrqAndFiq(void)
 {
+    KH_PROBE("OS_DisableInterrupts_IrqAndFiq");
     uint32_t old = __atomic_fetch_or(&kh_cpsr_if, 0xc0, __ATOMIC_SEQ_CST) & 0xc0;
     wait_for_handler();
     return old;
@@ -332,6 +336,7 @@ uint32_t OS_DisableInterrupts_IrqAndFiq(void)
 
 uint32_t OS_RestoreInterrupts_IrqAndFiq(uint32_t state)
 {
+    KH_PROBE("OS_RestoreInterrupts_IrqAndFiq");
     uint32_t old = kh_cpsr_if & 0xc0;
     kh_cpsr_if = (kh_cpsr_if & ~0xc0u) | (state & 0xc0);
     if (!(state & 0x80))
@@ -341,6 +346,7 @@ uint32_t OS_RestoreInterrupts_IrqAndFiq(uint32_t state)
 
 uint32_t OS_GetCpsrIrq(void)
 {
+    KH_PROBE("OS_GetCpsrIrq");
     return kh_cpsr_if & 0x80;
 }
 
@@ -422,21 +428,72 @@ extern int _Unwind_VRS_Get(struct _Unwind_Context *c, int regclass, uint32_t reg
 #define URC_OK 0
 #define URC_END_OF_STACK 5
 
+typedef struct {
+    uint32_t *pc;
+    int *n;
+} BtOut;
+
 static int bt_frame(struct _Unwind_Context *c, void *arg)
 {
-    KhThread *t = arg;
+    BtOut *o = arg;
     uint32_t pc;
-    if (t->bt_n >= BT_MAX)
+    if (*o->n >= BT_MAX)
         return URC_END_OF_STACK;
     _Unwind_VRS_Get(c, 0 /* core */, 15, 0 /* uint32 */, &pc);
-    t->bt[t->bt_n++] = pc & ~1u;
+    o->pc[(*o->n)++] = pc & ~1u;
     return URC_OK;
+}
+
+static void backtrace_into(uint32_t *pc, int *n)
+{
+    BtOut o = { pc, n };
+    *n = 0;
+    _Unwind_Backtrace(bt_frame, &o);
+}
+
+/* ---- the probe: where is the running thread? ------------------------------------------------
+ * A parked thread's stack is known (park records it); the baton holder's is not. When the
+ * watchdog finds no progress it arms the probe, and the next call the baton holder makes into
+ * the port (interrupt masking, a computed register, the GX FIFO, DMA, PXI, the card) records
+ * its stack. If none comes, the thread is spinning on plain memory. */
+volatile int kh_probe_armed;
+static volatile int s_probe_done;
+static const char *s_probe_where;
+static uint32_t s_probe_bt[BT_MAX];
+static int s_probe_n;
+
+void kh_probe_hit(const char *where)
+{
+    if (sceKernelGetThreadId() != s_owner || s_probe_done)
+        return;
+    backtrace_into(s_probe_bt, &s_probe_n);
+    s_probe_where = where;
+    kh_probe_armed = 0;
+    __atomic_store_n(&s_probe_done, 1, __ATOMIC_SEQ_CST);
+}
+
+void kh_probe_arm(void)
+{
+    s_probe_done = 0;
+    kh_probe_armed = 1;
+}
+
+int kh_probe_report(void)
+{
+    int i;
+    if (!__atomic_load_n(&s_probe_done, __ATOMIC_SEQ_CST))
+        return 0;
+    LOG("probe: the running thread called %s", s_probe_where);
+    /* frame 0 is kh_probe_hit, frame 1 the port function */
+    for (i = 1; i < s_probe_n; i++)
+        LOG("probe:   at %08x", (unsigned)s_probe_bt[i]);
+    s_probe_done = 0;
+    return 1;
 }
 
 static void park(KhThread *me)
 {
-    me->bt_n = 0;
-    _Unwind_Backtrace(bt_frame, me);
+    backtrace_into(me->bt, &me->bt_n);
     sceKernelWaitSema(me->sema, 1, NULL);
     s_owner = me->host;
     /* its own interrupt state again, as OS_LoadContext restores the CPSR saved with the
@@ -539,13 +596,14 @@ void kh_cpu_log_state(void)
      * priority +0x70, queue +0x78; the context's pc+4 at +0x40: the entry, as the port does not
      * save registers on a switch) */
     for (t = data_02044330.list; t && n < 16; t = *(uint8_t *const *)(t + 0x68), n++) {
-        LOG("cpu:   thread %p id %u prio %u state %u queue %p%s entry %08x", (void *)t,
-            (unsigned)*(const uint32_t *)(t + 0x6c), (unsigned)*(const uint32_t *)(t + 0x70),
-            (unsigned)*(const uint32_t *)(t + 0x64), *(void *const *)(t + 0x78),
-            t == data_02044330.current ? " (current)" : "",
-            (unsigned)(*(const uint32_t *)(t + 0x40) - 4));
+        const KhThread *k = find_ctx(t);
+        LOG("cpu:   thread %p id %u prio %u state %u queue %p%s entry %08x host %08x%s",
+            (void *)t, (unsigned)*(const uint32_t *)(t + 0x6c),
+            (unsigned)*(const uint32_t *)(t + 0x70), (unsigned)*(const uint32_t *)(t + 0x64),
+            *(void *const *)(t + 0x78), t == data_02044330.current ? " (current)" : "",
+            (unsigned)(*(const uint32_t *)(t + 0x40) - 4), k ? (unsigned)k->host : 0u,
+            k && k->host == s_owner ? " (baton)" : "");
         {
-            const KhThread *k = find_ctx(t);
             int i;
             /* frame 0 is park itself: from 1 on, OS_LoadContext and its callers */
             for (i = 1; k && i < k->bt_n; i++)

@@ -32,6 +32,18 @@ void kh_cpu_defer(void (*fn)(void *, void *, void *), void *a, void *b, void *c)
  * enables interrupts, before IME is ever set. */
 void kh_cpu_defer_task(void (*fn)(void *, void *, void *), void *a, void *b, void *c);
 
+/* The watchdog's probe (cpu.c): once armed, the next port call from the running NitroSDK
+ * thread records its call stack. KH_PROBE("name") at the top of port entry points. */
+extern volatile int kh_probe_armed;
+void kh_probe_hit(const char *where);
+void kh_probe_arm(void);
+int kh_probe_report(void); /* logs it and returns 1 once it has been taken */
+#define KH_PROBE(where)                                                                   \
+    do {                                                                                  \
+        if (__builtin_expect(kh_probe_armed, 0))                                          \
+            kh_probe_hit(where);                                                          \
+    } while (0)
+
 /* Deliver whatever interrupts are pending and allowed (baton holder only). */
 void kh_cpu_poll(void);
 /* One log line with the interrupt and scheduling state (for the watchdog). */

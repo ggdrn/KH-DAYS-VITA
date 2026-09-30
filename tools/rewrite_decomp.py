@@ -108,7 +108,7 @@ HW_RANGES = (
     (0x027ff000, 0x02800000),  # main RAM shared area
     (0x027e0000, 0x027e4000),  # DTCM
     (0x08000000, 0x0a010000),  # GBA slot: ROM and SRAM (read as an empty slot)
-    (0xffff0000, 0xffff8000),  # ARM9 BIOS (CTRDG reads the logo from it)
+    (0xffff0020, 0xffff00bc),  # ARM9 BIOS: only the Nintendo logo, which CTRDG copies
 )
 HW_INCLUDE = '#include "nitro/kh_hw.h"'
 HW_MARK = "KH_HW("
@@ -126,6 +126,11 @@ HW_BARE_SITES = {
     # the Nintendo logo in the ARM9 BIOS, copied by CTRDGi_InitModuleInfo
     ("include/nitro/ctrdg.h", 0xffff0020),
 }
+
+# A register #define whose name says it is a field of the register, not its address: its value
+# can fall in an address range all the same (REG_G3X_GXSTAT_GE_MASK is 0x08000000, the GBA
+# slot's base; wrapped, the geometry engine always read as busy).
+NOT_AN_ADDRESS = re.compile(r"_(MASK|SHIFT|SIZE|BIT|BITS|FLAG|FLAGS|NUM|COUNT)$")
 
 LIT = re.compile(r"(?<![\w.])0[xX]0*([0-9a-fA-F]{7,8})[uUlL]*(?![\w.])")
 
@@ -176,7 +181,8 @@ def classify(text, start, end):
         return "cast"
     line_start = text.rfind("\n", 0, start) + 1
     line = text[line_start:start]
-    if re.match(r"\s*#\s*define\s+\w*(REG|reg|ADDR|_BASE|HW_|VRAM|PLTT|OAM|LCDC)\w*\s+\(?\s*$", line):
+    m = re.match(r"\s*#\s*define\s+(\w*(?:REG|reg|ADDR|_BASE|HW_|VRAM|PLTT|OAM|LCDC)\w*)\s+\(?\s*$", line)
+    if m and not NOT_AN_ADDRESS.search(m.group(1)):
         return "define"
     return "bare"
 
