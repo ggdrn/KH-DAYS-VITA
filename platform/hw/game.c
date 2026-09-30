@@ -14,6 +14,7 @@
 #include "input.h"
 #include "log.h"
 #include "nitro/arm7.h"
+#include "nitro/backup.h"
 #include "nitro/card.h"
 #include "nitro/cpu.h"
 #include "nitro/overlay.h"
@@ -186,6 +187,7 @@ void kh_game_run(void)
 
         sample_input();
         watch_registers(frame);
+        kh_backup_tick();
         kh_hw_vblank_start_us = sceKernelGetProcessTimeWide();
         (*(volatile uint32_t *)KH_SHARED(HW_VBLANK_COUNT_BUF))++;
         if (KH_IO16(0x04000004) & 0x08) /* DISPSTAT: VBlank IRQ enabled */

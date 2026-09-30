@@ -34,6 +34,10 @@ work.
 4. Launch it. The first boot hashes the ROM (a few seconds). After that the check is cached in
    `ux0:data/khdays/rom.verified`.
 
+The save is `ux0:data/khdays/days.sav`: the save chip's raw contents (64 KiB EEPROM), the
+format DS emulators write, so a save from melonDS, DraStic or No$GBA (raw) can be copied
+there, and DeSmuME's `.dsv` works as it is.
+
 Logs go to `ux0:data/khdays/log.txt`, and the previous run's log is kept as `log_prev.txt`.
 
 Controls: the face buttons are positional, as on the DS (Circle = A, Cross = B, Triangle = X,

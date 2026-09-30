@@ -37,7 +37,7 @@ Phases follow the generic "port a decompiled game to the Vita" plan. ✅ done ·
     (copies, matrices, MATH_QSort, streaming LZ, SHA-1, CP context, interrupt state, MobiClip
     blit); `platform/nitro/dsprotect.c`: DS Protect answers "genuine"
 - ✅ Hardware addresses translated; a scan of the linked ELF finds no DS address left
-- 🔶 Console: boots to `NitroMain` (0.0.8); 0.0.9 past the GBA-slot probe and into the first SDK thread; 0.0.10 pins the shared-bss statics (OSi_CurrentThreadPtr was NULL); 0.0.11 = 0.0.10 on decomp ea39ead5e; 0.0.12 defines those names in assembly (--defsym block+off was absolute, not relocated); 0.0.13 gives 64-bit struct members the DS 4-byte alignment (OSThread.state was at +0x68); 0.0.15 completes async card reads without IME (main loads ov001 before interrupts are on); 0.0.17 keeps the I bit per thread across switches and reaches the frame loop (IME on, both screens configured); 0.0.18 renders 2D ~5x faster; 0.0.19 wakes OS_WaitIrq sleepers on the right queue (the frame loop hung on its first VBlank); 0.0.20 unwraps REG_G3X_GXSTAT_GE_MASK (G3X_ResetMtxStack spun forever)
+- 🔶 Console: boots to `NitroMain` (0.0.8); 0.0.9 past the GBA-slot probe and into the first SDK thread; 0.0.10 pins the shared-bss statics (OSi_CurrentThreadPtr was NULL); 0.0.11 = 0.0.10 on decomp ea39ead5e; 0.0.12 defines those names in assembly (--defsym block+off was absolute, not relocated); 0.0.13 gives 64-bit struct members the DS 4-byte alignment (OSThread.state was at +0x68); 0.0.15 completes async card reads without IME (main loads ov001 before interrupts are on); 0.0.17 keeps the I bit per thread across switches and reaches the frame loop (IME on, both screens configured); 0.0.18 renders 2D ~5x faster; 0.0.19 wakes OS_WaitIrq sleepers on the right queue (the frame loop hung on its first VBlank); 0.0.20 unwraps REG_G3X_GXSTAT_GE_MASK (G3X_ResetMtxStack spun forever) and loads the title overlay (ov000); 0.0.21 answers its CARD_IdentifyBackup
 
 ## 6. Platform layer 🔶
 - ✅ main/system: clocks, data dir, log + previous log, ROM open/verify (cached SHA-1), msg dialog
@@ -58,7 +58,7 @@ Phases follow the generic "port a decompiled game to the Vita" plan. ✅ done ·
 - ✅ ARM7 over PXI: every tag ready; SOUND command lists acknowledged; CTRDG module info; RTC (Vita local time);
   touch/PM/NVRAM requests acknowledged; touch sampling with calibration
 - ⬜ GX/G3: geometry FIFO → geometry engine (the FIFO only latches words for now)
-- ⬜ VBlank/HBlank DMA timings, backup (save) over PXI, wireless
+- ⬜ VBlank/HBlank DMA timings, wireless
 - 🔶 2D renderer (engines A/B), `platform/hw/gpu2d.c`: text/affine/extended BGs (tiles, 256-colour and
   direct bitmaps, extended palettes), sprites (normal, affine, double size, bitmap,
   semi-transparent, OBJ window), windows, blending, master brightness, display modes;
@@ -67,7 +67,9 @@ Phases follow the generic "port a decompiled game to the Vita" plan. ✅ done ·
 - ⬜ 3D: geometry engine + vitaGL rasterisation + texture cache
 - ⬜ Sound: native ARM7 SND (sequence player, channels, ADPCM/PSG, mixer, 48 kHz out)
 - ⬜ MobiClip videos (the decoder is C in ov024: needs only frame output + audio)
-- ⬜ Save: backup ↔ `days.sav`, atomic writes, save on suspend
+- 🔶 Save (`platform/nitro/backup.c`): the ARM7's backup service over PXI (identify, read,
+  program, verify, erase) on `days.sav`, raw chip image compatible with emulator saves;
+  written a second after the last change, atomically. ⬜ flush on suspend
 
 ## 7. Diagnostics 🔶
 - ✅ kubridge fault handler (all registers, run-time `main` for the load bias)
