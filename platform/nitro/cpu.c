@@ -366,6 +366,7 @@ typedef struct KhThread {
     SceUID host;
     SceUID sema;
     volatile int exit_requested;
+    uint32_t cpsr_if; /* its I/F bits while switched out (the DS saves CPSR in the context) */
     uint32_t bt[BT_MAX]; /* where it last gave up the CPU (return addresses, innermost first) */
     int bt_n;
     struct KhThread *next;
@@ -437,6 +438,10 @@ static void park(KhThread *me)
     _Unwind_Backtrace(bt_frame, me);
     sceKernelWaitSema(me->sema, 1, NULL);
     s_owner = me->host;
+    /* its own interrupt state again, as OS_LoadContext restores the CPSR saved with the
+     * context: a thread that went to sleep inside OS_DisableInterrupts must not leave the
+     * I bit set for the one that runs next */
+    __atomic_store_n(&kh_cpsr_if, me->cpsr_if, __ATOMIC_SEQ_CST);
     if (me->exit_requested) {
         me->exit_requested = 0;
         sceKernelExitDeleteThread(0);
@@ -479,6 +484,7 @@ void OS_InitContext(void *ctx, uint32_t newpc, uint32_t newsp)
         sceKernelSignalSema(t->sema, 1);
     }
     t->host = 0;
+    t->cpsr_if = 0; /* w[0]: system mode, IRQ and FIQ enabled */
 }
 
 int OS_SaveContext(void *ctx)
@@ -509,6 +515,9 @@ void OS_LoadContext(void *ctx)
         sceKernelStartThread(next->host, sizeof(arg), &arg);
         LOG("cpu: thread %p started (entry %08x)", next->ctx, (unsigned)(ctx_word(next->ctx, CTX_PC4) - 4));
     }
+    /* saved before the baton moves: the next thread writes its own state as soon as it runs */
+    if (me)
+        me->cpsr_if = __atomic_load_n(&kh_cpsr_if, __ATOMIC_SEQ_CST);
     s_owner = next->host;
     kh_cpu_switches++;
     sceKernelSignalSema(next->sema, 1);

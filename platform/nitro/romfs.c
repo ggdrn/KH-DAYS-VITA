@@ -37,11 +37,15 @@ static void walk(uint16_t dir, const char *path, int depth)
     id = le16(s_fnt + entry + 4);
     while (off < s_fnt_size) {
         const uint8_t len = s_fnt[off++];
-        char name[128 + 256];
-        if (!len || off + (len & 0x7f) > s_fnt_size)
+        const size_t plen = strlen(path), nlen = len & 0x7f;
+        char name[384];
+        if (!len || off + nlen > s_fnt_size || plen + 1 + nlen >= sizeof(name))
             break;
-        snprintf(name, sizeof(name), "%s/%.*s", path, len & 0x7f, (const char *)s_fnt + off);
-        off += len & 0x7f;
+        memcpy(name, path, plen);
+        name[plen] = '/';
+        memcpy(name + plen + 1, s_fnt + off, nlen);
+        name[plen + 1 + nlen] = 0;
+        off += nlen;
         if (len & 0x80) {
             if (off + 2 > s_fnt_size)
                 break;
