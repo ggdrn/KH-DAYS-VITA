@@ -11,6 +11,9 @@
 #include "video.h"
 
 #include <psp2/apputil.h>
+#include <psp2/ctrl.h>
+#include <psp2/io/fcntl.h>
+#include <psp2/kernel/sysmem.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/power.h>
@@ -21,8 +24,22 @@
 #define KH_VERSION "dev"
 #endif
 
-/* Heap for newlib (malloc): the game's own arenas come out of it. */
-int _newlib_heap_size_user = 192 * 1024 * 1024;
+/* Heap for newlib (malloc): the game's arenas and the port's buffers come out of it. Kept well
+ * inside the app's memory budget: the executable, vitaGL's pools and the Vita's own share must
+ * fit beside it. */
+int _newlib_heap_size_user = 96 * 1024 * 1024;
+
+/* Boot markers in ux0:data/khdays/boot.txt, opened, written and closed at every stage: they
+ * survive a hang or a crash at any point, even before the log exists. */
+static void mark(const char *stage)
+{
+    SceUID fd = sceIoOpen(KH_DATA_DIR "/boot.txt", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_APPEND, 0777);
+    if (fd >= 0) {
+        sceIoWrite(fd, stage, strlen(stage));
+        sceIoWrite(fd, "\n", 1);
+        sceIoClose(fd);
+    }
+}
 
 static uint32_t s_top[DS_SCREEN_W * DS_SCREEN_H] __attribute__((unused));
 static uint32_t s_bottom[DS_SCREEN_W * DS_SCREEN_H] __attribute__((unused));
@@ -97,7 +114,8 @@ static void init_system(void)
 
 #ifdef KH_WITH_GAME
 extern void kh_game_run(void); /* platform/hw: starts the game thread and never returns */
-#else
+#endif
+
 static void diagnostic_loop(void)
 {
     InputState in;
@@ -120,22 +138,41 @@ static void diagnostic_loop(void)
         video_present(s_top, s_bottom);
     }
 }
-#endif
 
 int main(void)
 {
+    SceCtrlData pad;
+    SceKernelFreeMemorySizeInfo mem = { .size = sizeof(mem) };
+
+    sceIoMkdir(KH_DATA_DIR, 0777);
+    sceIoRemove(KH_DATA_DIR "/boot.txt");
+    mark("main " KH_VERSION);
     init_system();
+    mark("system");
     log_init(KH_DATA_DIR);
+    mark("log");
     LOG("khdays-vita %s", KH_VERSION);
+    sceKernelGetFreeMemorySize(&mem);
+    LOG("memory free: user %u KiB, cdram %u KiB, phycont %u KiB", (unsigned)(mem.size_user >> 10),
+        (unsigned)(mem.size_cdram >> 10), (unsigned)(mem.size_phycont >> 10));
     fault_init();
+    mark("fault");
 
     video_init();
+    mark("video");
     check_rom();
+    mark("rom");
 
+    /* holding L at start-up skips the game: the controls test, to check the install */
+    sceCtrlPeekBufferPositive(0, &pad, 1);
 #ifdef KH_WITH_GAME
-    kh_game_run();
-#else
-    diagnostic_loop();
+    if (!(pad.buttons & SCE_CTRL_LTRIGGER)) {
+        mark("game");
+        kh_game_run();
+    }
 #endif
+    mark("diagnostic");
+    LOG("diagnostic mode");
+    diagnostic_loop();
     return 0;
 }
