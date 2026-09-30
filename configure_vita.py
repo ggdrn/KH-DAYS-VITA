@@ -3,7 +3,7 @@
 
     python3 configure_vita.py                 # port shell only (boot, ROM check, diagnostics)
     python3 configure_vita.py --with-game     # + the decomp's C, from the build tree (setup.sh)
-    ninja                                     # -> build/khdays-vita-<VERSION>.vpk
+    ninja                                     # -> build/VPK/khdays-vita-<VERSION>.vpk
 
 Game sources come from the build tree (the decomp with patches/decomp.patch applied), never
 from this repository. What is compiled from it, and what the port replaces, is listed in
@@ -176,7 +176,7 @@ def main():
 
     art = ["sce_sys/icon0.png", "sce_sys/livearea/contents/bg.png",
            "sce_sys/livearea/contents/startup.png"]
-    vpk = f"build/khdays-vita-{version}.vpk"
+    vpk = f"build/VPK/khdays-vita-{version}.vpk"
     w("")
     w(f"build build/khdays.elf: link {' '.join(objs + game_libs)}")
     w(f"  port_objs = {' '.join(objs)}")

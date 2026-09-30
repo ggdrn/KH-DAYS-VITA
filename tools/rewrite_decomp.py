@@ -104,6 +104,8 @@ HW_RANGES = (
     (0x07000000, 0x07000800),  # OAM
     (0x027ff000, 0x02800000),  # main RAM shared area
     (0x027e0000, 0x027e4000),  # DTCM
+    (0x08000000, 0x0a010000),  # GBA slot: ROM and SRAM (read as an empty slot)
+    (0xffff0000, 0xffff8000),  # ARM9 BIOS (CTRDG reads the logo from it)
 )
 HW_INCLUDE = '#include "nitro/kh_hw.h"'
 HW_MARK = "KH_HW("
@@ -118,6 +120,8 @@ HW_BARE_SITES = {
     ("libs/nitro/nns/calls/BgCharVram_Upload.c", 0x06200000),
     ("libs/nns/g2d/calls/LoadBGCharacter.c", 0x06000000),
     ("libs/nns/g2d/calls/LoadBGCharacter.c", 0x06200000),
+    # the Nintendo logo in the ARM9 BIOS, copied by CTRDGi_InitModuleInfo
+    ("include/nitro/ctrdg.h", 0xffff0020),
 }
 
 LIT = re.compile(r"(?<![\w.])0[xX]0*([0-9a-fA-F]{7,8})[uUlL]*(?![\w.])")

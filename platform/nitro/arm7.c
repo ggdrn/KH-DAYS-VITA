@@ -181,6 +181,10 @@ static void receive(int tag, uint32_t data, int err)
     case 7: sound(data); break;
     case 5: rtc(data); break;
     case 4: case 6: case 8: spi(tag, data); break;
+    case 13: /* CTRDG: the ARM7 acknowledges INIT_MODULE_INFO (CTRDGi_InitCallback) */
+        if ((data & 0x3f) == 1)
+            kh_arm7_reply(13, 1, 0);
+        break;
     default: break;
     }
 }

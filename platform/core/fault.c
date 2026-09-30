@@ -21,10 +21,19 @@ static KuKernelExceptionHandler s_prev[3];
 static void report(KuKernelExceptionContext *c)
 {
     static const char *const kinds[] = { "data abort", "prefetch abort", "undefined instruction" };
+    static uint32_t s_last_pc, s_repeats;
     char buf[512];
     SceKernelThreadInfo ti = { .size = sizeof(ti) };
     int n;
 
+    /* a fault the default handler returns from is retried: report it a few times, not forever */
+    if (c->pc == s_last_pc && ++s_repeats >= 3) {
+        if (s_repeats == 3)
+            LOG("fault: pc=%08x keeps faulting; not reporting it again", (unsigned)c->pc);
+        return;
+    }
+    if (c->pc != s_last_pc)
+        s_last_pc = c->pc, s_repeats = 0;
     sceKernelGetThreadInfo(sceKernelGetThreadId(), &ti);
     n = snprintf(buf, sizeof(buf),
                  "FAULT %s in thread %s: pc=%08x lr=%08x sp=%08x far=%08x fsr=%08x main=%08x\n"

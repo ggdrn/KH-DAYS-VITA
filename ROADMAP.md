@@ -35,7 +35,7 @@ Phases follow the generic "port a decompiled game to the Vita" plan. ✅ done ·
     (copies, matrices, MATH_QSort, streaming LZ, SHA-1, CP context, interrupt state, MobiClip
     blit); `platform/nitro/dsprotect.c`: DS Protect answers "genuine"
 - ✅ Hardware addresses translated; a scan of the linked ELF finds no DS address left
-- 🔶 Boot path desk-checked through `Ov001_BootInit`; first console run pending
+- 🔶 Console: boots to `NitroMain` (0.0.8); 0.0.8 faulted in the GBA-slot probe (`CTRDG_IsExisting`), mapped in 0.0.9
 
 ## 6. Platform layer 🔶
 - ✅ main/system: clocks, data dir, log + previous log, ROM open/verify (cached SHA-1), msg dialog
@@ -43,7 +43,8 @@ Phases follow the generic "port a decompiled game to the Vita" plan. ✅ done ·
 - ✅ input: positional buttons, stick as d-pad, touch mapped to the bottom screen, X/Y ext word
 - ✅ hw memory map (`platform/compat/kh_hw_map.h`, `platform/hw/memmap.c`): I/O page, palette,
   OAM, VRAM views (engine A/B BG and OBJ, LCDC), shared area; divider, square root and
-  DISPSTAT/VCOUNT computed on read; power-on register values
+  DISPSTAT/VCOUNT computed on read; power-on register values; GBA slot as an empty slot
+  (all 0xff) and the ARM9 BIOS logo area, for CTRDG's cartridge probe
 - ✅ VRAM banks A–I (`platform/hw/vram.c`): home in LCDC, copied into the CPU-visible view they are
   mapped to and back on remap
 - ✅ platform/nitro/cpu.c: NitroSDK threads on Vita threads (one baton, the SDK's scheduler),
@@ -52,7 +53,7 @@ Phases follow the generic "port a decompiled game to the Vita" plan. ✅ done ·
 - ✅ DMA performed at start (immediate, GX FIFO); async completions as interrupts
 - ✅ CARD ROM reads from the dump; card ID; overlays resident with per-overlay sections
   (`build/gen/overlays.ld`): .data restore, .bss clear, entry as ram_address, destructors
-- ✅ ARM7 over PXI: every tag ready; SOUND command lists acknowledged; RTC (Vita local time);
+- ✅ ARM7 over PXI: every tag ready; SOUND command lists acknowledged; CTRDG module info; RTC (Vita local time);
   touch/PM/NVRAM requests acknowledged; touch sampling with calibration
 - ⬜ GX/G3: geometry FIFO → geometry engine (the FIFO only latches words for now)
 - ⬜ VBlank/HBlank DMA timings, backup (save) over PXI, wireless

@@ -20,6 +20,9 @@
  *   0x07000000           OAM, 2 KiB (mirrored)
  *   0x027ff000 +4 KiB    main RAM shared area
  *   0x027e0000 +16 KiB   DTCM (the IRQ vector table, the IRQ check word, the SDK's stacks)
+ *   0x08000000 +32 MiB   GBA slot ROM and SRAM: an empty slot, all 0xff (128 KiB, mirrored;
+ *                        CTRDG reads the header and the module ID image at +0x1fffe)
+ *   0xffff0000 +32 KiB   ARM9 BIOS: zeros (256 bytes, mirrored; CTRDG copies the logo)
  * Anything else is left as the DS address, which faults on the Vita and shows in the log. */
 #ifndef KH_HW_MAP_H
 #define KH_HW_MAP_H
@@ -37,6 +40,8 @@ extern unsigned char kh_vram_obj_b[0x20000];
 extern unsigned char kh_vram_lcdc[0xa4000];
 extern unsigned char kh_ds_shared_area[0x1000];
 extern unsigned char kh_ds_dtcm[0x4000];
+extern unsigned char kh_ds_gba_slot[0x20000];
+extern unsigned char kh_ds_bios9[0x100];
 
 /* refresh a computed register block and return its host address */
 extern uintptr_t kh_hw_sync_div(void);   /* 0x040002a0: DIV_RESULT, DIVREM_RESULT */
@@ -72,6 +77,8 @@ extern void kh_vram_sync_cleanup(int *unused);
      KH__IN(a, 0x07000000, 0x01000000) ? KH__AT(kh_ds_oam, KH__A(a) & 0x7ffu) :               \
      KH__IN(a, 0x027ff000, 0x1000) ? KH__AT(kh_ds_shared_area, KH__A(a) - 0x027ff000u) :      \
      KH__IN(a, 0x027e0000, 0x4000) ? KH__AT(kh_ds_dtcm, KH__A(a) - 0x027e0000u) :             \
+     KH__IN(a, 0x08000000, 0x02010000) ? KH__AT(kh_ds_gba_slot, KH__A(a) & 0x1ffffu) :        \
+     KH__IN(a, 0xffff0000, 0x8000) ? KH__AT(kh_ds_bios9, KH__A(a) & 0xffu) :                  \
      (uintptr_t)KH__A(a))
 
 #endif

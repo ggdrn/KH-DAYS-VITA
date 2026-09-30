@@ -17,6 +17,8 @@ unsigned char kh_vram_bg_b[0x20000] __attribute__((aligned(32)));
 unsigned char kh_vram_obj_a[0x40000] __attribute__((aligned(32)));
 unsigned char kh_vram_obj_b[0x20000] __attribute__((aligned(32)));
 unsigned char kh_vram_lcdc[0xa4000] __attribute__((aligned(32)));
+unsigned char kh_ds_gba_slot[0x20000] __attribute__((aligned(32)));
+unsigned char kh_ds_bios9[0x100] __attribute__((aligned(32)));
 
 volatile uint64_t kh_hw_vblank_start_us;
 
@@ -24,6 +26,7 @@ volatile uint64_t kh_hw_vblank_start_us;
 void kh_hw_reset(void)
 {
     memset(kh_ds_io, 0, KH_IO_SIZE);
+    memset(kh_ds_gba_slot, 0xff, sizeof kh_ds_gba_slot); /* no cartridge in slot 2 */
     KH_IO16(0x04000130) = 0x03ff;     /* KEYINPUT: nothing held (active low) */
     KH_IO32(0x04000600) = 0x06000000; /* GXSTAT: FIFO empty and under half full, not busy */
 }
