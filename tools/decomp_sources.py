@@ -27,9 +27,17 @@ EXCLUDED_DIRS = (
 
 # Paths relative to the decomp root. Grows as platform/nitro takes functions over.
 REPLACED = {
-    # MSL's word-at-a-time string routines use CodeWarrior's cast-as-lvalue; newlib has them
+    # MSL's standard C functions: newlib has the same names, and the Vita's own code (the log,
+    # vitaGL, stdio) must get newlib's. MSL's strlen is also a loop GCC turns into a call to
+    # strlen -- itself (tools/check_elf.py) -- and strcmp/strcpy use CodeWarrior's cast-as-lvalue.
     "libs/msl/c/auto/strcmp.c",
     "libs/msl/c/auto/strcpy.c",
+    "libs/msl/c/auto/strncpy.c",
+    "libs/msl/c/auto/abs.c",
+    "libs/msl/c/calls/strlen.c",
+    "libs/msl/c/calls/strncmp.c",
+    "libs/msl/c/calls/strtol.c",
+    "libs/msl/c/calls/__strtoul.c",
 }
 
 # Library functions (one file each, named after the function) that platform/nitro defines

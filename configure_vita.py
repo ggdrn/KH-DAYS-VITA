@@ -128,7 +128,8 @@ def main():
       " $out $in\n  description = AR $out")
     w("rule as\n  command = $cc $common -c $in -o $out\n  description = AS $in")
     w("rule link\n  command = $cc -Wl,-q -Wl,--gc-sections -Wl,--no-enum-size-warning $link_extra"
-      " $port_objs -Wl,--whole-archive $game_libs -Wl,--no-whole-archive $libs -o $out\n"
+      " $port_objs -Wl,--whole-archive $game_libs -Wl,--no-whole-archive $libs -o $out"
+      " && python3 tools/check_elf.py $out || (rm -f $out; false)\n"
       "  description = LINK $out")
     w(f"rule velf\n  command = {BIN / 'vita-elf-create'} $in $out\n  description = VELF $out")
     w(f"rule fself\n  command = {BIN / 'vita-make-fself'} -c $in $out\n  description = FSELF $out")
