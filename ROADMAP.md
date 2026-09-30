@@ -10,7 +10,9 @@ Phases follow the generic "port a decompiled game to the Vita" plan. ✅ done ·
 
 ## 2. Reference build 🔶
 - ✅ `tools/check_decomp_match.sh` (wraps the decomp's configure/ninja/`dsd check`/`build_rom.sh`)
-- ⬜ mwccarm + dsd available (Windows tools: wine or a Windows machine)
+- 🔶 DS toolchain in an OrbStack Linux machine (`tools/ds_reference/setup.sh`: wine, dsd,
+  Python modules, binutils); WineHQ's macOS casks were disabled (Gatekeeper). ⬜ CodeWarrior
+  binaries (mwccarm 3.0_patch4, 2.0/sp2p2, 1.2/sp4; mwldarm 2.0/sp2p4)
 
 ## 3–4. Strategy / game code changes 🔶
 - ✅ Whole decomp compiles for the Vita (24,514 C/C++/asm sources); the 26 C failures fixed under
