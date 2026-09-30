@@ -1929,7 +1929,7 @@ index 3f182418a..05ebbdb8a 100644
      data_020422b4 = 0;
      data_020446d0 = (unsigned short)((disp & 0x30000) >> 0x10);
 diff --git a/libs/nitro/gx/calls/GX_Init.c b/libs/nitro/gx/calls/GX_Init.c
-index c72c1bd4c..00d6c1ae9 100644
+index 41525845e..dd2b95aa3 100644
 --- a/libs/nitro/gx/calls/GX_Init.c
 +++ b/libs/nitro/gx/calls/GX_Init.c
 @@ -1,3 +1,4 @@
@@ -5756,7 +5756,7 @@ index 1122d714a..e06d7eab9 100644
          *p = 0;
          *(p + 1) = 0;
 diff --git a/libs/nitro/mtx/calls/Camera_BuildProjectionMtx.c b/libs/nitro/mtx/calls/Camera_BuildProjectionMtx.c
-index c8421dba7..df54ddfa3 100644
+index 17a61bc6c..c504c726a 100644
 --- a/libs/nitro/mtx/calls/Camera_BuildProjectionMtx.c
 +++ b/libs/nitro/mtx/calls/Camera_BuildProjectionMtx.c
 @@ -1,3 +1,4 @@
@@ -6637,7 +6637,7 @@ index 1a382aeff..335d93616 100644
          }
      }
 diff --git a/libs/nitro/os/calls/OSi_VBlankInterruptHandler.c b/libs/nitro/os/calls/OSi_VBlankInterruptHandler.c
-index c2ba12197..3f78c33fc 100644
+index 55a3ad5fc..988584cee 100644
 --- a/libs/nitro/os/calls/OSi_VBlankInterruptHandler.c
 +++ b/libs/nitro/os/calls/OSi_VBlankInterruptHandler.c
 @@ -1,3 +1,4 @@
@@ -6649,12 +6649,12 @@ index c2ba12197..3f78c33fc 100644
      ctx->counter = ctx->counter + 1;
  
      if (flags & 1) {
--        GXx_SetMasterBrightness_((unsigned short *)0x0400006C, (&data_027e0084)[0]);
-+        GXx_SetMasterBrightness_((unsigned short *)KH_HW(0x0400006C), (&data_027e0084)[0]);
+-        GXx_SetMasterBrightness_((unsigned short *)0x0400006C, (&gMasterBrightness)[0]);
++        GXx_SetMasterBrightness_((unsigned short *)KH_HW(0x0400006C), (&gMasterBrightness)[0]);
      }
      if (flags & 2) {
--        GXx_SetMasterBrightness_((unsigned short *)0x0400106C, (&data_027e0084)[1]);
-+        GXx_SetMasterBrightness_((unsigned short *)KH_HW(0x0400106C), (&data_027e0084)[1]);
+-        GXx_SetMasterBrightness_((unsigned short *)0x0400106C, (&gMasterBrightness)[1]);
++        GXx_SetMasterBrightness_((unsigned short *)KH_HW(0x0400106C), (&gMasterBrightness)[1]);
      }
      p = ctx->list;
      data_027e0080 = 0;
@@ -7823,15 +7823,15 @@ index 90ffca526..8b3c8c3c3 100644
  #define GX_FX16PAIR(a, b) ((u32)(((u32)(u16)(a)) | ((u32)(u16)(b) << 16)))
  #define GX_BEGIN_QUADS 1
 diff --git a/src/engine/Boot_InitScene.c b/src/engine/Boot_InitScene.c
-index 49b6bb662..94463e3f9 100644
+index ac86b7f53..d9f181fb3 100644
 --- a/src/engine/Boot_InitScene.c
 +++ b/src/engine/Boot_InitScene.c
 @@ -1,3 +1,4 @@
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: fixed DS addresses */
  /* BootTask_Construct: constructor of g_BootTaskClassDesc (run by RunClassConstructor).
-  * Inits subsystems, then selects the first scene from the persisted state word @0x027ffc20:
-  * 0 (fresh boot) -> Scene 1 (boot/logo); -2 -> Scene 1; else -> Scene 12. The scene request
-@@ -22,7 +23,7 @@ void *Boot_InitScene(void) {
+  * Inits subsystems, then selects the first scene from the word OS_ResetSystem leaves at
+  * 0x027ffc20 (HW_RESET_PARAMETER_BUF): 0 (a cold boot) and -2 give scene 1 (logos, title);
+@@ -25,7 +26,7 @@ void *Boot_InitScene(void) {
      SoundSys_Start(0);
      FSi_BindCardTransfer(0);
      Scene_ClearPending();
@@ -7839,7 +7839,7 @@ index 49b6bb662..94463e3f9 100644
 +    state = *(unsigned int *)KH_HW(0x027ffc20);
      switch (state) {
      case 0:
-         Scene_RequestPending(1, 0);
+         Scene_RequestPending(SCENE_TITLE, 0);
 diff --git a/src/engine/Coll_MeasureFaceDepth.c b/src/engine/Coll_MeasureFaceDepth.c
 index 832e714bf..60262c3d8 100644
 --- a/src/engine/Coll_MeasureFaceDepth.c
@@ -8005,13 +8005,13 @@ index da05123c8..22ba89d07 100644
  extern int FX_Div(int x, int y);
  
 diff --git a/src/engine/Game_EnterPauseScene.c b/src/engine/Game_EnterPauseScene.c
-index 0de1e268c..cd9b795c3 100644
+index b88497285..cc42700df 100644
 --- a/src/engine/Game_EnterPauseScene.c
 +++ b/src/engine/Game_EnterPauseScene.c
 @@ -1,3 +1,4 @@
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: fixed DS addresses */
  #pragma thumb on
- /* Game_EnterPauseScene -- enter a scene, MAIN. Unless forced (data_0204bd85) or flag 0x20ef is set, the
+ /* Game_EnterPauseScene -- enter a scene, MAIN. Unless forced (gPauseAllowed) or flag 0x20ef is set, the
   * call is refused (PauseMenu_SetMode(0)). Otherwise: graphics mode 1/0/1 when +0xe4 asks for it, the
 @@ -11,7 +12,7 @@
  
@@ -8153,7 +8153,7 @@ index 04b32f28e..198802278 100644
      SubOam_SetupBitmapGrid();
      SetGameMode(2);
 diff --git a/src/engine/Gfx_RestoreAfterPause.c b/src/engine/Gfx_RestoreAfterPause.c
-index 4aca27449..a661c5054 100644
+index 63256c889..31d254f23 100644
 --- a/src/engine/Gfx_RestoreAfterPause.c
 +++ b/src/engine/Gfx_RestoreAfterPause.c
 @@ -1,3 +1,4 @@
@@ -8292,7 +8292,7 @@ index ed25e0ad7..1250af5d1 100644
  
  void LoadActorOverlay(void)
 diff --git a/src/engine/MsgQueue_Contains.c b/src/engine/MsgQueue_Contains.c
-index 1ef3cf5be..446e295ad 100644
+index 08586db54..2e40f1242 100644
 --- a/src/engine/MsgQueue_Contains.c
 +++ b/src/engine/MsgQueue_Contains.c
 @@ -15,7 +15,11 @@
@@ -8305,10 +8305,10 @@ index 1ef3cf5be..446e295ad 100644
  static inline unsigned int Clz(unsigned int x) { asm { clz x, x } return x; }
 +#endif
  
- extern int *data_0204c230;
+ extern int *gMsgQueue;
  
 diff --git a/src/engine/MsgQueue_Post.c b/src/engine/MsgQueue_Post.c
-index b9321fb56..c6ed1755e 100644
+index c1925e661..9c9af4372 100644
 --- a/src/engine/MsgQueue_Post.c
 +++ b/src/engine/MsgQueue_Post.c
 @@ -19,7 +19,11 @@
@@ -8321,10 +8321,10 @@ index b9321fb56..c6ed1755e 100644
  static inline unsigned int Clz(unsigned int x) { asm { clz x, x } return x; }
 +#endif
  
- extern char *data_0204c230;
+ extern char *gMsgQueue;
  extern void MI_CpuCopy8(const void *src, void *dst, unsigned int size);
 diff --git a/src/engine/MsgQueue_ResendForPeer.c b/src/engine/MsgQueue_ResendForPeer.c
-index 65b5573aa..5ecb294d1 100644
+index 6fd5f4bbd..8fbfb58cc 100644
 --- a/src/engine/MsgQueue_ResendForPeer.c
 +++ b/src/engine/MsgQueue_ResendForPeer.c
 @@ -18,7 +18,11 @@
@@ -8337,7 +8337,7 @@ index 65b5573aa..5ecb294d1 100644
  static inline unsigned int Clz(unsigned int x) { asm { clz x, x } return x; }
 +#endif
  
- extern int *data_0204c230;
+ extern int *gMsgQueue;
  
 diff --git a/src/engine/Obj_CommitAlphaBlend.c b/src/engine/Obj_CommitAlphaBlend.c
 index 0df393d7c..7a5744b80 100644
@@ -8449,7 +8449,7 @@ index c4b6bb977..88b22853e 100644
      *reg_bg3cnt_b = (h & 0x43) | (size << 14) | (colorMode << 7) | (screenBase << 8) | (charBase << 2);
  }
 diff --git a/src/engine/Pad_Sample.c b/src/engine/Pad_Sample.c
-index 9dd0e5cd3..ab6303f91 100644
+index 42c9a7f33..71d19799d 100644
 --- a/src/engine/Pad_Sample.c
 +++ b/src/engine/Pad_Sample.c
 @@ -1,3 +1,4 @@
@@ -8460,7 +8460,7 @@ index 9dd0e5cd3..ab6303f91 100644
 @@ -24,10 +25,10 @@ int Pad_Sample(void)
      int i;
  
-     data_0204c18c.prev = data_0204c18c.cont;
+     gPadHeld.prev = gPadHeld.cont;
 -    if ((*(volatile u16 *)0x027fffa8 & 0x8000) >> 15) {
 +    if ((*(volatile u16 *)KH_HW(0x027fffa8) & 0x8000) >> 15) {
          cont = 0;
@@ -8468,16 +8468,16 @@ index 9dd0e5cd3..ab6303f91 100644
 -        cont = ((*(volatile u16 *)0x04000130 | *(volatile u16 *)0x027fffa8) ^ 0x2fff) & 0x2fff;
 +        cont = ((*(volatile u16 *)KH_HW(0x04000130) | *(volatile u16 *)KH_HW(0x027fffa8)) ^ 0x2fff) & 0x2fff;
      }
-     data_0204c18c.cont = cont;
-     prev = data_0204c18c.prev;
+     gPadHeld.cont = cont;
+     prev = gPadHeld.prev;
 diff --git a/src/engine/PauseMenu_Open.c b/src/engine/PauseMenu_Open.c
-index d253e9d2d..522a39f52 100644
+index 27416750d..97715651a 100644
 --- a/src/engine/PauseMenu_Open.c
 +++ b/src/engine/PauseMenu_Open.c
 @@ -1,3 +1,4 @@
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: fixed DS addresses */
  #pragma thumb on
- /* PauseMenu_Open -- pause menu opening step, MAIN (THUMB). Without data_0204bd85 or game field 0x20ef
+ /* PauseMenu_Open -- pause menu opening step, MAIN (THUMB). Without gPauseAllowed or game field 0x20ef
   * it pushes step 0 and stops; while the opening delay (+0xcc) runs it counts down. Otherwise it sets
 @@ -53,12 +54,12 @@ extern void SNDi_BroadcastChannelOp(int op);
  extern void PlaySound(int a, int b);            /* play menu sound */
@@ -8521,7 +8521,7 @@ index 39641ce1d..bc99e8a73 100644
  
  static inline void CP_SetDivImm64_64(u64 numer, u64 denom)
 diff --git a/src/engine/Scene_Leave.c b/src/engine/Scene_Leave.c
-index 977947610..e4a78caee 100644
+index ed8ee39cf..fcbf3794d 100644
 --- a/src/engine/Scene_Leave.c
 +++ b/src/engine/Scene_Leave.c
 @@ -1,3 +1,4 @@
@@ -8539,17 +8539,17 @@ index 977947610..e4a78caee 100644
  typedef struct GameHeap {
      int saveA;                          /* +0x00 */
 diff --git a/src/engine/SetMasterBrightnessMain.c b/src/engine/SetMasterBrightnessMain.c
-index 47b03a2f7..289decc1d 100644
+index 7329cf003..b0d08cb17 100644
 --- a/src/engine/SetMasterBrightnessMain.c
 +++ b/src/engine/SetMasterBrightnessMain.c
 @@ -1,3 +1,4 @@
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: fixed DS addresses */
  extern unsigned short *GXx_SetMasterBrightness_(unsigned short *p, int v);
  extern unsigned char data_027e0080;
- extern unsigned char data_027e0084;
-@@ -7,9 +8,9 @@ extern unsigned char data_027e0084;
+ extern unsigned char gMasterBrightness;
+@@ -7,9 +8,9 @@ extern unsigned char gMasterBrightness;
  void SetMasterBrightnessMain(int brightness) {
-     data_027e0084 = (unsigned char)brightness;
+     gMasterBrightness = (unsigned char)brightness;
      {
 -        volatile unsigned short *reg_dispstat = (volatile unsigned short *)0x04000004;
 +        volatile unsigned short *reg_dispstat = (volatile unsigned short *)KH_HW(0x04000004);
@@ -8560,17 +8560,17 @@ index 47b03a2f7..289decc1d 100644
          } else {
              data_027e0080 |= 1;
 diff --git a/src/engine/SetMasterBrightnessSub.c b/src/engine/SetMasterBrightnessSub.c
-index df44c0ac3..3ddabd667 100644
+index 4a36558dc..c03dcfc1d 100644
 --- a/src/engine/SetMasterBrightnessSub.c
 +++ b/src/engine/SetMasterBrightnessSub.c
 @@ -1,3 +1,4 @@
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: fixed DS addresses */
  extern unsigned short *GXx_SetMasterBrightness_(unsigned short *p, int v);
  extern unsigned char data_027e0080;
- extern unsigned char data_027e0084;
-@@ -7,9 +8,9 @@ extern unsigned char data_027e0084;
+ extern unsigned char gMasterBrightness;
+@@ -7,9 +8,9 @@ extern unsigned char gMasterBrightness;
  void SetMasterBrightnessSub(int brightness) {
-     (&data_027e0084)[1] = (unsigned char)brightness;
+     (&gMasterBrightness)[1] = (unsigned char)brightness;
      {
 -        volatile unsigned short *reg_dispstat = (volatile unsigned short *)0x04000004;
 +        volatile unsigned short *reg_dispstat = (volatile unsigned short *)KH_HW(0x04000004);
@@ -8747,7 +8747,7 @@ index 937fb230a..7470a129b 100644
  
  void UnloadActorOverlay(void) {
 diff --git a/src/engine/main.c b/src/engine/main.c
-index abea507c3..29c1461ba 100644
+index 8e6f54324..eb5fe32a8 100644
 --- a/src/engine/main.c
 +++ b/src/engine/main.c
 @@ -1,3 +1,4 @@
@@ -8755,8 +8755,8 @@ index abea507c3..29c1461ba 100644
  /* ============================================================================
   *  main  (0x02000bcc, 0x350 bytes)  --  KH 358/2 Days ARM9 static game entry
   * ----------------------------------------------------------------------------
-@@ -29,7 +30,11 @@
- 
+@@ -30,7 +31,11 @@
+ #include "game/scene.h"
  typedef u32 FSOverlayID;
  
 +#ifdef PLATFORM_VITA
@@ -8767,7 +8767,7 @@ index abea507c3..29c1461ba 100644
  #define FS_OVERLAY_ID_ov001 ((FSOverlayID)(u32)&OVERLAY_1_ID)
  
  /* ---- core services / overlays ---- */
-@@ -105,9 +110,9 @@ extern struct SceneState data_020442a0;
+@@ -106,9 +111,9 @@ extern struct SceneState data_020442a0;
  
  /* the ARM7's X/Y word @ 0x027fffa8: X, Y and debug in bits 10, 11 and 13 (active low), the
   * hinge in bit 15 (1 = lid closed) */
@@ -8797,10 +8797,10 @@ index f69c118cd..aa6082ff8 100644
          if (*reg & 0x2000) return param_1 + 2;
      }
      return param_1;
-diff --git a/src/overlays/enemies/ov252_enemy_4c/Ov252_PlaceBodyParts.c b/src/overlays/enemies/ov252_enemy_4c/Ov252_PlaceBodyParts.c
+diff --git a/src/overlays/enemies/ov252_enemy_ruler_of_the_sky/Ov252_PlaceBodyParts.c b/src/overlays/enemies/ov252_enemy_ruler_of_the_sky/Ov252_PlaceBodyParts.c
 index e201c905f..dd031b5c8 100644
---- a/src/overlays/enemies/ov252_enemy_4c/Ov252_PlaceBodyParts.c
-+++ b/src/overlays/enemies/ov252_enemy_4c/Ov252_PlaceBodyParts.c
+--- a/src/overlays/enemies/ov252_enemy_ruler_of_the_sky/Ov252_PlaceBodyParts.c
++++ b/src/overlays/enemies/ov252_enemy_ruler_of_the_sky/Ov252_PlaceBodyParts.c
 @@ -176,7 +176,11 @@ void Ov252_PlaceBodyParts(Ov252Boss *self)
              break;
          }
@@ -8866,7 +8866,7 @@ index 489f7c75e..0d011b961 100644
  
  extern void func_02023ad0(int handle);
 diff --git a/src/overlays/field/ov022_battle/Ov022_LoadSceneResources.c b/src/overlays/field/ov022_battle/Ov022_LoadSceneResources.c
-index 6912804eb..2fae5ed4f 100644
+index 4b447736f..dc4c98a93 100644
 --- a/src/overlays/field/ov022_battle/Ov022_LoadSceneResources.c
 +++ b/src/overlays/field/ov022_battle/Ov022_LoadSceneResources.c
 @@ -4,7 +4,11 @@
@@ -9243,11 +9243,11 @@ index 86892c0f3..f3a70f40b 100644
          bg[0] = bg[0] & ~3 | 2;
          bg[2] = bg[2] & ~3 | 1;
 diff --git a/src/overlays/scenes/ov000_title/Ov000_BootRunSelector.c b/src/overlays/scenes/ov000_title/Ov000_BootRunSelector.c
-index 394d40eab..4a50ffabc 100644
+index b675aa046..85c43bf72 100644
 --- a/src/overlays/scenes/ov000_title/Ov000_BootRunSelector.c
 +++ b/src/overlays/scenes/ov000_title/Ov000_BootRunSelector.c
-@@ -20,7 +20,11 @@
- 
+@@ -21,7 +21,11 @@
+ #include "game/scene.h"
  typedef u32 FSOverlayID;
  
 +#ifdef PLATFORM_VITA
@@ -9277,7 +9277,7 @@ index 8c1bbcf22..f5ac65512 100644
  void Ov000_DestroyScene(void)
  {
 diff --git a/src/overlays/scenes/ov000_title/Ov000_FadeOutAndStartMovie.c b/src/overlays/scenes/ov000_title/Ov000_FadeOutAndStartMovie.c
-index 5c81755b5..e81bd56f8 100644
+index 504a1bf7d..03cf5e62e 100644
 --- a/src/overlays/scenes/ov000_title/Ov000_FadeOutAndStartMovie.c
 +++ b/src/overlays/scenes/ov000_title/Ov000_FadeOutAndStartMovie.c
 @@ -18,7 +18,11 @@
@@ -9396,7 +9396,7 @@ index e0708bd7e..d232c3f64 100644
  void Ov000_InitializeListScene2dEngines(void)
  {
 diff --git a/src/overlays/scenes/ov000_title/Ov000_LayoutSelectionPages.c b/src/overlays/scenes/ov000_title/Ov000_LayoutSelectionPages.c
-index 385ab90e7..9401292d2 100644
+index 5e30d806c..fedfd4be0 100644
 --- a/src/overlays/scenes/ov000_title/Ov000_LayoutSelectionPages.c
 +++ b/src/overlays/scenes/ov000_title/Ov000_LayoutSelectionPages.c
 @@ -1,3 +1,4 @@
@@ -9406,7 +9406,7 @@ index 385ab90e7..9401292d2 100644
   * Applies the layout template (language switch: 1 = keep the default charset
 @@ -99,7 +100,7 @@ void Ov000_LayoutSelectionPages(void)
      Ov000_InitFromDescAndMark(ctx->selectionObject, &tmpl);
-     Ov000_LoadBlockProcessAndFree(ctx->selectionObject, data_ov000_0205aab0, 0x24);
+     Ov000_LoadBlockProcessAndFree(ctx->selectionObject, gOv000UiCmCmSavePath, 0x24);
      ClampToRange0to16At0x4628(ctx->selectionObject, 8);
 -    G2x_SetBlendAlpha_(0x04001050, 4, 0x10, 8, 8);
 +    G2x_SetBlendAlpha_(KH_HW(0x04001050), 4, 0x10, 8, 8);
@@ -9414,7 +9414,7 @@ index 385ab90e7..9401292d2 100644
      entry = Ov000_FindEntryById(ctx->selectionObject, 0xb);
      Ov000_ReleaseTwoSlots(ctx->selectionObject, entry);
 diff --git a/src/overlays/scenes/ov000_title/Ov000_LeaveTitleForScene.c b/src/overlays/scenes/ov000_title/Ov000_LeaveTitleForScene.c
-index 9fb19a577..7d4b4bd8d 100644
+index 20e92bb90..8e6400233 100644
 --- a/src/overlays/scenes/ov000_title/Ov000_LeaveTitleForScene.c
 +++ b/src/overlays/scenes/ov000_title/Ov000_LeaveTitleForScene.c
 @@ -18,8 +18,16 @@
@@ -9435,7 +9435,7 @@ index 9fb19a577..7d4b4bd8d 100644
  #define FS_OVERLAY_ID_ov012 ((FSOverlayID)(u32) & (OVERLAY_12_ID))
  
 diff --git a/src/overlays/scenes/ov000_title/Ov000_LoadPageSubScreenLayer.c b/src/overlays/scenes/ov000_title/Ov000_LoadPageSubScreenLayer.c
-index 1759dfec3..afac2679a 100644
+index bda91f022..cba29a74c 100644
 --- a/src/overlays/scenes/ov000_title/Ov000_LoadPageSubScreenLayer.c
 +++ b/src/overlays/scenes/ov000_title/Ov000_LoadPageSubScreenLayer.c
 @@ -1,3 +1,4 @@
@@ -9557,7 +9557,7 @@ index 9ef078435..06cf35bb3 100644
          sub[1] = (sub[1] & ~3) | 2;
          sub[2] = (sub[2] & ~3) | 1;
 diff --git a/src/overlays/scenes/ov000_title/Ov000_SetupBootTextScreen.c b/src/overlays/scenes/ov000_title/Ov000_SetupBootTextScreen.c
-index e08044ded..15dea730d 100644
+index 815990750..f214c9ff9 100644
 --- a/src/overlays/scenes/ov000_title/Ov000_SetupBootTextScreen.c
 +++ b/src/overlays/scenes/ov000_title/Ov000_SetupBootTextScreen.c
 @@ -1,3 +1,4 @@
@@ -9575,7 +9575,7 @@ index e08044ded..15dea730d 100644
 +        (*(vu16 *)KH_HW(0x0400000e) & 0x43) | 0x204;
      MIi_CpuClearFast(0, G2_GetBG3ScrPtr(), 0x600);
  
-     Ov000_InitResourceRecord(&messages, data_ov000_0205a9ec);
+     Ov000_InitResourceRecord(&messages, gOv000UiLoadLrdTextPath);
 @@ -96,9 +97,9 @@ void Ov000_SetupBootTextScreen(int mode) {
      frame.paletteCount = 6;
  
@@ -9590,7 +9590,7 @@ index e08044ded..15dea730d 100644
  
      if (mode == 0) {
 diff --git a/src/overlays/scenes/ov000_title/Ov000_StartMovieFromMenuRow.c b/src/overlays/scenes/ov000_title/Ov000_StartMovieFromMenuRow.c
-index 700e12d49..d3a7c9211 100644
+index 36e193ce4..7e022ff56 100644
 --- a/src/overlays/scenes/ov000_title/Ov000_StartMovieFromMenuRow.c
 +++ b/src/overlays/scenes/ov000_title/Ov000_StartMovieFromMenuRow.c
 @@ -17,7 +17,11 @@
@@ -9712,7 +9712,7 @@ index 02d371caf..a7fae6d25 100644
          context->nStateFrame = 0x79;
          next = Ov000_TickMenuLoop;
 diff --git a/src/overlays/scenes/ov000_title/Ov000_TickMenuLoop.c b/src/overlays/scenes/ov000_title/Ov000_TickMenuLoop.c
-index 4e9d31465..4b0d8d66a 100644
+index 9ea959583..551899999 100644
 --- a/src/overlays/scenes/ov000_title/Ov000_TickMenuLoop.c
 +++ b/src/overlays/scenes/ov000_title/Ov000_TickMenuLoop.c
 @@ -1,3 +1,4 @@
@@ -9881,7 +9881,7 @@ index 14e7654ec..9f1d64f56 100644
  extern void Ov002_SampleBlendTween(void);
  
 diff --git a/src/overlays/scenes/ov002_field/Ov002_CreateUiContext.c b/src/overlays/scenes/ov002_field/Ov002_CreateUiContext.c
-index 130aa6a7e..94e8e4707 100644
+index e2114b256..f4d5a2cb5 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_CreateUiContext.c
 +++ b/src/overlays/scenes/ov002_field/Ov002_CreateUiContext.c
 @@ -1,3 +1,4 @@
@@ -9895,7 +9895,7 @@ index 130aa6a7e..94e8e4707 100644
  
 -    G2x_SetBlendAlpha_(0x04000050, 8, 0x21, 0, 0x10);
 +    G2x_SetBlendAlpha_(KH_HW(0x04000050), 8, 0x21, 0, 0x10);
-     RegisterNamedTask(1, data_ov002_0207e8a8, Ov002_RunQueuedSteps);
+     RegisterNamedTask(1, gOv002BguivbfuncName, Ov002_RunQueuedSteps);
  
      if (LoadGlobalU16At0() != 0x2a) {
 diff --git a/src/overlays/scenes/ov002_field/Ov002_DestroyUiContext.c b/src/overlays/scenes/ov002_field/Ov002_DestroyUiContext.c
@@ -9917,7 +9917,7 @@ index f1b824861..6e27bd201 100644
      pSlot = pUi;
      for (i = 0; i < 6; i++) {
 diff --git a/src/overlays/scenes/ov002_field/Ov002_EnterDimmedScene.c b/src/overlays/scenes/ov002_field/Ov002_EnterDimmedScene.c
-index 4e7c94000..fedfe33b9 100644
+index 8ceedd80a..14366053b 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_EnterDimmedScene.c
 +++ b/src/overlays/scenes/ov002_field/Ov002_EnterDimmedScene.c
 @@ -1,3 +1,4 @@
@@ -10066,7 +10066,7 @@ index 9b39abc8a..fbe43c420 100644
          pBg2 = G2_GetBG2ScrPtr();
          MIi_CpuCopyFast(pBg2, pSaved, 0x800);
 diff --git a/src/overlays/scenes/ov002_field/Ov002_InitLoadingScreen.c b/src/overlays/scenes/ov002_field/Ov002_InitLoadingScreen.c
-index d694e7bdc..ca407b286 100644
+index 487c9600e..585d22c86 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_InitLoadingScreen.c
 +++ b/src/overlays/scenes/ov002_field/Ov002_InitLoadingScreen.c
 @@ -1,3 +1,4 @@
@@ -10097,7 +10097,7 @@ index d694e7bdc..ca407b286 100644
 -    *(volatile u16 *)0x0400000e=(*(volatile u16 *)0x0400000e&0x43)|0x1f00;
 +    *(volatile u16 *)KH_HW(0x0400000e)=(*(volatile u16 *)KH_HW(0x0400000e)&0x43)|0x1f00;
      Ov002_SaveOrRestoreLcdSwap(1);
-     pArchive=Archive_LoadFile(data_ov002_0207f420,14);
+     pArchive=Archive_LoadFile(gOv002UiNldgNldgPath,14);
      Res_LoadSpriteSet(&resources,pArchive,0,0,0);
 @@ -74,7 +75,7 @@ Ov002LoadingScreenNextState Ov002_InitLoadingScreen(void)
          MIi_CpuCopyFast(resources.pChar->pCharData,pState->pTileData,resources.pChar->nCharSize);
@@ -10107,7 +10107,7 @@ index d694e7bdc..ca407b286 100644
 +    *(volatile u32 *)KH_HW(0x0400001c)=0;
      pState->nLastTick=OS_GetTick();
      pState->nPhase=0;
-     RegisterNamedTask(1,data_ov002_0207f444,Ov002_TickBlink);
+     RegisterNamedTask(1,gOv002UinowldtaskfuncName,Ov002_TickBlink);
 diff --git a/src/overlays/scenes/ov002_field/Ov002_LoadSubFlowOverlay.c b/src/overlays/scenes/ov002_field/Ov002_LoadSubFlowOverlay.c
 index 466162497..244e8f873 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_LoadSubFlowOverlay.c
@@ -10135,7 +10135,7 @@ index 466162497..244e8f873 100644
  #define FS_OVERLAY_ID_ov026 ((FSOverlayID)(unsigned int)&OVERLAY_26_ID)
  #define FS_OVERLAY_ID_ov027 ((FSOverlayID)(unsigned int)&OVERLAY_27_ID)
 diff --git a/src/overlays/scenes/ov002_field/Ov002_OpenPanelScreen.c b/src/overlays/scenes/ov002_field/Ov002_OpenPanelScreen.c
-index 1cf755f80..90c0dd4b7 100644
+index 15013195c..7d42c78cb 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_OpenPanelScreen.c
 +++ b/src/overlays/scenes/ov002_field/Ov002_OpenPanelScreen.c
 @@ -1,3 +1,4 @@
@@ -10169,7 +10169,7 @@ index 1cf755f80..90c0dd4b7 100644
          ZeroHalfThenFree((void *)ctx->nArchiveGroupAlt);
          ctx->nArchiveGroupAlt = 0;
 diff --git a/src/overlays/scenes/ov002_field/Ov002_OpenTutorialPage.c b/src/overlays/scenes/ov002_field/Ov002_OpenTutorialPage.c
-index 4f78b1d99..f3fbb0368 100644
+index 278e396b7..98c40a4f6 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_OpenTutorialPage.c
 +++ b/src/overlays/scenes/ov002_field/Ov002_OpenTutorialPage.c
 @@ -1,3 +1,4 @@
@@ -10613,7 +10613,7 @@ index fd7b62f92..7d17b1f94 100644
  typedef struct {
      char pad000[0x10];
 diff --git a/src/overlays/scenes/ov002_field/Ov002_TearDownScreen.c b/src/overlays/scenes/ov002_field/Ov002_TearDownScreen.c
-index 6072ed9af..4bfb4b980 100644
+index 53c1d5cb1..05c8d90ba 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_TearDownScreen.c
 +++ b/src/overlays/scenes/ov002_field/Ov002_TearDownScreen.c
 @@ -1,3 +1,4 @@
@@ -10897,7 +10897,7 @@ index ab5993122..e3338f37b 100644
      Ov003CommitDisplay();
  }
 diff --git a/src/overlays/scenes/ov003/Ov003_RankPlayers.c b/src/overlays/scenes/ov003/Ov003_RankPlayers.c
-index ad43d7aad..292162b53 100644
+index bd497a9a8..a97512f20 100644
 --- a/src/overlays/scenes/ov003/Ov003_RankPlayers.c
 +++ b/src/overlays/scenes/ov003/Ov003_RankPlayers.c
 @@ -44,7 +44,11 @@ extern int Ov003_ComparePlayerScores(const void *pLeft, const void *pRight);
@@ -10913,7 +10913,7 @@ index ad43d7aad..292162b53 100644
  }
  
 diff --git a/src/overlays/scenes/ov003/Ov003_SceneInit.c b/src/overlays/scenes/ov003/Ov003_SceneInit.c
-index a31673794..d62b29cb3 100644
+index 65351d37d..01f3ab66e 100644
 --- a/src/overlays/scenes/ov003/Ov003_SceneInit.c
 +++ b/src/overlays/scenes/ov003/Ov003_SceneInit.c
 @@ -1,3 +1,4 @@
@@ -10965,7 +10965,7 @@ index a31673794..d62b29cb3 100644
 +    *(volatile unsigned short *)KH_HW(0x04000060) =
 +        *(volatile unsigned short *)KH_HW(0x04000060) & ~0x3000 | 0x10;
      Touch_StartAutoSampling();
-     RegisterNamedTask(1, (unsigned int)data_ov003_0204f978, (int)&Ov003_DisplaySetup);
+     RegisterNamedTask(1, (unsigned int)gOv003Dual3DUpdateName, (int)&Ov003_DisplaySetup);
      return (int)&Ov003_StateActivateLayers;
 diff --git a/src/overlays/scenes/ov004_calendar/Ov004_ConfigureGraphics.c b/src/overlays/scenes/ov004_calendar/Ov004_ConfigureGraphics.c
 index e1e8d02e0..7ca4ed125 100644
@@ -11165,11 +11165,11 @@ index d559acf64..cd3fa1485 100644
      }
  }
 diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_CommitMenuRewards.c b/src/overlays/scenes/ov005_mission_result/Ov005_CommitMenuRewards.c
-index e55f45e12..03698be6c 100644
+index 858655621..08639efe0 100644
 --- a/src/overlays/scenes/ov005_mission_result/Ov005_CommitMenuRewards.c
 +++ b/src/overlays/scenes/ov005_mission_result/Ov005_CommitMenuRewards.c
 @@ -35,7 +35,11 @@ typedef struct Ov005Config {
- extern GameState *data_0204be18;
+ extern GameState *gGameState;
  extern Ov005Context *data_ov005_0205b80c;
  extern Ov005Config data_ov005_0205b85c;
 +#ifdef PLATFORM_VITA
@@ -11439,7 +11439,7 @@ index bf5effcd0..5fe5bc3e1 100644
      if (Ov006_Link_GetField4F0() != 0) {
          packed = (u32)-1;
 diff --git a/src/overlays/scenes/ov006_mission_mode_select/Ov006_MissionRebuildLayers.c b/src/overlays/scenes/ov006_mission_mode_select/Ov006_MissionRebuildLayers.c
-index cfacb0b82..6ceb390c7 100644
+index 6b51e3613..996d23a29 100644
 --- a/src/overlays/scenes/ov006_mission_mode_select/Ov006_MissionRebuildLayers.c
 +++ b/src/overlays/scenes/ov006_mission_mode_select/Ov006_MissionRebuildLayers.c
 @@ -1,3 +1,4 @@
@@ -11459,7 +11459,7 @@ index cfacb0b82..6ceb390c7 100644
      if (data_ov006_02056664 == 0) {
          return;
 diff --git a/src/overlays/scenes/ov006_mission_mode_select/Ov006_MissionSceneCtor.c b/src/overlays/scenes/ov006_mission_mode_select/Ov006_MissionSceneCtor.c
-index 888790f57..a85489f3b 100644
+index 75fcbb9b2..b7b9040c3 100644
 --- a/src/overlays/scenes/ov006_mission_mode_select/Ov006_MissionSceneCtor.c
 +++ b/src/overlays/scenes/ov006_mission_mode_select/Ov006_MissionSceneCtor.c
 @@ -1,3 +1,4 @@
@@ -11603,7 +11603,7 @@ index e653b29c8..e60013ac7 100644
  
          index = 0;
 diff --git a/src/overlays/scenes/ov007_monologue/Ov007_FadeBackdropStep.c b/src/overlays/scenes/ov007_monologue/Ov007_FadeBackdropStep.c
-index 4fb28284a..007d1018b 100644
+index 3ac173eb0..9b8657d64 100644
 --- a/src/overlays/scenes/ov007_monologue/Ov007_FadeBackdropStep.c
 +++ b/src/overlays/scenes/ov007_monologue/Ov007_FadeBackdropStep.c
 @@ -1,3 +1,4 @@
@@ -11627,7 +11627,7 @@ index 4fb28284a..007d1018b 100644
 -        *(volatile unsigned short *)0x05000002 = v | v * 0x20 | v * 0x400;
 +        *(volatile unsigned short *)KH_HW(0x05000002) = v | v * 0x20 | v * 0x400;
      }
-     if ((data_0204c190 & 8) != 0) {
+     if ((gPadPressed & 8) != 0) {
          *(int *)(root + 0x20) = 0;
 diff --git a/src/overlays/scenes/ov007_monologue/Ov007_SetupSubDisplay.c b/src/overlays/scenes/ov007_monologue/Ov007_SetupSubDisplay.c
 index 40cf4ac91..d6856723e 100644
@@ -11659,7 +11659,7 @@ index 40cf4ac91..d6856723e 100644
          *(volatile unsigned short *)((char *)reg_dispcnt + 0xa) =
              *(volatile unsigned short *)((char *)reg_dispcnt + 0xa) & ~3 | 1;
 diff --git a/src/overlays/scenes/ov007_monologue/Ov007_TextWindowFadeIn.c b/src/overlays/scenes/ov007_monologue/Ov007_TextWindowFadeIn.c
-index ef27c17c7..140b9dc30 100644
+index ce8210078..6deb23314 100644
 --- a/src/overlays/scenes/ov007_monologue/Ov007_TextWindowFadeIn.c
 +++ b/src/overlays/scenes/ov007_monologue/Ov007_TextWindowFadeIn.c
 @@ -1,3 +1,4 @@
@@ -11685,7 +11685,7 @@ index ef27c17c7..140b9dc30 100644
 -        *(volatile unsigned short *)0x05000004 = frame | frame * 0x20 | frame * 0x400;
 +        *(volatile unsigned short *)KH_HW(0x05000004) = frame | frame * 0x20 | frame * 0x400;
      }
-     if ((data_0204c190 & 1) != 0) {
+     if ((gPadPressed & 1) != 0) {
          if (*(int *)(root + 0x20) < 0x20) {
 diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_ConfigDispcntBothEngines.c b/src/overlays/scenes/ov008_camp_menu/Ov008_ConfigDispcntBothEngines.c
 index bf0d0416a..bc09436b5 100644
@@ -11703,7 +11703,7 @@ index bf0d0416a..bc09436b5 100644
      *reg_dispcnt_b = (*reg_dispcnt_b & ~0x1f00) | 0x800;
  }
 diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_DestroyGridMenu.c b/src/overlays/scenes/ov008_camp_menu/Ov008_DestroyGridMenu.c
-index 30cb1d3c3..a66f566ec 100644
+index 7a000f8a2..a5ecb630e 100644
 --- a/src/overlays/scenes/ov008_camp_menu/Ov008_DestroyGridMenu.c
 +++ b/src/overlays/scenes/ov008_camp_menu/Ov008_DestroyGridMenu.c
 @@ -1,3 +1,4 @@
@@ -11774,7 +11774,7 @@ index a48ad36da..c94ac2271 100644
      int nValue;
      TileSurface *pName;
 diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_InitCampaignMenuContext.c b/src/overlays/scenes/ov008_camp_menu/Ov008_InitCampaignMenuContext.c
-index 59da2a9e0..434692bf6 100644
+index 674ce89e4..829ba9534 100644
 --- a/src/overlays/scenes/ov008_camp_menu/Ov008_InitCampaignMenuContext.c
 +++ b/src/overlays/scenes/ov008_camp_menu/Ov008_InitCampaignMenuContext.c
 @@ -1,3 +1,4 @@
@@ -11872,13 +11872,13 @@ index 9eb057720..b73a689d7 100644
          Ov008_PushSubitemSet(obj, Ov008_FindEntryById(obj, 0x2c), 1);
      }
 diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_LoadMenuBgWithVariantChars.c b/src/overlays/scenes/ov008_camp_menu/Ov008_LoadMenuBgWithVariantChars.c
-index 3b32c0aff..05892239f 100644
+index 7a5e6e34f..e6b907afd 100644
 --- a/src/overlays/scenes/ov008_camp_menu/Ov008_LoadMenuBgWithVariantChars.c
 +++ b/src/overlays/scenes/ov008_camp_menu/Ov008_LoadMenuBgWithVariantChars.c
 @@ -1,3 +1,4 @@
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: fixed DS addresses */
  /* Ov008_LoadMenuBgWithVariantChars -- Ov008_LoadMenuBgWithVariantChars (300 B, 19 relocs).
-  * Loads a menu background from a fixed archive descriptor (data_ov008_020904a4, passed to
+  * Loads a menu background from a fixed archive descriptor (gOv008UiCmSavB000Path, passed to
   * Archive_LoadFile by address), uploads its BG palette, then selects the BG3 character source:
 @@ -65,7 +66,7 @@ void Ov008_LoadMenuBgWithVariantChars(void)
          NNSi_FndFreeFromDefaultHeap(resource);
@@ -11886,18 +11886,18 @@ index 3b32c0aff..05892239f 100644
  
 -    *(volatile u32 *)0x04000018 = 0x01e600e3;
 +    *(volatile u32 *)KH_HW(0x04000018) = 0x01e600e3;
-     Ov008_LoadLayoutResource(ctx, data_ov008_020904bc);
+     Ov008_LoadLayoutResource(ctx, gOv008UiCmSavePath);
      Ov008_TagTracker_InvokeCallback(ctx, Ov008_FindEntryByTag(ctx, 0));
      Ov008_TagTracker_InvokeCallback(ctx, Ov008_FindEntryByTag(ctx, 1));
 diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_LoadMenuUi.c b/src/overlays/scenes/ov008_camp_menu/Ov008_LoadMenuUi.c
-index ade6e1ccc..981b17b9f 100644
+index 6dc729c5c..35991eb87 100644
 --- a/src/overlays/scenes/ov008_camp_menu/Ov008_LoadMenuUi.c
 +++ b/src/overlays/scenes/ov008_camp_menu/Ov008_LoadMenuUi.c
 @@ -1,3 +1,4 @@
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: fixed DS addresses */
  /* Ov008_LoadMenuUi -- load the menu UI container and build its root cell, ov008.
   * Runs once (guarded by heap[0x608]): clears the two OBJ palettes, loads the UI archive
-  * (data_ov008_0208ffb4 = "UI/mlt/res.p2") via Msg_OpenContainerAndReadHeader, then registers the root cell
+  * (gOv008UiMltResPath = "UI/mlt/res.p2") via Msg_OpenContainerAndReadHeader, then registers the root cell
 @@ -18,8 +19,8 @@ void Ov008_LoadMenuUi(void) {
      if (*(int *)(data_ov008_02090f00 + 0x608) != 0) {
          return;
@@ -11906,7 +11906,7 @@ index ade6e1ccc..981b17b9f 100644
 -    *(unsigned short *)0x05000400 = 0;
 +    *(unsigned short *)KH_HW(0x05000000) = 0;
 +    *(unsigned short *)KH_HW(0x05000400) = 0;
-     *(void **)(data_ov008_02090f00 + 0x608) = Msg_OpenContainerAndReadHeader(data_ov008_0208ffb4, 0xe);
+     *(void **)(data_ov008_02090f00 + 0x608) = Msg_OpenContainerAndReadHeader(gOv008UiMltResPath, 0xe);
      SetMasterBrightnessSub(0);
      {
 @@ -40,5 +41,5 @@ void Ov008_LoadMenuUi(void) {
@@ -12042,7 +12042,7 @@ index ddd4af5e8..8506b6e63 100644
      if (pMenu->bTransfer != 0) {
          ClearGlobalArrayInt(0);
 diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_MissionRebuildLayers.c b/src/overlays/scenes/ov008_camp_menu/Ov008_MissionRebuildLayers.c
-index b46536a28..d9dbf6788 100644
+index 8359399c5..a7603de6c 100644
 --- a/src/overlays/scenes/ov008_camp_menu/Ov008_MissionRebuildLayers.c
 +++ b/src/overlays/scenes/ov008_camp_menu/Ov008_MissionRebuildLayers.c
 @@ -1,3 +1,4 @@
@@ -12062,7 +12062,7 @@ index b46536a28..d9dbf6788 100644
      if (data_ov008_02090fa4 == 0) {
          return;
 diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_MissionSceneCtor.c b/src/overlays/scenes/ov008_camp_menu/Ov008_MissionSceneCtor.c
-index a4cebd61c..f368b25af 100644
+index aaf5d6aba..86378b0c4 100644
 --- a/src/overlays/scenes/ov008_camp_menu/Ov008_MissionSceneCtor.c
 +++ b/src/overlays/scenes/ov008_camp_menu/Ov008_MissionSceneCtor.c
 @@ -1,3 +1,4 @@
@@ -12144,7 +12144,7 @@ index 95324b75c..d8b76f8c2 100644
      SetMainVisiblePlanes(0);
      SetSubVisiblePlanes(0);
 diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_OpenTutorialPage.c b/src/overlays/scenes/ov008_camp_menu/Ov008_OpenTutorialPage.c
-index 8ccaafa40..8e156cd1c 100644
+index 285ee5343..66923dcba 100644
 --- a/src/overlays/scenes/ov008_camp_menu/Ov008_OpenTutorialPage.c
 +++ b/src/overlays/scenes/ov008_camp_menu/Ov008_OpenTutorialPage.c
 @@ -1,3 +1,4 @@
@@ -12159,10 +12159,10 @@ index 8ccaafa40..8e156cd1c 100644
 -static volatile DisplayRegisters *const SUB_DISPLAY = (volatile DisplayRegisters *)0x04001000;
 +static volatile DisplayRegisters *const SUB_DISPLAY = (volatile DisplayRegisters *)KH_HW(0x04001000);
  
- extern char data_ov008_02090b40[];                                  /* "UI/btlttr/ttr_&.dat.z" */
+ extern char gOv008UiBtlttrTtrPath[];                                  /* "UI/btlttr/ttr_&.dat.z" */
  extern const int data_ov008_02090a54[];                             /* page index -> tutorial entry */
 diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_PageTeardown.c b/src/overlays/scenes/ov008_camp_menu/Ov008_PageTeardown.c
-index 328861158..be21062b2 100644
+index 2d2aa5094..d7144bdb7 100644
 --- a/src/overlays/scenes/ov008_camp_menu/Ov008_PageTeardown.c
 +++ b/src/overlays/scenes/ov008_camp_menu/Ov008_PageTeardown.c
 @@ -1,3 +1,4 @@
@@ -12261,7 +12261,7 @@ index 151d70905..0bd6b2bcf 100644
  
  void Ov008_ResetTweensAndBlank(void) {
 diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_SaveMenu_BuildLayout.c b/src/overlays/scenes/ov008_camp_menu/Ov008_SaveMenu_BuildLayout.c
-index 51928efbf..7ebe6f4fd 100644
+index 9f138f35f..e3ed1ddda 100644
 --- a/src/overlays/scenes/ov008_camp_menu/Ov008_SaveMenu_BuildLayout.c
 +++ b/src/overlays/scenes/ov008_camp_menu/Ov008_SaveMenu_BuildLayout.c
 @@ -1,3 +1,4 @@
@@ -12270,7 +12270,7 @@ index 51928efbf..7ebe6f4fd 100644
   * the summary rows. */
  
 @@ -68,7 +69,7 @@ void Ov008_SaveMenu_BuildLayout(Ov009PageContext *context)
-     Ov008_LoadBlockProcessAndFree(object, data_ov008_020904d0, 0x24);
+     Ov008_LoadBlockProcessAndFree(object, gOv008UiCmCmSavePath, 0x24);
      Ov008_StoreWordAt0x4a50(object, (int)func_ov008_020698ec);
      ClampToRange0to16At0x4628(object, 8);
 -    G2x_SetBlendAlpha_((volatile void *)0x04000050, 4, 0x10, 8, 8);
@@ -12682,7 +12682,7 @@ index f7d0fe600..0d4556eee 100644
  void Ov009_InitSubScreenGraphics(void)
  {
 diff --git a/src/overlays/scenes/ov009_camp_save/Ov009_LoadMenuBgWithVariantChars.c b/src/overlays/scenes/ov009_camp_save/Ov009_LoadMenuBgWithVariantChars.c
-index e54d449b1..ec21ae1f7 100644
+index b73dca128..b7a877588 100644
 --- a/src/overlays/scenes/ov009_camp_save/Ov009_LoadMenuBgWithVariantChars.c
 +++ b/src/overlays/scenes/ov009_camp_save/Ov009_LoadMenuBgWithVariantChars.c
 @@ -1,3 +1,4 @@
@@ -12700,7 +12700,7 @@ index e54d449b1..ec21ae1f7 100644
  void Ov009_LoadMenuBgWithVariantChars(void)
  {
 diff --git a/src/overlays/scenes/ov009_camp_save/Ov009_Menu_Init.c b/src/overlays/scenes/ov009_camp_save/Ov009_Menu_Init.c
-index 37fe4d7d5..7d1db32fa 100644
+index 0c5b93edb..5e5f91a2a 100644
 --- a/src/overlays/scenes/ov009_camp_save/Ov009_Menu_Init.c
 +++ b/src/overlays/scenes/ov009_camp_save/Ov009_Menu_Init.c
 @@ -1,3 +1,4 @@
@@ -12736,7 +12736,7 @@ index e1f6a2e72..1e1c2cc6d 100644
  void Ov009_Menu_VBlankTick(void)
  {
 diff --git a/src/overlays/scenes/ov009_camp_save/Ov009_PageTeardown.c b/src/overlays/scenes/ov009_camp_save/Ov009_PageTeardown.c
-index 8f4077e9b..435260316 100644
+index 28edc2c0f..bb399ce20 100644
 --- a/src/overlays/scenes/ov009_camp_save/Ov009_PageTeardown.c
 +++ b/src/overlays/scenes/ov009_camp_save/Ov009_PageTeardown.c
 @@ -1,3 +1,4 @@
@@ -12763,7 +12763,7 @@ index 8f4077e9b..435260316 100644
  static inline void G2_SetBG1Control(
      GXBGScrSizeText screenSize,
 diff --git a/src/overlays/scenes/ov009_camp_save/Ov009_SaveMenu_BuildLayout.c b/src/overlays/scenes/ov009_camp_save/Ov009_SaveMenu_BuildLayout.c
-index 7dab24bc8..db95e51b7 100644
+index d79fec8af..c43d21e9b 100644
 --- a/src/overlays/scenes/ov009_camp_save/Ov009_SaveMenu_BuildLayout.c
 +++ b/src/overlays/scenes/ov009_camp_save/Ov009_SaveMenu_BuildLayout.c
 @@ -1,3 +1,4 @@
@@ -12772,7 +12772,7 @@ index 7dab24bc8..db95e51b7 100644
   * the summary rows. */
  
 @@ -68,7 +69,7 @@ void Ov009_SaveMenu_BuildLayout(Ov009PageContext *context)
-     Ov009_LoadBlockProcessAndFree(object, data_ov009_02056364, 0x24);
+     Ov009_LoadBlockProcessAndFree(object, gOv009UiCmCmSavePath, 0x24);
      Ov009_StoreWordAt0x4a50(object, (int)func_ov009_02054ca0);
      ClampToRange0to16At0x4628(object, 8);
 -    G2x_SetBlendAlpha_((volatile void *)0x04000050, 4, 0x10, 8, 8);
@@ -12893,7 +12893,7 @@ index 4edeb06a3..53ec94ec3 100644
          if (pressed & 1) {
              *(int *)(root + 0x78) = 3;
 diff --git a/src/overlays/scenes/ov010/Ov010_TitleSceneInit.c b/src/overlays/scenes/ov010/Ov010_TitleSceneInit.c
-index 6018d9153..de3cddd02 100644
+index ae371c8fa..e0f4a3b1e 100644
 --- a/src/overlays/scenes/ov010/Ov010_TitleSceneInit.c
 +++ b/src/overlays/scenes/ov010/Ov010_TitleSceneInit.c
 @@ -1,3 +1,4 @@
@@ -12952,7 +12952,7 @@ index 6018d9153..de3cddd02 100644
          bg[0] = PriRet(&bg[0], 3);
          bg[1] = PriRet(&bg[1], 2);
 diff --git a/src/overlays/scenes/ov011/Ov011_BuildTitleLayout0.c b/src/overlays/scenes/ov011/Ov011_BuildTitleLayout0.c
-index 40e26ea9e..dc1c4fca2 100644
+index 135268d05..daeb1f1c5 100644
 --- a/src/overlays/scenes/ov011/Ov011_BuildTitleLayout0.c
 +++ b/src/overlays/scenes/ov011/Ov011_BuildTitleLayout0.c
 @@ -1,3 +1,4 @@
@@ -12987,7 +12987,7 @@ index 40e26ea9e..dc1c4fca2 100644
 -    G2x_SetBlendBrightness_((volatile void *)0x04001050, 4, -0x10);
 +    G2x_SetBlendBrightness_((volatile void *)KH_HW(0x04000050), 4, -0x10);
 +    G2x_SetBlendBrightness_((volatile void *)KH_HW(0x04001050), 4, -0x10);
-     RegisterNamedTask(1, data_ov011_0205e930, Ov011_VBlankApplyBgScroll);
+     RegisterNamedTask(1, gOv011SfVName, Ov011_VBlankApplyBgScroll);
      pTop->wScrollPhase = 0;
      pBottom->wScrollPhase = 0;
 diff --git a/src/overlays/scenes/ov011/Ov011_ClearBlendA.c b/src/overlays/scenes/ov011/Ov011_ClearBlendA.c
@@ -13015,7 +13015,7 @@ index d68781307..f6ff81179 100644
      *reg_bldcnt_b = 0;
  }
 diff --git a/src/overlays/scenes/ov011/Ov011_CreateScene.c b/src/overlays/scenes/ov011/Ov011_CreateScene.c
-index d039081b6..9a2cecc76 100644
+index 198aaedf7..8004bff33 100644
 --- a/src/overlays/scenes/ov011/Ov011_CreateScene.c
 +++ b/src/overlays/scenes/ov011/Ov011_CreateScene.c
 @@ -1,3 +1,4 @@
@@ -13061,7 +13061,7 @@ index c2c31300a..524e1b4b6 100644
  
  typedef struct Ov011SceneFlags {
 diff --git a/src/overlays/scenes/ov011/Ov011_EnterMode2.c b/src/overlays/scenes/ov011/Ov011_EnterMode2.c
-index 983d1cf4d..287c01210 100644
+index df912b505..4d45ec6af 100644
 --- a/src/overlays/scenes/ov011/Ov011_EnterMode2.c
 +++ b/src/overlays/scenes/ov011/Ov011_EnterMode2.c
 @@ -1,3 +1,4 @@
@@ -13230,7 +13230,7 @@ index 1510fe30a..d5ea30131 100644
  #define DISPCNT_MAIN_BGS 0x1500
  #define DISPCNT_SUB_BGS 0x1100
 diff --git a/src/overlays/scenes/ov011/Ov011_TickMoviePlaybackState.c b/src/overlays/scenes/ov011/Ov011_TickMoviePlaybackState.c
-index c948dc6e7..a38215865 100644
+index 9689286e6..3aec370a3 100644
 --- a/src/overlays/scenes/ov011/Ov011_TickMoviePlaybackState.c
 +++ b/src/overlays/scenes/ov011/Ov011_TickMoviePlaybackState.c
 @@ -1,3 +1,4 @@
@@ -13287,7 +13287,7 @@ index 21ce292f3..e3f4681ce 100644
      }
      }
 diff --git a/src/overlays/scenes/ov011/Ov011_TickTitleMenu.c b/src/overlays/scenes/ov011/Ov011_TickTitleMenu.c
-index 68b3864a4..6ac9ab7bd 100644
+index fd01e5111..780fbeca1 100644
 --- a/src/overlays/scenes/ov011/Ov011_TickTitleMenu.c
 +++ b/src/overlays/scenes/ov011/Ov011_TickTitleMenu.c
 @@ -1,3 +1,4 @@
@@ -13443,7 +13443,7 @@ index 3a8815a13..8a7101693 100644
  int Ov012_FadeOutOpeningBgPlanes(void *pContext, u32 nThreadDelta,
                               Ov012OpeningEvent *pEvent) {
 diff --git a/src/overlays/scenes/ov012_opening/Ov012_InitOpeningScene.c b/src/overlays/scenes/ov012_opening/Ov012_InitOpeningScene.c
-index dd306faed..ad2a4df7e 100644
+index cb32532b2..435f71b0a 100644
 --- a/src/overlays/scenes/ov012_opening/Ov012_InitOpeningScene.c
 +++ b/src/overlays/scenes/ov012_opening/Ov012_InitOpeningScene.c
 @@ -1,3 +1,4 @@
@@ -13452,9 +13452,9 @@ index dd306faed..ad2a4df7e 100644
   * archives, builds 41 sprite resource sets, starts op/scr.z and returns the opening-scene update
   * callback. */
 @@ -14,7 +15,11 @@ extern int data_ov012_0205c2d0;
- extern char data_ov012_0205cadc[];
+ extern char gOv012OpOpPath[];
  extern int data_ov012_0205caf4;
- extern char data_ov012_0205cae8[];
+ extern char gOv012OpScrPath[];
 +#ifdef PLATFORM_VITA
 +#define OVERLAY_24_ID (*(u32 (*)[1])0x18) /* PLATFORM_VITA: absolute symbol */
 +#else
@@ -13464,7 +13464,7 @@ index dd306faed..ad2a4df7e 100644
  
  extern void *NNSi_FndGetCurrentRootHeap(void);
 @@ -100,7 +105,7 @@ void *Ov012_InitOpeningScene(int alternateMode) {
-     Stream_DecodeIntoStagingBuffer(root + 4, data_ov012_0205cae8, 0, root + 0x8598);
+     Stream_DecodeIntoStagingBuffer(root + 4, gOv012OpScrPath, 0, root + 0x8598);
      *(u16 *)(root + 2) |= 1;
      *(u8 *)(root + 0x8be1) = 0;
 -    rawKeys = *(volatile u16 *)0x04000130 | *(volatile u16 *)0x027fffa8;
@@ -13513,7 +13513,7 @@ index 1037d4866..36f94e9e4 100644
  void Ov012_UpdateOpeningBrightness(char *context) {
      char *base;
 diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_DestroyGridMenu.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_DestroyGridMenu.c
-index 686aadf58..cb01b0664 100644
+index 750579a98..616e1ef83 100644
 --- a/src/overlays/screens/ov025_camp_menu_2/Ov025_DestroyGridMenu.c
 +++ b/src/overlays/screens/ov025_camp_menu_2/Ov025_DestroyGridMenu.c
 @@ -1,3 +1,4 @@
@@ -13592,7 +13592,7 @@ index cee0b4dc4..823664bd3 100644
  extern void  GX_SetBankForTex(int nBank);
  extern void  GX_SetBankForTexPltt(int nOffset);
 diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_InitCampaignMenuContext.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_InitCampaignMenuContext.c
-index dcc9a335e..77df3abff 100644
+index f4020f8c3..a88077f74 100644
 --- a/src/overlays/screens/ov025_camp_menu_2/Ov025_InitCampaignMenuContext.c
 +++ b/src/overlays/screens/ov025_camp_menu_2/Ov025_InitCampaignMenuContext.c
 @@ -1,3 +1,4 @@
@@ -13686,13 +13686,13 @@ index 6f7de0877..bea8053cd 100644
  }
  
 diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_LoadMenuBgWithVariantChars.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_LoadMenuBgWithVariantChars.c
-index 2a109074a..74d435d60 100644
+index 4b76e6bf3..6725c07a0 100644
 --- a/src/overlays/screens/ov025_camp_menu_2/Ov025_LoadMenuBgWithVariantChars.c
 +++ b/src/overlays/screens/ov025_camp_menu_2/Ov025_LoadMenuBgWithVariantChars.c
 @@ -1,3 +1,4 @@
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: fixed DS addresses */
  /* Ov025_LoadMenuBgWithVariantChars -- Ov008_LoadMenuBgWithVariantChars (300 B, 19 relocs).
-  * Loads a menu background from a fixed archive descriptor (data_ov025_020b4e70, passed to
+  * Loads a menu background from a fixed archive descriptor (gOv025UiCmSavB000Path, passed to
   * Archive_LoadFile by address), uploads its BG palette, then selects the BG3 character source:
 @@ -65,7 +66,7 @@ void Ov025_LoadMenuBgWithVariantChars(void)
          NNSi_FndFreeFromDefaultHeap(resource);
@@ -13700,7 +13700,7 @@ index 2a109074a..74d435d60 100644
  
 -    *(volatile u32 *)0x04000018 = 0x01e600e3;
 +    *(volatile u32 *)KH_HW(0x04000018) = 0x01e600e3;
-     Ov025_LoadBlockDispatchThreeThenFree(ctx, data_ov025_020b4e88);
+     Ov025_LoadBlockDispatchThreeThenFree(ctx, gOv025UiCmSavePath);
      Ov025_TagTracker_InvokeCallback(ctx, Ov025_FindEntryByTag(ctx, 0));
      Ov025_TagTracker_InvokeCallback(ctx, Ov025_FindEntryByTag(ctx, 1));
 diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_MainMenu_SetupDisplay.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_MainMenu_SetupDisplay.c
@@ -13764,7 +13764,7 @@ index 57382e449..43b645b35 100644
      if (pMenu->bTransfer != 0) {
          ClearGlobalArrayInt(0);
 diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_OpenTutorialPage.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_OpenTutorialPage.c
-index 6017c1772..f2cbb3df1 100644
+index bfec75065..898e8386b 100644
 --- a/src/overlays/screens/ov025_camp_menu_2/Ov025_OpenTutorialPage.c
 +++ b/src/overlays/screens/ov025_camp_menu_2/Ov025_OpenTutorialPage.c
 @@ -1,3 +1,4 @@
@@ -13779,10 +13779,10 @@ index 6017c1772..f2cbb3df1 100644
 -static volatile DisplayRegisters *const SUB_DISPLAY = (volatile DisplayRegisters *)0x04001000;
 +static volatile DisplayRegisters *const SUB_DISPLAY = (volatile DisplayRegisters *)KH_HW(0x04001000);
  
- extern char data_ov025_020b5674[];                                  /* "UI/btlttr/ttr_&.dat.z" */
+ extern char gOv025UiBtlttrTtrPath[];                                  /* "UI/btlttr/ttr_&.dat.z" */
  extern const int data_ov025_020b5588[];                             /* page index -> tutorial entry */
 diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_PageTeardown.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_PageTeardown.c
-index a40a411e4..62c5442b9 100644
+index 27408ce4e..3094b8625 100644
 --- a/src/overlays/screens/ov025_camp_menu_2/Ov025_PageTeardown.c
 +++ b/src/overlays/screens/ov025_camp_menu_2/Ov025_PageTeardown.c
 @@ -1,3 +1,4 @@
@@ -13855,7 +13855,7 @@ index 8fd4090f5..fde0c6fbc 100644
  extern void *G2_GetBG1ScrPtr(void);
  extern void *G2_GetBG2ScrPtr(void);
 diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_SaveMenu_BuildLayout.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_SaveMenu_BuildLayout.c
-index 672b3f319..b5cdcd66a 100644
+index 9c2e43829..ce2b99a9d 100644
 --- a/src/overlays/screens/ov025_camp_menu_2/Ov025_SaveMenu_BuildLayout.c
 +++ b/src/overlays/screens/ov025_camp_menu_2/Ov025_SaveMenu_BuildLayout.c
 @@ -1,3 +1,4 @@
@@ -13864,7 +13864,7 @@ index 672b3f319..b5cdcd66a 100644
   * the summary rows. */
  
 @@ -68,7 +69,7 @@ void Ov025_SaveMenu_BuildLayout(Ov009PageContext *context)
-     Ov025_LoadBlockProcessAndFree(object, data_ov025_020b4e9c, 0x24);
+     Ov025_LoadBlockProcessAndFree(object, gOv025UiCmCmSavePath, 0x24);
      Ov025_StoreWordAt0x4a50(object, (int)func_ov025_0209bccc);
      ClampToRange0to16At0x4628(object, 8);
 -    G2x_SetBlendAlpha_((volatile void *)0x04000050, 4, 0x10, 8, 8);
@@ -14294,7 +14294,7 @@ index ffc568f3d..dbc0cef96 100644
  extern Ov027Scene *NNSi_FndGetCurrentRootHeap(void);                /* the current scene work */
  extern void  Ov027_UpdateModels(void);                             /* Ov027_UpdateModels */
 diff --git a/src/overlays/screens/ov027_game_over/Ov027_PollConfirmAndAdvance.c b/src/overlays/screens/ov027_game_over/Ov027_PollConfirmAndAdvance.c
-index 714fbf806..01c0c9dba 100644
+index 896681dea..b855d8556 100644
 --- a/src/overlays/screens/ov027_game_over/Ov027_PollConfirmAndAdvance.c
 +++ b/src/overlays/screens/ov027_game_over/Ov027_PollConfirmAndAdvance.c
 @@ -1,3 +1,4 @@
@@ -14303,7 +14303,7 @@ index 714fbf806..01c0c9dba 100644
   * on A plays the confirm sound and moves to the idle step. */
  
 @@ -37,7 +38,7 @@ Ov027Handler Ov027_PollConfirmAndAdvance(void) {
-     if ((data_0204c190 & 1) != 0) {
+     if ((gPadPressed & 1) != 0) {
          PlaySound(0, 1);
          {
 -            volatile unsigned int *reg_dispcnt = (volatile unsigned int *)0x04000000;
@@ -14433,13 +14433,13 @@ index 1414726fa..99ae9d667 100644
      }
  }
 diff --git a/src/overlays/screens/ov106/Ov106_TeardownScene.c b/src/overlays/screens/ov106/Ov106_TeardownScene.c
-index 3ffa35f03..41abf867d 100644
+index a1767748e..6dbd26893 100644
 --- a/src/overlays/screens/ov106/Ov106_TeardownScene.c
 +++ b/src/overlays/screens/ov106/Ov106_TeardownScene.c
 @@ -1,3 +1,4 @@
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: fixed DS addresses */
  /* Tear down the ov106 scene: field 0x248c is cleared, the scene layers close (020b7c50), window 0
-  * spans the whole screen and the sub engine's windows are disabled, the data_ov106_020b8ab4 resource
+  * spans the whole screen and the sub engine's windows are disabled, the gOv106Dual3DUpdateName resource
   * is released, the +0x8b38 model, the +0x8cd0 and +0x8bc4 widgets and the +0x8e40 handle are freed,
 @@ -20,9 +21,9 @@ void Ov106_TeardownScene(void)
  {
@@ -14451,7 +14451,7 @@ index 3ffa35f03..41abf867d 100644
 +    *(volatile u16 *)KH_HW(0x04000040) = 0xff;
 +    *(volatile u16 *)KH_HW(0x04000044) = 0xc0;
 +    *(volatile u32 *)KH_HW(0x04001000) &= ~0xe000;
-     VBlank_UnregisterCallback(1, data_ov106_020b8ab4);
+     VBlank_UnregisterCallback(1, gOv106Dual3DUpdateName);
      Gfx_SetupSubEngine(data_ov106_020b8b60 + 0x8b38);
      ReleaseField74AndCleanup(data_ov106_020b8b60 + 0x8cd0);
 diff --git a/src/overlays/system/ov001_boot/Ov001_BootInit.c b/src/overlays/system/ov001_boot/Ov001_BootInit.c
@@ -14619,7 +14619,7 @@ index df475a3e7..2d47f042b 100644
  #define DISPCNT_OBJ_1D  0x00000020
  
 diff --git a/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_OpenPlayer.c b/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_OpenPlayer.c
-index 91d0c4fb9..8ff1c8455 100644
+index d1037e3af..6f5394c8e 100644
 --- a/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_OpenPlayer.c
 +++ b/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_OpenPlayer.c
 @@ -1,3 +1,4 @@
@@ -14627,7 +14627,7 @@ index 91d0c4fb9..8ff1c8455 100644
  /* MobiClip: open the movie player.
   *
   * Takes the heap's current root as the player object, publishes it, clears the
-@@ -52,8 +53,8 @@ extern char data_ov024_02093958[];
+@@ -52,8 +53,8 @@ extern char gOv024TextFontEu10AllPath[];
  extern u16 data_ov024_02093918[];
  extern void *data_ov024_02093974[];
  
