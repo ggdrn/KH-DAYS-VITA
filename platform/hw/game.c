@@ -2,6 +2,7 @@
  *
  * The emulated DS state it needs (memory map, IRQs, VBlank) is set up in platform/hw; this file
  * only owns the game thread. */
+#include "hw/memmap.h"
 #include "hw/overlays.h"
 #include "log.h"
 
@@ -27,6 +28,7 @@ void kh_game_run(void)
     for (i = 0; i < kh_overlay_count; i++)
         entries += kh_overlays[i].entry != NULL;
     LOG("game: %d overlays, %d with an entry", kh_overlay_count, entries);
+    kh_hw_reset();
 
     SceUID th = sceKernelCreateThread("kh_game", game_thread, 0x10000100, GAME_STACK_SIZE, 0,
                                       SCE_KERNEL_CPU_MASK_USER_0, NULL);

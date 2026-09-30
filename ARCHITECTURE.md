@@ -38,24 +38,31 @@ build/decomp/           local build tree = decomp @ DECOMP_COMMIT + decomp.patch
 
 The decomp talks to hardware in three ways, and each is handled differently.
 
-**Fixed addresses cast to pointers** (`*(vu16 *)0x04000304 |= 0x8000`, `reg_GX_DISPCNT`, the
-VRAM at `0x06000000`, the shared area at `0x027fxxxx`). A rewrite script (`tools/hwrewrite.py`,
-planned) wraps every such literal in `KH_HW(addr)`. Under `PLATFORM_VITA` that macro resolves to
-host memory: the I/O page, palette, OAM and VRAM views. On the DS it expands to the literal, so
-the matching build does not change. For a constant address it folds to `symbol + offset`, so it
-costs nothing.
+**Fixed addresses.** `tools/rewrite_decomp.py hw` wraps every literal the code uses as a
+hardware or shared-area address in `KH_HW(addr)`. A literal counts as an address when it follows
+a pointer cast, when it is the value of a register-address `#define`, when it is the first
+argument of a register helper, or when it is a `HW_MAIN_MEM + 0x7ffxxx` sum; a few sites were
+reviewed by hand. Masks and flags with the same values (`0x04000000` is also a texture-format
+bit) are left alone, and `--report` lists them. On the DS `KH_HW` is the identity
+(`include/nitro/kh_hw.h` in the patch), so the matching build does not change.
+On the Vita it is a chain of constant comparisons (`platform/compat/kh_hw_map.h`). With a
+constant address it folds to `symbol + offset`, so it costs nothing and stays usable in static
+initializers. The result is an integer, like the literal was.
 
-**Registers with side effects** (the GX command FIFO, DMA, the divider and square root, IPC/PXI,
-IE/IF, VRAMCNT). The functions that drive them are small and live in the NitroSDK: `G3_*`/`GX_*`,
-`MI_Dma*`, `CP_*`, `PXI_*`, `OS_*Interrupt*`. The port replaces those functions with native ones
-(`platform/nitro/`) that call into the emulated machine directly. A write to a plain memory copy
-of a register would have no effect, so these cannot be left to the rewrite.
+**Registers computed on read** (the divider and square-root results, DISPSTAT/VCOUNT) map through
+a function that refreshes them first. Any other address resolves at compile time.
 
-**VRAM banking.** Banks A–I move between LCDC, BG, OBJ, texture and palette slots through
-VRAMCNT. Each bank lives at one host address at a time: its current mapping inside a flat view
-per region (LCDC, BG-A, OBJ-A, BG-B, OBJ-B, texture, texture palette, extended palettes).
-Remapping a bank copies its 16–128 KiB from the old view to the new one. Games remap rarely,
-and this keeps pointer arithmetic by the game valid inside a region.
+**Registers with side effects on write** (the GX FIFO, DMA, IPC, IE/IF, the card) are driven only
+by NitroSDK functions (`libs/nitro`), apart from a handful of game files. The port replaces those
+functions with native ones (`platform/nitro/`), because a plain memory store cannot trigger
+anything.
+
+**VRAM banking.** Banks A–I live in their LCDC slots. When VRAMCNT maps a bank into a view the CPU
+can see (engine A/B BG or OBJ), its contents are copied there. They are copied back when it
+leaves. Texture, palette and ARM7 mappings leave it home, where the renderer reads it. The
+NitroSDK functions that write VRAMCNT run `kh_vram_sync()` on return: the `vram-sync` pass adds
+a `cleanup` variable to them. Remaps are rare, and the game's pointer arithmetic within a view
+stays valid.
 
 Rendering:
 

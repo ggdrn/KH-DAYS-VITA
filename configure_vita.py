@@ -76,7 +76,8 @@ def main():
     port_srcs = sorted((ROOT / "platform").rglob("*.c"))
     game_srcs = []
     defines = [f'-DKH_VERSION="{version}"']
-    includes = [f"-I{ROOT / 'platform' / 'core'}", f"-I{ROOT / 'platform'}"]
+    includes = [f"-I{ROOT / 'platform' / 'core'}", f"-I{ROOT / 'platform'}",
+                f"-I{ROOT / 'platform' / 'compat'}"]
     game_includes = []
     if args.with_game:
         import decomp_sources

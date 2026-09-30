@@ -17,7 +17,9 @@ Phases follow the generic "port a decompiled game to the Vita" plan. ✅ done ·
   `PLATFORM_VITA`, MSL strcmp/strcpy replaced by newlib's (`tools/decomp_sources.py`)
 - ✅ `tools/rewrite_decomp.py abs-symbols`: linker-absolute constants (OVERLAY_n_ID, SDK_*) as
   address-typed macros (35 files)
-- ⬜ `tools/hwrewrite.py`: wrap fixed DS addresses in `KH_HW()` (373 files)
+- ✅ `tools/rewrite_decomp.py hw`: fixed DS addresses wrapped in `KH_HW()` wherever they are
+  used as addresses (461 files; masks and flags with the same values left alone, reviewed with
+  `--report`); `vram-sync`: VRAMCNT writers move the banks on exit
 - ⬜ `platform/compat/`: CodeWarrior-isms (`#pragma thumb`, `asm` qualifiers) neutralised
 
 ## 5. Vita build 🔶
@@ -32,13 +34,19 @@ Phases follow the generic "port a decompiled game to the Vita" plan. ✅ done ·
   - `platform/nitro/asm_replacements.c`: the 70 CodeWarrior-asm library routines in C
     (copies, matrices, MATH_QSort, streaming LZ, SHA-1, CP context, interrupt state, MobiClip
     blit); `platform/nitro/dsprotect.c`: DS Protect answers "genuine"
-- ⬜ It does not run yet: the hardware addresses are not translated (next: `KH_HW`)
+- ✅ Hardware addresses translated; a scan of the linked ELF finds no DS address left
+- ⬜ It does not run yet: `OS_Init` and the rest of the NitroSDK's OS/FS/interrupt layer still
+  expect the DS (next: platform/nitro)
 
 ## 6. Platform layer 🔶
 - ✅ main/system: clocks, data dir, log + previous log, ROM open/verify (cached SHA-1), msg dialog
 - ✅ video: two 256×192 textures on vitaGL, three layouts
 - ✅ input: positional buttons, stick as d-pad, touch mapped to the bottom screen, X/Y ext word
-- ⬜ hw memory map: I/O page, palette, OAM, VRAM views with bank remapping, shared area 0x027fxxxx
+- ✅ hw memory map (`platform/compat/kh_hw_map.h`, `platform/hw/memmap.c`): I/O page, palette,
+  OAM, VRAM views (engine A/B BG and OBJ, LCDC), shared area; divider, square root and
+  DISPSTAT/VCOUNT computed on read; power-on register values
+- ✅ VRAM banks A–I (`platform/hw/vram.c`): home in LCDC, copied into the CPU-visible view they are
+  mapped to and back on remap
 - ⬜ platform/nitro: OS (threads, IRQ/VBlank, alarms, ticks), MI (DMA/copies), CP (div/sqrt), GX/G3
   (FIFO → geometry engine), CARD (ROM reads, backup), PXI/SND hookup, BIOS SWIs, cache no-ops
 - ⬜ 2D renderer (engines A/B)
