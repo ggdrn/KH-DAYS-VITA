@@ -404,10 +404,10 @@ index 54d1b93a3..2764ae0e7 100644
  
 diff --git a/include/nitro/kh_hw.h b/include/nitro/kh_hw.h
 new file mode 100644
-index 000000000..6a21c210d
+index 000000000..f368de5b1
 --- /dev/null
 +++ b/include/nitro/kh_hw.h
-@@ -0,0 +1,25 @@
+@@ -0,0 +1,33 @@
 +/* KH_HW(addr): a fixed hardware address of the DS, as the code uses it.
 + *
 + * On the DS this is the address itself, so every source compiles to the same bytes as before.
@@ -421,6 +421,14 @@ index 000000000..6a21c210d
 +#include "kh_hw_map.h"
 +#else
 +#define KH_HW(addr) (addr)
++#endif
++
++/* KH_TRACE("..."): a boot milestone in the port's log (printf format). Nothing on the DS. */
++#ifdef PLATFORM_VITA
++void kh_trace(const char *fmt, ...);
++#define KH_TRACE(...) kh_trace(__VA_ARGS__)
++#else
++#define KH_TRACE(...) ((void)0)
 +#endif
 +
 +/* KH_ALIGN64 after a struct member declared as a plain `long long`: mwcc aligns 64-bit
@@ -8866,7 +8874,7 @@ index 937fb230a..7470a129b 100644
  
  void UnloadActorOverlay(void) {
 diff --git a/src/engine/main.c b/src/engine/main.c
-index 8e6f54324..eb5fe32a8 100644
+index 8e6f54324..d2e9e01c1 100644
 --- a/src/engine/main.c
 +++ b/src/engine/main.c
 @@ -1,3 +1,4 @@
@@ -8898,6 +8906,43 @@ index 8e6f54324..eb5fe32a8 100644
  
  int main(void) {
      struct BootSettings boot;
+@@ -116,15 +121,21 @@ int main(void) {
+ 
+     /* --- 1. core services + ov001 one-shot HW init --- */
+     OS_Init();
++    KH_TRACE("main: OS_Init");
+     FS_Init(3);
++    KH_TRACE("main: FS_Init");
+     FS_LoadOverlay(0, FS_OVERLAY_ID_ov001);
++    KH_TRACE("main: ov001 loaded");
+     Ov001_BootInit();         /* ov001_BootInit -- DS hardware bring-up  */
++    KH_TRACE("main: Ov001_BootInit");
+     FS_UnloadOverlay(0, FS_OVERLAY_ID_ov001);
+     PublishArchiveVTableAndSeedRng();
+     InputState_Init();
++    KH_TRACE("main: archive, RNG, input");
+ 
+     /* --- 2. boot mode -> initial game mode --- */
+     Game_ReadLocalProfile(&boot);
++    KH_TRACE("main: profile, boot mode %d", boot.mode);
+     {
+         int mode = boot.mode;
+         switch (mode) {
+@@ -145,11 +156,14 @@ int main(void) {
+     func_02016264(&data_027e0350);
+     data_020442a0.handle = AllocFromExpHeapWrapper(FS_TryLoadTable(0, 0), data_0204c024);
+     FS_TryLoadTable(data_020442a0.handle, FS_TryLoadTable(0, 0));
++    KH_TRACE("main: FS tables");
+     Obj_InitSystem();
+     data_0204c215 = 0;
+     Callbacks_Init();
+     SoundCtx_Init();
++    KH_TRACE("main: objects, callbacks, sound");
+     InstantiateClass(&gBootTaskClass, 1);   /* -> BootTask_Construct -> Scene 1 */
++    KH_TRACE("main: boot task, entering the frame loop");
+ 
+     /* --- 4. FRAME LOOP (0x02000cac) --- */
+     for (;;) {
 diff --git a/src/engine/remapIndexIfHwFlagSet.c b/src/engine/remapIndexIfHwFlagSet.c
 index f69c118cd..aa6082ff8 100644
 --- a/src/engine/remapIndexIfHwFlagSet.c

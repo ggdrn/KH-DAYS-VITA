@@ -10,6 +10,7 @@
 #include "nitro/cpu.h"
 #include "rom.h"
 #include "nitro/card.h"
+#include "nitro/romfs.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -34,8 +35,13 @@ void CARDi_ReadRom(uint32_t dma, const void *src, void *dst, uint32_t len, CARDC
     (void)dma;
 
     n = rom_read(off, dst, len);
-    if (kh_card_reads++ < 16)
-        LOG("card: read %08x +%x", off, len);
+    /* every read of the boot by file name, then every 100th */
+    if (kh_card_reads < 500 || kh_card_reads % 100 == 0) {
+        char name[160];
+        LOG("card: read %s, %x bytes%s (#%u)", kh_romfs_describe(off, name, sizeof(name)), len,
+            async ? " async" : "", (unsigned)kh_card_reads);
+    }
+    kh_card_reads++;
     if ((uint32_t)n != len)
         LOG("card: short read at %08x: %d of %u", off, n, len);
     if (!cb)

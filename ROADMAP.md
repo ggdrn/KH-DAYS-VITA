@@ -70,7 +70,11 @@ Phases follow the generic "port a decompiled game to the Vita" plan. ✅ done ·
 ## 7. Diagnostics 🔶
 - ✅ kubridge fault handler (all registers, run-time `main` for the load bias)
 - ✅ `tools/symbolize.py`: log addresses → function, file, line
-- ⬜ watchdog, `psp2dmp` reader
+- ✅ watchdog: SDK thread list with each parked thread's call stack (EHABI unwind tables,
+  `-funwind-tables`), resolved by `tools/symbolize.py`
+- ✅ boot trace: `KH_TRACE` milestones in main(), card reads by ROM file name (FNT/FAT),
+  changes of IME/IE/DISPCNT/POWCNT1/VRAMCNT per frame
+- ⬜ `psp2dmp` reader; network log and eboot push (vitacompanion)
 
 ## 8–10. Bring-up loop, performance, enhancements ⬜
 - First milestone: title screen (ov000) with 2D, input and music

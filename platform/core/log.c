@@ -28,17 +28,14 @@ void log_init(const char *dir)
     s_lock = sceKernelCreateMutex("kh_log", 0, 0, NULL);
 }
 
-void log_printf(const char *fmt, ...)
+static void log_vprintf(const char *prefix, const char *fmt, va_list ap)
 {
     char buf[1024];
     int n;
-    va_list ap;
     unsigned int ms = (unsigned int)(sceKernelGetProcessTimeWide() / 1000);
 
-    n = snprintf(buf, sizeof(buf), "[%7u.%03u] ", ms / 1000, ms % 1000);
-    va_start(ap, fmt);
+    n = snprintf(buf, sizeof(buf), "[%7u.%03u] %s", ms / 1000, ms % 1000, prefix);
     n += vsnprintf(buf + n, sizeof(buf) - n, fmt, ap);
-    va_end(ap);
     if (n >= (int)sizeof(buf) - 1)
         n = sizeof(buf) - 2;
     if (buf[n - 1] != '\n')
@@ -57,6 +54,25 @@ void log_printf(const char *fmt, ...)
     }
     if (s_lock >= 0)
         sceKernelUnlockMutex(s_lock, 1);
+}
+
+void log_printf(const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    log_vprintf("", fmt, ap);
+    va_end(ap);
+}
+
+/* KH_TRACE in the decomp (nitro/kh_hw.h): boot milestones, synced at once so that the last
+ * one reached survives a freeze or a crash. */
+void kh_trace(const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    log_vprintf("trace: ", fmt, ap);
+    va_end(ap);
+    log_flush();
 }
 
 void log_flush(void)

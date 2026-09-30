@@ -35,9 +35,9 @@ COMMON_CFLAGS = [
     "-ffunction-sections", "-fdata-sections", "-g",
     "-DPLATFORM_VITA=1",
 ]
-PORT_CFLAGS = ["-std=gnu11", "-O3", "-Wall", "-Wno-unused-function"]
+PORT_CFLAGS = ["-std=gnu11", "-O3", "-Wall", "-Wno-unused-function", "-funwind-tables"]
 GAME_CFLAGS = [
-    "-std=gnu11", "-O2", "-w",
+    "-std=gnu11", "-O2", "-w", "-funwind-tables",
     # The decomp's K&R-style calls and int<->pointer casts are deliberate: mwccarm accepted
     # them, and GCC 14+ turns these diagnostics into errors by default.
     "-Wno-error=implicit-function-declaration", "-Wno-error=int-conversion",
@@ -45,7 +45,7 @@ GAME_CFLAGS = [
     "-Wno-error=return-mismatch",
 ]
 
-GAME_CXXFLAGS = ["-std=gnu++11", "-O2", "-w", "-fno-exceptions", "-fpermissive"]
+GAME_CXXFLAGS = ["-std=gnu++11", "-O2", "-w", "-fno-exceptions", "-funwind-tables", "-fpermissive"]
 
 LIBS = [
     "-lvitaGL", "-lvitashark", "-lSceShaccCgExt", "-lmathneon", "-lstdc++", "-lm", "-lc",

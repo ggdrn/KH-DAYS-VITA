@@ -359,11 +359,15 @@ uint32_t OS_GetProcMode(void)
 
 #define HOST_STACK_SIZE (256 * 1024)
 
+#define BT_MAX 16
+
 typedef struct KhThread {
     void *ctx;
     SceUID host;
     SceUID sema;
     volatile int exit_requested;
+    uint32_t bt[BT_MAX]; /* where it last gave up the CPU (return addresses, innermost first) */
+    int bt_n;
     struct KhThread *next;
 } KhThread;
 
@@ -383,6 +387,15 @@ static KhThread *by_ctx(void *ctx)
     return t;
 }
 
+static KhThread *find_ctx(const void *ctx)
+{
+    KhThread *t;
+    for (t = s_threads; t; t = t->next)
+        if (t->ctx == ctx)
+            return t;
+    return NULL;
+}
+
 static KhThread *by_host(SceUID host)
 {
     KhThread *t;
@@ -397,8 +410,31 @@ static uint32_t ctx_word(void *ctx, int off)
     return *(uint32_t *)((uint8_t *)ctx + off);
 }
 
+/* ARM EHABI unwinder in libgcc (the SDK ships no unwind.h). Everything is built with
+ * -funwind-tables, so a parked thread's stack can be walked: the watchdog shows where each
+ * NitroSDK thread is waiting. */
+struct _Unwind_Context;
+extern int _Unwind_Backtrace(int (*fn)(struct _Unwind_Context *, void *), void *arg);
+extern int _Unwind_VRS_Get(struct _Unwind_Context *c, int regclass, uint32_t reg, int repr,
+                           void *value);
+#define URC_OK 0
+#define URC_END_OF_STACK 5
+
+static int bt_frame(struct _Unwind_Context *c, void *arg)
+{
+    KhThread *t = arg;
+    uint32_t pc;
+    if (t->bt_n >= BT_MAX)
+        return URC_END_OF_STACK;
+    _Unwind_VRS_Get(c, 0 /* core */, 15, 0 /* uint32 */, &pc);
+    t->bt[t->bt_n++] = pc & ~1u;
+    return URC_OK;
+}
+
 static void park(KhThread *me)
 {
+    me->bt_n = 0;
+    _Unwind_Backtrace(bt_frame, me);
     sceKernelWaitSema(me->sema, 1, NULL);
     s_owner = me->host;
     if (me->exit_requested) {
@@ -492,10 +528,18 @@ void kh_cpu_log_state(void)
     /* the SDK's threads, highest priority first (OSThread: state +0x64, next +0x68, id +0x6c,
      * priority +0x70, queue +0x78; the context's pc+4 at +0x40: the entry, as the port does not
      * save registers on a switch) */
-    for (t = data_02044330.list; t && n < 16; t = *(uint8_t *const *)(t + 0x68), n++)
+    for (t = data_02044330.list; t && n < 16; t = *(uint8_t *const *)(t + 0x68), n++) {
         LOG("cpu:   thread %p id %u prio %u state %u queue %p%s entry %08x", (void *)t,
             (unsigned)*(const uint32_t *)(t + 0x6c), (unsigned)*(const uint32_t *)(t + 0x70),
             (unsigned)*(const uint32_t *)(t + 0x64), *(void *const *)(t + 0x78),
             t == data_02044330.current ? " (current)" : "",
             (unsigned)(*(const uint32_t *)(t + 0x40) - 4));
+        {
+            const KhThread *k = find_ctx(t);
+            int i;
+            /* frame 0 is park itself: from 1 on, OS_LoadContext and its callers */
+            for (i = 1; k && i < k->bt_n; i++)
+                LOG("cpu:     at %08x", (unsigned)k->bt[i]);
+        }
+    }
 }

@@ -17,6 +17,7 @@
 #include "nitro/card.h"
 #include "nitro/cpu.h"
 #include "nitro/overlay.h"
+#include "nitro/romfs.h"
 #include "rom.h"
 #include "video.h"
 
@@ -60,6 +61,7 @@ static int game_thread(SceSize args, void *argp)
 
 static void boot_state(void)
 {
+    kh_romfs_init();
     kh_hw_reset();
     memcpy(KH_SHARED(HW_ROM_HEADER_BUF), rom_header(), HW_ROM_HEADER_SIZE);
     memcpy(KH_SHARED(HW_CARD_ROM_HEADER), rom_header(), HW_ROM_HEADER_SIZE);
@@ -111,6 +113,35 @@ static void sample_input(void)
 
 static uint32_t s_last_progress, s_stuck_frames;
 
+/* The registers that mark the boot's progress, compared once per frame: every change is
+ * logged (interrupts switched on, screens configured, VRAM banks mapped). */
+static void watch_registers(uint32_t frame)
+{
+    static const struct {
+        const char *name;
+        uint32_t addr;
+        int size;
+    } regs[] = {
+        { "IME", 0x04000208, 2 },     { "IE", 0x04000210, 4 },       { "DISPCNT_A", 0x04000000, 4 },
+        { "DISPCNT_B", 0x04001000, 4 }, { "POWCNT1", 0x04000304, 2 }, { "VRAMCNT_A-D", 0x04000240, 4 },
+        { "VRAMCNT_E-G", 0x04000244, 4 }, { "VRAMCNT_H-I", 0x04000248, 2 },
+    };
+    static uint32_t last[sizeof(regs) / sizeof(regs[0])];
+    static int logged;
+    unsigned i;
+    for (i = 0; i < sizeof(regs) / sizeof(regs[0]); i++) {
+        uint32_t v = regs[i].size == 2 ? KH_IO16(regs[i].addr) : KH_IO32(regs[i].addr);
+        if (regs[i].name[0] == 'V' && regs[i].addr == 0x04000244)
+            v &= 0x00ffffff; /* 0x04000247 is WRAMCNT */
+        if (v == last[i])
+            continue;
+        if (logged++ < 400)
+            LOG("reg: f%u %s %0*x -> %0*x", (unsigned)frame, regs[i].name, regs[i].size * 2,
+                (unsigned)last[i], regs[i].size * 2, (unsigned)v);
+        last[i] = v;
+    }
+}
+
 void kh_game_run(void)
 {
     int i, entries = 0;
@@ -139,6 +170,7 @@ void kh_game_run(void)
         uint32_t progress;
 
         sample_input();
+        watch_registers(frame);
         kh_hw_vblank_start_us = sceKernelGetProcessTimeWide();
         (*(volatile uint32_t *)KH_SHARED(HW_VBLANK_COUNT_BUF))++;
         if (KH_IO16(0x04000004) & 0x08) /* DISPSTAT: VBlank IRQ enabled */

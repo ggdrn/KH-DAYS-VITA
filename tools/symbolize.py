@@ -82,16 +82,18 @@ def main():
                 print(f"    {k:4s} {wanted[k]:08x}  {names[wanted[k]]}")
         print()
 
-    # thread entries (cpu: "started (entry X)" and the watchdog's thread list), with the load
-    # bias of the run's "fault:" line
+    # thread entries ("entry X") and the watchdog's stacks of parked threads ("at X"): the log
+    # lines that carry them, each annotated, with the load bias of the run's "fault:" line
     m = re.search(r"\(main=([0-9a-f]{8})\)", text)
     if m:
         bias = int(m.group(1), 16) - elf_main
-        entries = sorted({int(v, 16) - bias for v in re.findall(r"entry ([0-9a-f]{8})", text)})
-        entries = [a for a in entries if lo <= a < hi]
-        names = addr2line(elf, entries)
-        for a in entries:
-            print(f"entry {a + bias:08x} -> {a:08x}  {names[a]}")
+        pat = re.compile(r"(?:entry|at) ([0-9a-f]{8})")
+        # a return address ("at") points after the call: look up the call itself
+        keyed = [(l, int(pat.search(l).group(1), 16) - bias - (2 if " at " in l else 0))
+                 for l in text.splitlines() if pat.search(l)]
+        names = addr2line(elf, sorted({k for _, k in keyed if lo <= k < hi}))
+        for l, k in keyed:
+            print(f"{l}   {names.get(k, '(outside the ELF)')}")
 
 
 if __name__ == "__main__":
