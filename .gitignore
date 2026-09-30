@@ -1,0 +1,30 @@
+# Game data -- never commit (copyright)
+*.nds
+*.sav
+/dsd_extract/
+/asm/
+
+# Local build tree (decomp + port patch applied) and outputs
+/build/
+/decomp/
+*.o
+*.elf
+*.velf
+*.self
+*.vpk
+eboot.bin
+param.sfo
+build.ninja
+.ninja_deps
+.ninja_log
+
+# Sony modules -- never redistribute
+libshacccg.suprx
+
+# Crash dumps and logs pulled from the console
+*.psp2dmp
+log*.txt
+
+.DS_Store
+__pycache__/
+*.pyc
