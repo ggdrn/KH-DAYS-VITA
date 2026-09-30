@@ -5,6 +5,7 @@
  *
  * What the boot ROM and the ARM7 leave in memory before the ARM9 starts is set up here: the
  * cartridge header in the shared area and the ARM7's PXI handlers. */
+#include "hw/gpu2d.h"
 #include "hw/io.h"
 #include "hw/memmap.h"
 #include "hw/overlays.h"
@@ -81,52 +82,16 @@ static void boot_state(void)
     kh_overlays_snapshot();
 }
 
-/* BGR555 -> RGBA8888 */
-static uint32_t rgba(uint16_t c)
-{
-    uint32_t r = (c & 31) << 3, g = ((c >> 5) & 31) << 3, b = ((c >> 10) & 31) << 3;
-    return 0xff000000u | b << 16 | g << 8 | r;
-}
-
-/* Until the 2D engines are emulated: each screen shows its engine's backdrop colour (BG
- * palette entry 0), white while the engine's display is off, dimmed or brightened as
- * MASTER_BRIGHT says. Enough to see the game's fades and screen changes. */
-static void fill_backdrop(uint32_t *fb, uint32_t dispcnt_addr, uint32_t pal_off,
-                          uint32_t bright_addr)
-{
-    uint32_t dispcnt = KH_IO32(dispcnt_addr), c;
-    uint16_t bright = KH_IO16(bright_addr);
-    int i;
-
-    if (((dispcnt >> 16) & 3) == 0) {
-        c = 0xffffffffu; /* display mode 0: the engine outputs white */
-    } else {
-        uint16_t col;
-        memcpy(&col, kh_ds_palette + pal_off, 2);
-        c = rgba(col);
-        if ((bright >> 14) & 3) {
-            int f = bright & 31, up = ((bright >> 14) & 3) == 1, ch;
-            uint32_t out = 0xff000000u;
-            if (f > 16)
-                f = 16;
-            for (ch = 0; ch < 24; ch += 8) {
-                int v = (c >> ch) & 0xff;
-                v = up ? v + (255 - v) * f / 16 : v - v * f / 16;
-                out |= (uint32_t)v << ch;
-            }
-            c = out;
-        }
-    }
-    for (i = 0; i < 256 * 192; i++)
-        fb[i] = c;
-}
+static uint32_t s_render_us; /* the last frame's 2D rendering time, both engines */
 
 static void present(void)
 {
     /* POWCNT1 bit 15: engine A on the top screen */
     int a_on_top = (KH_IO16(0x04000304) >> 15) & 1;
-    fill_backdrop(a_on_top ? s_top : s_bottom, 0x04000000, 0x000, 0x0400006c);
-    fill_backdrop(a_on_top ? s_bottom : s_top, 0x04001000, 0x400, 0x0400106c);
+    uint64_t t0 = sceKernelGetProcessTimeWide();
+    kh_gpu2d_render(KH_ENGINE_A, a_on_top ? s_top : s_bottom);
+    kh_gpu2d_render(KH_ENGINE_B, a_on_top ? s_bottom : s_top);
+    s_render_us = (uint32_t)(sceKernelGetProcessTimeWide() - t0);
     video_present(s_top, s_bottom);
 }
 
@@ -198,7 +163,7 @@ void kh_game_run(void)
             log_flush();
         }
         if ((++frame % 600) == 0) {
-            LOG("game: %s", status);
+            LOG("game: %s 2d %uus", status, (unsigned)s_render_us);
             log_flush();
         }
     }

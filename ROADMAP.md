@@ -57,7 +57,11 @@ Phases follow the generic "port a decompiled game to the Vita" plan. ✅ done ·
   touch/PM/NVRAM requests acknowledged; touch sampling with calibration
 - ⬜ GX/G3: geometry FIFO → geometry engine (the FIFO only latches words for now)
 - ⬜ VBlank/HBlank DMA timings, backup (save) over PXI, wireless
-- ⬜ 2D renderer (engines A/B)
+- 🔶 2D renderer (engines A/B), `platform/hw/gpu2d.c`: text/affine/extended BGs (tiles, 256-colour and
+  direct bitmaps, extended palettes), sprites (normal, affine, double size, bitmap,
+  semi-transparent, OBJ window), windows, blending, master brightness, display modes;
+  host test with synthetic scenes (`tools/gpu2d_test/run.sh`). ⬜ mosaic, mid-frame (HBlank)
+  register changes, the large bitmap of mode 6, the 3D layer on BG0
 - ⬜ 3D: geometry engine + vitaGL rasterisation + texture cache
 - ⬜ Sound: native ARM7 SND (sequence player, channels, ADPCM/PSG, mixer, 48 kHz out)
 - ⬜ MobiClip videos (the decoder is C in ov024: needs only frame output + audio)
