@@ -15213,7 +15213,7 @@ index fca290d63..6dc3a27cf 100644
  
  typedef struct { int w[6]; } Block24;
 diff --git a/src/overlays/system/ov107_enemy_common/data/ov107_tables_020cb630.c b/src/overlays/system/ov107_enemy_common/data/ov107_tables_020cb630.c
-index 1a7489ad8..a8e51c148 100644
+index 1a7489ad8..23d032670 100644
 --- a/src/overlays/system/ov107_enemy_common/data/ov107_tables_020cb630.c
 +++ b/src/overlays/system/ov107_enemy_common/data/ov107_tables_020cb630.c
 @@ -7,6 +7,18 @@
@@ -15224,8 +15224,8 @@ index 1a7489ad8..a8e51c148 100644
 +/* On the DS, the 8 bytes before this table are the initializers of Ov107_AiState_ApplyHit's
 + * local masks/values arrays, and three functions read the pair as one object at 0x020cb628
 + * (a ReactionConstants, Notification[2], HalfPair[3]). GCC keeps local initializers elsewhere,
-+ * so the port spells the 16 bytes out as that object; data_ov107_020cb630 is its second half
-+ * (configure_vita.py aliases it). */
++ * so the port spells the 16 bytes out as that object; data_ov107_020cb630, its second half,
++ * is not named anywhere else. */
 +const u8 data_ov107_020cb628[16] = {
 +    7, 3, 11, 2, 1, 2, 4, 8,
 +    0, 0, 8, 9, 0, 0, 8, 4,

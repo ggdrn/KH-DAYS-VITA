@@ -15,6 +15,11 @@ OSi_CurrentThreadPtr stayed NULL while OS_InitThread set the block's copy). Such
 tools/gen_link_support.py SUBOBJECTS. C++ runtime objects (_Z...) are weak by design, and
 data_<address> objects are the DS objects themselves.
 
+Absolute addresses. vita-elf-create does not relocate references to absolute symbols, and the
+eboot is loaded elsewhere than its link address: an absolute symbol whose value lies inside
+the image is an address the code will get wrong at run time (ld makes --defsym name=sym+off
+absolute; 0.0.10's OSi_CurrentThreadPtr). Define such names as labels or `.set` in assembly.
+
     check_elf.py build/khdays.elf
 """
 import os
@@ -56,6 +61,20 @@ def main():
     if loose:
         print("check_elf: weak objects with no place in a DS block (add them to "
               "gen_link_support.py SUBOBJECTS):", ", ".join(loose), file=sys.stderr)
+        rc = 1
+    heads = subprocess.run([str(BIN / "arm-vita-eabi-objdump"), "-h", elf], capture_output=True,
+                           text=True, check=True).stdout.splitlines()
+    ranges = []
+    for i, line in enumerate(heads[:-1]):
+        p = line.split()
+        if len(p) >= 4 and p[0].isdigit() and "ALLOC" in heads[i + 1]:
+            ranges.append((int(p[3], 16), int(p[3], 16) + int(p[2], 16)))
+    lo, hi = min(a for a, _ in ranges), max(b for _, b in ranges)
+    absolute = sorted({p[2] for p in (l.split() for l in syms.splitlines())
+                       if len(p) == 3 and p[1] in "Aa" and lo <= int(p[0], 16) < hi})
+    if absolute:
+        print("check_elf: absolute symbols inside the image (not relocated on the Vita; define "
+              "them in assembly):", ", ".join(absolute), file=sys.stderr)
         rc = 1
     return rc
 

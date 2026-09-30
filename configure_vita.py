@@ -165,9 +165,7 @@ def main():
         w("build build/gen/ds_bss.o: as build/gen/ds_bss.S")
         w("build build/gen/overlays.o: cc_port build/gen/overlays.c")
         objs += ["build/gen/ds_bss.o", "build/gen/overlays.o"]
-        # the shared area's named words (platform/hw/shared_area.c)
-        link_extra = ("@build/gen/link.rsp -Wl,-T,build/gen/overlays.ld"
-                      " -Wl,--defsym=data_027ffff0=kh_ds_shared_area+0xff0")
+        link_extra = "@build/gen/link.rsp -Wl,-T,build/gen/overlays.ld"
     game_libs = []
     for name, mobjs in sorted(modules.items()):
         lib = f"build/lib/{name}.a"

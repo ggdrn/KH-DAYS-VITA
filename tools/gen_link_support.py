@@ -42,9 +42,12 @@ ALIASES = ("data_ov002_0207e9f4_default", "data_ov002_0207ef80_offsets")
 # others by name; each name without a DS address of its own is pinned to its place in the
 # block, or the two kinds of access would see different variables. Offsets from the ROM
 # (the functions' loads and stores) or from a struct the matching code already uses.
+#
+# They are defined in ds_bss.S next to their block (`.set name, block+offset`), never with
+# --defsym name=block+offset: ld makes that an absolute symbol, vita-elf-create leaves
+# references to absolute symbols unrelocated, and the code then reaches the link-time address
+# instead of where the eboot was loaded (0.0.10: OSi_CurrentThreadPtr read as NULL).
 SUBOBJECTS = {
-    # ov107_tables_020cb630.c: the 16-byte object at 0x020cb628 (see the comment there)
-    "data_ov107_020cb630": ("data_ov107_020cb628", 8),
     # os_thread.c (OS_InitThread writes data_0204430c.currentThreadPtr; OS_SleepThread reads
     # OSi_CurrentThreadPtr)
     "OSi_RescheduleCount": ("data_0204430c", 0x04),
@@ -278,7 +281,9 @@ def main():
         if target:
             link.append(f"-Wl,--defsym={alias}={target}")
     for name, (obj, off) in SUBOBJECTS.items():
-        link.append(f"-Wl,--defsym={name}={obj}+{off}")
+        if obj not in names:
+            sys.exit(f"gen_link_support: SUBOBJECTS {name}: {obj} is not a generated .bss block symbol")
+        asm += [f".global {name}", f".type {name}, %object", f".set {name}, {obj} + 0x{off:x}"]
 
     archives = overlay_archives(decomp)
     (out / "overlays.ld").write_text(overlay_script(archives))
@@ -286,7 +291,8 @@ def main():
     (out / "ds_bss.S").write_text("\n".join(asm) + "\n")
     (out / "bss_names.txt").write_text("\n".join(names) + "\n")
     (out / "link.rsp").write_text("\n".join(link) + "\n")
-    print(f"gen_link_support: {len(names)} bss symbols in {total} bytes, {len(link)} aliases")
+    print(f"gen_link_support: {len(names)} bss symbols in {total} bytes, {len(link)} aliases,"
+          f" {len(SUBOBJECTS)} names inside blocks")
     return 0
 
 
