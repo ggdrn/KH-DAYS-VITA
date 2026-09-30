@@ -36,9 +36,50 @@ from pathlib import Path
 ALIASES = ("data_ov002_0207e9f4_default", "data_ov002_0207ef80_offsets")
 
 # Names the port's decomp patch folds into a larger object: name -> (object, offset).
+#
+# The "khdays: shared-bss" groups: a file's zero-initialised statics that mwcc lays out as one
+# block after a base symbol. Some functions reach them off the base (data_X.field, data_X[n]),
+# others by name; each name without a DS address of its own is pinned to its place in the
+# block, or the two kinds of access would see different variables. Offsets from the ROM
+# (the functions' loads and stores) or from a struct the matching code already uses.
 SUBOBJECTS = {
     # ov107_tables_020cb630.c: the 16-byte object at 0x020cb628 (see the comment there)
     "data_ov107_020cb630": ("data_ov107_020cb628", 8),
+    # os_thread.c (OS_InitThread writes data_0204430c.currentThreadPtr; OS_SleepThread reads
+    # OSi_CurrentThreadPtr)
+    "OSi_RescheduleCount": ("data_0204430c", 0x04),
+    "OSi_CurrentThreadPtr": ("data_0204430c", 0x08),
+    "OSi_StackForDestructor": ("data_0204430c", 0x1c),
+    "OSi_ThreadIdCount": ("data_0204430c", 0x20),
+    # snd_command.c (SND_CommandInit's stores; SND_PopFreeCommand etc. index data_02044748[n])
+    "sFinishedTag": ("data_02044748", 0x04),
+    "sReserveList": ("data_02044748", 0x08),
+    "sReserveListEnd": ("data_02044748", 0x0c),
+    "sFreeListEnd": ("data_02044748", 0x10),
+    "sWaitingCommandListQueueRead": ("data_02044748", 0x14),
+    "sWaitingCommandListQueueWrite": ("data_02044748", 0x18),
+    "sWaitingCommandListCount": ("data_02044748", 0x1c),
+    "sCurrentTag": ("data_02044748", 0x20),
+    # NitroSystem resource_mgr.c (NNS_SndAllocAlarm, NNS_SndLockChannel; SndCapture_Reset
+    # clears data_0204a2fc[0..2])
+    "sAlarmLock": ("data_0204a2fc", 0x04),
+    "sChannelLock": ("data_0204a2fc", 0x08),
+    # NitroSystem sndarc_stream.c (NNS_SndArcStrmInit, NNSi_SndArcStrm_MakeWaveData)
+    "sPrepareThread": ("data_0204ad8c", 0x04),
+    "sDecodeBuffer": ("data_0204ad8c", 0x08),
+    # ov105 wireless helper: WhStatics at data_ov105_020c04c0 (the WH state functions use it)
+    "sWh_nMpFreq": ("data_ov105_020c04c0", 0x04),
+    "sWh_nDisconnectReason": ("data_ov105_020c04c0", 0x0c),
+    "sWh_pRecvBuffer": ("data_ov105_020c04c0", 0x14),
+    "sWh_pSendBuffer": ("data_ov105_020c04c0", 0x1c),
+    "sWh_pReceiver": ("data_ov105_020c04c0", 0x20),
+    "sWh_nRecvBufferSize": ("data_ov105_020c04c0", 0x28),
+    "sWh_nSendBufferSize": ("data_ov105_020c04c0", 0x2c),
+    "sWh_nErrCode": ("data_ov105_020c04c0", 0x30),
+    "sWh_nConnectMode": ("data_ov105_020c04c0", 0x34),
+    "sWh_pJudgeAccept": ("data_ov105_020c04c0", 0x38),
+    "sWh_pChildWEPKeyGenerator": ("data_ov105_020c04c0", 0x40),
+    "sWh_pWmBuffer": ("data_ov105_020c04c0", 0x4c),
 }
 
 
