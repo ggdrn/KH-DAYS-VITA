@@ -45,19 +45,17 @@ extern void OS_WakeupThread(void *queue);
 /* ---- CPU state ------------------------------------------------------------------------- */
 
 volatile uint32_t kh_cpsr_if;          /* 0x80: IRQ masked, 0x40: FIQ masked */
-static volatile int s_in_irq;
 static volatile SceUID s_owner = -1;   /* the Vita thread holding the baton */
+static volatile SceUID s_irq_thread = -1; /* the Vita thread running a handler, or -1 */
+static volatile int s_irq_busy;        /* a handler is running (either delivery path) */
 static volatile uint32_t s_pending;
 static SceUID s_event = -1;            /* raised with every new pending bit */
+
+volatile uint32_t kh_cpu_irqs_delivered, kh_cpu_preempted, kh_cpu_switches;
 
 #define REG_IME 0x04000208
 #define REG_IE 0x04000210
 #define REG_IF 0x04000214
-
-void kh_cpu_init(void)
-{
-    s_event = sceKernelCreateEventFlag("kh_irq", SCE_EVENT_WAITMULTIPLE, 0, NULL);
-}
 
 void kh_irq_raise(uint32_t bits)
 {
@@ -82,7 +80,7 @@ uint32_t OS_ResetRequestIrqMask(uint32_t mask)
 }
 
 /* ---- deferred completions (card reads, ARM7 replies) ----------------------------------------
- * Run like an interrupt handler: on the baton holder, in IRQ mode. */
+ * Run like an interrupt handler, in IRQ mode. */
 
 typedef struct Deferred {
     void (*fn)(void *a, void *b, void *c);
@@ -97,8 +95,6 @@ void kh_cpu_defer(void (*fn)(void *, void *, void *), void *a, void *b, void *c)
 {
     Deferred *d = malloc(sizeof(*d)), **tail;
     d->fn = fn, d->a = a, d->b = b, d->c = c, d->next = NULL;
-    if (s_deferred_lock < 0)
-        s_deferred_lock = sceKernelCreateMutex("kh_defer", 0, 0, NULL);
     sceKernelLockMutex(s_deferred_lock, 1, NULL);
     for (tail = (Deferred **)&s_deferred; *tail; tail = &(*tail)->next)
         ;
@@ -120,41 +116,47 @@ static Deferred *take_deferred(void)
     return list;
 }
 
-/* ---- delivery -------------------------------------------------------------------------- */
+/* ---- delivery -------------------------------------------------------------------------------
+ * Two paths share it. The baton holder delivers at the points the port can see (interrupts
+ * re-enabled, the idle thread halting, DISPSTAT spins). If it does not get there -- a loop that
+ * waits for something only an interrupt handler sets, as the DS allowed -- the IRQ thread
+ * delivers instead, alongside it, like a real interrupt arriving between two instructions.
+ *
+ * Mutual exclusion with OS_DisableInterrupts is a store-then-check handshake on two words
+ * (s_irq_busy, the I bit), sequentially consistent: a handler starts only if it sees the I bit
+ * clear after claiming s_irq_busy, and OS_DisableInterrupts returns only after it sees
+ * s_irq_busy clear after setting the I bit. So no handler runs inside a critical section. */
 
 static int deliverable(void)
 {
-    return (KH_IO16(REG_IME) & 1) && !(kh_cpsr_if & 0x80) &&
+    return (KH_IO16(REG_IME) & 1) && !(__atomic_load_n(&kh_cpsr_if, __ATOMIC_SEQ_CST) & 0x80) &&
            ((KH_IO32(REG_IE) & s_pending) || s_deferred);
 }
 
-static void after_irq(void)
+static int claim(void)
 {
-    if (data_027e0058.head)
-        OS_WakeupThread(&data_027e0058);
-    if (data_02044330.isNeedRescheduling) {
-        data_02044330.isNeedRescheduling = 0;
-        s_in_irq = 0;
-        OSi_RescheduleThread();
+    int zero = 0;
+    if (!__atomic_compare_exchange_n(&s_irq_busy, &zero, 1, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
+        return 0;
+    if (__atomic_load_n(&kh_cpsr_if, __ATOMIC_SEQ_CST) & 0x80) {
+        __atomic_store_n(&s_irq_busy, 0, __ATOMIC_SEQ_CST);
+        return 0;
     }
+    return 1;
 }
 
-void kh_cpu_set_owner(void)
+static void release(void)
 {
-    s_owner = sceKernelGetThreadId();
+    __atomic_store_n(&s_irq_busy, 0, __ATOMIC_SEQ_CST);
 }
 
-void kh_cpu_poll(void)
+/* One round: every deliverable source, as OS_IrqHandler would take them one after another.
+ * Called with the claim held. */
+static void run_handlers(void)
 {
-    uint32_t saved;
-    if (s_in_irq || sceKernelGetThreadId() != s_owner)
-        return;
-    kh_timers_update();
-    while (deliverable()) {
+    s_irq_thread = sceKernelGetThreadId();
+    while ((KH_IO16(REG_IME) & 1) && ((KH_IO32(REG_IE) & s_pending) || s_deferred)) {
         uint32_t live = KH_IO32(REG_IE) & s_pending;
-        saved = kh_cpsr_if;
-        kh_cpsr_if |= 0x80; /* the CPU masks IRQs on entry */
-        s_in_irq = 1;
         if (live) {
             int bit = __builtin_ctz(live);
             kh_irq_ack(1u << bit);
@@ -169,15 +171,74 @@ void kh_cpu_poll(void)
                 d = next;
             }
         }
-        kh_cpsr_if = saved;
-        after_irq();
-        s_in_irq = 0;
+        kh_cpu_irqs_delivered++;
+        /* OS_IrqHandler_ThreadSwitch: threads waiting in OS_WaitIrq become ready */
+        if (data_027e0058.head)
+            OS_WakeupThread(&data_027e0058);
     }
+    s_irq_thread = -1;
+}
+
+/* The reschedule the DS did on return from the interrupt, on the thread that was interrupted. */
+static void reschedule_if_needed(void)
+{
+    if (data_02044330.isNeedRescheduling && !(kh_cpsr_if & 0x80)) {
+        data_02044330.isNeedRescheduling = 0;
+        kh_cpu_switches++;
+        OSi_RescheduleThread();
+    }
+}
+
+void kh_cpu_set_owner(void)
+{
+    s_owner = sceKernelGetThreadId();
+}
+
+void kh_cpu_poll(void)
+{
+    SceUID self = sceKernelGetThreadId();
+    if (self != s_owner || self == s_irq_thread)
+        return;
+    kh_timers_update();
+    if (deliverable() && claim()) {
+        run_handlers();
+        release();
+    }
+    reschedule_if_needed();
 }
 
 int kh_cpu_in_irq(void)
 {
-    return s_in_irq;
+    return sceKernelGetThreadId() == s_irq_thread;
+}
+
+/* The IRQ thread: whatever the baton holder leaves pending for more than half a millisecond is
+ * delivered here. The reschedule it may call for happens on the baton holder's next poll. */
+static int irq_thread(SceSize args, void *argp)
+{
+    (void)args;
+    (void)argp;
+    for (;;) {
+        sceKernelDelayThread(500);
+        kh_timers_update();
+        if (s_owner < 0 || !deliverable() || !claim())
+            continue;
+        kh_cpu_preempted++;
+        run_handlers();
+        release();
+    }
+    return 0;
+}
+
+void kh_cpu_init(void)
+{
+    SceUID th;
+    s_event = sceKernelCreateEventFlag("kh_irq", SCE_EVENT_WAITMULTIPLE, 0, NULL);
+    s_deferred_lock = sceKernelCreateMutex("kh_defer", 0, 0, NULL);
+    th = sceKernelCreateThread("kh_irq", irq_thread, 0x10000100 - 10, 0x10000, 0,
+                               SCE_KERNEL_CPU_MASK_USER_2, NULL);
+    if (th >= 0)
+        sceKernelStartThread(th, 0, NULL);
 }
 
 /* The idle thread's OS_Halt: sleep until something can be delivered. */
@@ -185,7 +246,7 @@ void OS_Halt(void)
 {
     for (;;) {
         uint32_t timeout = kh_timers_next_event_us();
-        if (deliverable()) {
+        if (deliverable() || data_02044330.isNeedRescheduling) {
             kh_cpu_poll();
             return;
         }
@@ -193,7 +254,7 @@ void OS_Halt(void)
         if (deliverable())
             continue;
         if (timeout > 2000)
-            timeout = 2000; /* timers and busy registers are re-read at least this often */
+            timeout = 2000; /* timers are re-read at least this often */
         sceKernelWaitEventFlag(s_event, 1, SCE_EVENT_WAITOR, NULL, &timeout);
         kh_timers_update();
     }
@@ -201,34 +262,45 @@ void OS_Halt(void)
 
 /* ---- interrupt mask (CPSR) --------------------------------------------------------------- */
 
+static void wait_for_handler(void)
+{
+    /* a handler started by the IRQ thread before we masked: let it finish */
+    while (__atomic_load_n(&s_irq_busy, __ATOMIC_SEQ_CST) &&
+           sceKernelGetThreadId() != s_irq_thread)
+        ;
+}
+
 uint32_t OS_DisableInterrupts(void)
 {
-    uint32_t old = kh_cpsr_if & 0x80;
-    kh_cpsr_if |= 0x80;
+    uint32_t old = __atomic_fetch_or(&kh_cpsr_if, 0x80, __ATOMIC_SEQ_CST) & 0x80;
+    wait_for_handler();
     return old;
 }
 
 uint32_t OS_EnableInterrupts(void)
 {
-    uint32_t old = kh_cpsr_if & 0x80;
-    kh_cpsr_if &= ~0x80u;
+    uint32_t old = __atomic_fetch_and(&kh_cpsr_if, ~0x80u, __ATOMIC_SEQ_CST) & 0x80;
     kh_cpu_poll();
     return old;
 }
 
 uint32_t OS_RestoreInterrupts(uint32_t state)
 {
-    uint32_t old = kh_cpsr_if & 0x80;
-    kh_cpsr_if = (kh_cpsr_if & ~0x80u) | (state & 0x80);
-    if (!(state & 0x80))
+    uint32_t old;
+    if (state & 0x80) {
+        old = __atomic_fetch_or(&kh_cpsr_if, 0x80, __ATOMIC_SEQ_CST) & 0x80;
+        wait_for_handler();
+    } else {
+        old = __atomic_fetch_and(&kh_cpsr_if, ~0x80u, __ATOMIC_SEQ_CST) & 0x80;
         kh_cpu_poll();
+    }
     return old;
 }
 
 uint32_t OS_DisableInterrupts_IrqAndFiq(void)
 {
-    uint32_t old = kh_cpsr_if & 0xc0;
-    kh_cpsr_if |= 0xc0;
+    uint32_t old = __atomic_fetch_or(&kh_cpsr_if, 0xc0, __ATOMIC_SEQ_CST) & 0xc0;
+    wait_for_handler();
     return old;
 }
 
@@ -248,7 +320,8 @@ uint32_t OS_GetCpsrIrq(void)
 
 uint32_t OS_GetProcMode(void)
 {
-    return s_in_irq ? 0x12 : 0x1f; /* IRQ mode while a handler runs, system mode otherwise */
+    /* IRQ mode on the thread running a handler, system mode everywhere else */
+    return kh_cpu_in_irq() ? 0x12 : 0x1f;
 }
 
 /* ---- threads ------------------------------------------------------------------------------ */
@@ -316,6 +389,8 @@ static int trampoline(SceSize args, void *argp)
     void (*on_return)(void);
 
     park(me);
+    /* a new thread starts from the CPSR OS_InitContext gave it: IRQs enabled */
+    __atomic_and_fetch(&kh_cpsr_if, ~0xc0u, __ATOMIC_SEQ_CST);
     entry = (void (*)(void *))(uintptr_t)(ctx_word(me->ctx, CTX_PC4) - 4);
     on_return = (void (*)(void))(uintptr_t)ctx_word(me->ctx, CTX_LR);
     entry((void *)(uintptr_t)ctx_word(me->ctx, CTX_R0));
@@ -365,15 +440,26 @@ void OS_LoadContext(void *ctx)
     if (next->host <= 0) {
         KhThread *arg = next;
         next->host = sceKernelCreateThread("kh_nitro", trampoline, 0x10000100, HOST_STACK_SIZE, 0,
-                                           SCE_KERNEL_CPU_MASK_USER_0, NULL);
+                                           KH_GAME_CPU_MASK, NULL);
         if (next->host < 0) {
             LOG("cpu: thread create failed %08x", next->host);
             return;
         }
         sceKernelStartThread(next->host, sizeof(arg), &arg);
+        LOG("cpu: thread %p started (entry %08x)", next->ctx, (unsigned)(ctx_word(next->ctx, CTX_PC4) - 4));
     }
     s_owner = next->host;
+    kh_cpu_switches++;
     sceKernelSignalSema(next->sema, 1);
     if (me)
         park(me);
+}
+
+void kh_cpu_log_state(void)
+{
+    LOG("cpu: pending %08x IE %08x IME %d cpsr %02x busy %d owner %08x irq_thread %08x "
+        "resched %d deferred %d",
+        (unsigned)s_pending, (unsigned)KH_IO32(REG_IE), KH_IO16(REG_IME) & 1,
+        (unsigned)kh_cpsr_if, s_irq_busy, (unsigned)s_owner, (unsigned)s_irq_thread,
+        data_02044330.isNeedRescheduling, s_deferred != NULL);
 }

@@ -100,6 +100,7 @@ int FS_LoadOverlayImage(FSOverlayInfo *ovi)
         return 0;
     }
     reset_state(ov);
+    LOG("overlay: load ov%03u", (unsigned)ovi->id);
     return 1;
 }
 

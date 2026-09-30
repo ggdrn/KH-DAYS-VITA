@@ -8,6 +8,12 @@
 #define KH_IRQ_TIMER0 (1u << 3)
 #define KH_IRQ_IPC_RECV (1u << 18)
 
+/* The core the NitroSDK threads run on; the display loop keeps core 0, the IRQ thread core 2. */
+#define KH_GAME_CPU_MASK 0x20000 /* SCE_KERNEL_CPU_MASK_USER_1 */
+
+/* Counters for the watchdog and the on-screen status. */
+extern volatile uint32_t kh_cpu_irqs_delivered, kh_cpu_preempted, kh_cpu_switches;
+
 void kh_cpu_init(void);
 /* The calling Vita thread becomes the one running NitroSDK code (the launcher thread). */
 void kh_cpu_set_owner(void);
@@ -22,6 +28,8 @@ void kh_cpu_defer(void (*fn)(void *, void *, void *), void *a, void *b, void *c)
 
 /* Deliver whatever interrupts are pending and allowed (baton holder only). */
 void kh_cpu_poll(void);
+/* One log line with the interrupt and scheduling state (for the watchdog). */
+void kh_cpu_log_state(void);
 int kh_cpu_in_irq(void);
 
 #endif

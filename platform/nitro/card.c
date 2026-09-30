@@ -16,6 +16,8 @@ typedef void (*CARDCallback)(void *arg);
 
 extern uint32_t data_02046b00; /* CARD's ROM base offset (common->src bias) */
 
+volatile uint32_t kh_card_reads;
+
 static void complete(void *cb, void *arg, void *unused)
 {
     (void)unused;
@@ -30,6 +32,8 @@ void CARDi_ReadRom(uint32_t dma, const void *src, void *dst, uint32_t len, CARDC
     (void)dma;
 
     n = rom_read(off, dst, len);
+    if (kh_card_reads++ < 16)
+        LOG("card: read %08x +%x", off, len);
     if ((uint32_t)n != len)
         LOG("card: short read at %08x: %d of %u", off, n, len);
     if (!cb)

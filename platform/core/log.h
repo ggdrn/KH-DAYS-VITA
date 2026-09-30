@@ -9,6 +9,9 @@ void log_flush(void);
 /* Write and sync without locking: for fault handlers, which may interrupt a logging thread. */
 void log_write_raw(const char *buf, int len);
 
+/* The line logged `back` lines ago (0 = the latest), for the on-screen console. */
+int log_recent(int back, char *out, int size);
+
 #define LOG(...) log_printf(__VA_ARGS__)
 
 #endif

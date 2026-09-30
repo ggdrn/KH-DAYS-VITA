@@ -11,6 +11,12 @@
 static SceUID s_fd = -1;
 static SceUID s_lock = -1;
 
+/* the last lines, for the on-screen console */
+#define RING_LINES 64
+#define RING_WIDTH 96
+static char s_ring[RING_LINES][RING_WIDTH];
+static volatile unsigned s_ring_count;
+
 void log_init(const char *dir)
 {
     char path[256], prev[256];
@@ -42,6 +48,13 @@ void log_printf(const char *fmt, ...)
         sceKernelLockMutex(s_lock, 1, NULL);
     if (s_fd >= 0)
         sceIoWrite(s_fd, buf, n);
+    {
+        char *line = s_ring[s_ring_count % RING_LINES];
+        int len = n - 1 < RING_WIDTH - 1 ? n - 1 : RING_WIDTH - 1;
+        memcpy(line, buf, len);
+        line[len] = 0;
+        s_ring_count++;
+    }
     if (s_lock >= 0)
         sceKernelUnlockMutex(s_lock, 1);
 }
@@ -58,4 +71,17 @@ void log_write_raw(const char *buf, int len)
         sceIoWrite(s_fd, buf, len);
         sceIoSyncByFd(s_fd, 0);
     }
+}
+
+int log_recent(int back, char *out, int size)
+{
+    unsigned count = s_ring_count;
+    if (back < 0 || (unsigned)back >= count || back >= RING_LINES)
+        return 0;
+    if (s_lock >= 0)
+        sceKernelLockMutex(s_lock, 1, NULL);
+    snprintf(out, size, "%s", s_ring[(count - 1 - back) % RING_LINES]);
+    if (s_lock >= 0)
+        sceKernelUnlockMutex(s_lock, 1);
+    return 1;
 }

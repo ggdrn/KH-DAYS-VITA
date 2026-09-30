@@ -24,8 +24,8 @@
 /* Heap for newlib (malloc): the game's own arenas come out of it. */
 int _newlib_heap_size_user = 192 * 1024 * 1024;
 
-static uint32_t s_top[DS_SCREEN_W * DS_SCREEN_H];
-static uint32_t s_bottom[DS_SCREEN_W * DS_SCREEN_H];
+static uint32_t s_top[DS_SCREEN_W * DS_SCREEN_H] __attribute__((unused));
+static uint32_t s_bottom[DS_SCREEN_W * DS_SCREEN_H] __attribute__((unused));
 
 static void fill(uint32_t *fb, uint32_t rgba)
 {

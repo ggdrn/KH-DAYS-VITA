@@ -54,6 +54,12 @@ void input_poll(InputState *out)
         out->swap_layout = (s_prev_buttons & SCE_CTRL_SELECT) == 0;
         held &= ~(DS_KEY_L | DS_KEY_R | DS_KEY_SELECT);
     }
+    /* L+R+Start toggles the on-screen console; the combination is swallowed. */
+    if ((pad.buttons & (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_START)) ==
+        (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_START)) {
+        out->toggle_console = (s_prev_buttons & SCE_CTRL_START) == 0;
+        held &= ~(DS_KEY_L | DS_KEY_R | DS_KEY_START);
+    }
     s_prev_buttons = pad.buttons;
 
     out->held = held;

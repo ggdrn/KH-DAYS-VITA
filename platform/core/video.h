@@ -25,6 +25,11 @@ void video_set_layout(ScreenLayout layout);
 ScreenLayout video_layout(void);
 /* Where the bottom (touch) screen currently is on the display, for mapping touch input. */
 ScreenRect video_bottom_rect(void);
+/* A 480x272 RGBA layer drawn over everything, scaled to the full display (NULL: none). */
+#define VIDEO_OVERLAY_W 480
+#define VIDEO_OVERLAY_H 272
+void video_set_overlay(const uint32_t *pixels);
+
 /* top/bottom: 256x192 RGBA8888 pixels. */
 void video_present(const uint32_t *top, const uint32_t *bottom);
 

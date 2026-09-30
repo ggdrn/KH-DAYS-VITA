@@ -9,6 +9,7 @@
 #include "hw/memmap.h"
 #include "hw/overlays.h"
 #include "hw/shared_area.h"
+#include "console.h"
 #include "input.h"
 #include "log.h"
 #include "nitro/arm7.h"
@@ -20,7 +21,9 @@
 
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
+#include <stdio.h>
 #include <string.h>
+#include <psp2/kernel/cpu.h>
 
 extern void NitroMain(void);
 
@@ -40,6 +43,7 @@ extern void NitroMain(void);
 #define TP_RAW_PER_Y 21
 
 static uint32_t s_top[256 * 192], s_bottom[256 * 192];
+static int s_console = 1; /* bring-up builds start with the console shown */
 
 static int game_thread(SceSize args, void *argp)
 {
@@ -132,11 +136,15 @@ static void sample_input(void)
     input_poll(&in);
     if (in.swap_layout)
         video_set_layout(video_layout() + 1);
+    if (in.toggle_console)
+        s_console = !s_console;
     KH_IO16(0x04000130) = in.keyinput;
     *(volatile uint16_t *)KH_SHARED(HW_BUTTON_XY_BUF) = in.extkeys;
     /* raw ADC units, as the calibration written by boot_state defines them */
     kh_arm7_touch(in.touching, in.touch_x * TP_RAW_PER_X, in.touch_y * TP_RAW_PER_Y);
 }
+
+static uint32_t s_last_progress, s_stuck_frames;
 
 void kh_game_run(void)
 {
@@ -151,8 +159,10 @@ void kh_game_run(void)
     boot_state();
     input_init();
 
+    /* the display keeps core 0 whatever the game does; the game runs on core 1 */
+    sceKernelChangeThreadCpuAffinityMask(sceKernelGetThreadId(), SCE_KERNEL_CPU_MASK_USER_0);
     th = sceKernelCreateThread("kh_game", game_thread, 0x10000100, GAME_STACK_SIZE, 0,
-                               SCE_KERNEL_CPU_MASK_USER_0, NULL);
+                               KH_GAME_CPU_MASK, NULL);
     if (th < 0) {
         LOG("game: create thread failed %08x", th);
         return;
@@ -160,16 +170,35 @@ void kh_game_run(void)
     sceKernelStartThread(th, 0, NULL);
 
     for (;;) {
+        char status[96];
+        uint32_t progress;
+
         sample_input();
         kh_hw_vblank_start_us = sceKernelGetProcessTimeWide();
         (*(volatile uint32_t *)KH_SHARED(HW_VBLANK_COUNT_BUF))++;
         if (KH_IO16(0x04000004) & 0x08) /* DISPSTAT: VBlank IRQ enabled */
             kh_irq_raise(KH_IRQ_VBLANK);
+
+        snprintf(status, sizeof(status),
+                 "f%u irq%u pre%u sw%u IE%08x IME%d DISP%08x",
+                 (unsigned)frame, (unsigned)kh_cpu_irqs_delivered, (unsigned)kh_cpu_preempted,
+                 (unsigned)kh_cpu_switches, (unsigned)KH_IO32(0x04000210),
+                 KH_IO16(0x04000208) & 1, (unsigned)KH_IO32(0x04000000));
+        video_set_overlay(s_console ? console_render(status) : NULL);
         present(); /* waits for the Vita's VBlank */
+
+        /* watchdog: the game side has done nothing observable for 5 s */
+        progress = kh_cpu_irqs_delivered + kh_cpu_switches + kh_card_reads;
+        if (progress != s_last_progress) {
+            s_last_progress = progress;
+            s_stuck_frames = 0;
+        } else if (++s_stuck_frames == 300) {
+            LOG("watchdog: no progress for 5 s (%s)", status);
+            kh_cpu_log_state();
+            log_flush();
+        }
         if ((++frame % 600) == 0) {
-            LOG("game: frame %u, DISPCNT %08x, IE %08x IME %d", (unsigned)frame,
-                (unsigned)KH_IO32(0x04000000), (unsigned)KH_IO32(0x04000210),
-                KH_IO16(0x04000208));
+            LOG("game: %s", status);
             log_flush();
         }
     }

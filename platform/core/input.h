@@ -27,6 +27,7 @@ typedef struct {
     int touching;
     int touch_x, touch_y; /* DS pixels, 0..255 / 0..191 */
     int swap_layout;      /* port hotkey: cycle the screen layout (edge-triggered) */
+    int toggle_console;   /* port hotkey: show/hide the on-screen console (edge-triggered) */
 } InputState;
 
 void input_init(void);
