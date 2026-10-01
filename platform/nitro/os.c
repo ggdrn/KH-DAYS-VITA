@@ -34,11 +34,27 @@ enum {
 static uint8_t *s_main_arena;
 static uint8_t s_itcm_arena[DS_ITCM_ARENA_SIZE] __attribute__((aligned(32)));
 
+/* The main arena is placed so that the archive handles the game packs from its pointers
+ * (KH_DS_PTR: the low 24 bits of ptr + 0x8000, shifted left by 7, bit 31 set) can never equal
+ * an address of the image or of the heap below it (0x81xxxxxx, 0x82xxxxxx), where file names
+ * live: ptr + 0x8000 stays within one 16 MiB window and its low 24 bits at or above 0x60000,
+ * which puts every handle at 0x83000000 or above. KH_IS_PACKED relies on it. */
+#define ARENA_MIN_LOW 0x60000u
+
 static uint8_t *main_arena(void)
 {
     if (!s_main_arena) {
-        s_main_arena = memalign(32, DS_MAIN_ARENA_SIZE);
-        LOG("os: main arena %p, %u bytes", s_main_arena, DS_MAIN_ARENA_SIZE);
+        const size_t slack = DS_MAIN_ARENA_SIZE + ARENA_MIN_LOW + 0x8000u;
+        uintptr_t raw = (uintptr_t)memalign(32, DS_MAIN_ARENA_SIZE + slack), s = raw;
+        uint32_t low = (uint32_t)(s + 0x8000u) & 0x00ffffffu;
+        if (low < ARENA_MIN_LOW)
+            s += ARENA_MIN_LOW - low;
+        else if (low + DS_MAIN_ARENA_SIZE > 0x01000000u)
+            s += 0x01000000u - low + ARENA_MIN_LOW; /* past the window's end */
+        s = (s + 31) & ~(uintptr_t)31;
+        s_main_arena = (uint8_t *)s;
+        LOG("os: main arena %p, %u bytes (block %p)", s_main_arena, DS_MAIN_ARENA_SIZE,
+            (void *)raw);
     }
     return s_main_arena;
 }
@@ -92,6 +108,32 @@ unsigned long kh_ds_unpack_ptr(unsigned long ds_addr)
     if (warned++ < 8)
         LOG("os: packed pointer %08lx is in no arena", ds_addr);
     return ds_addr;
+}
+
+/* KH_IS_PACKED in the decomp. A packed handle unpacks to a pack header that
+ * Msg_OpenContainerAndReadHeader filled: in an arena, with the ROM archive at +8. A file name's
+ * address does not (it is in the image, and what its bits unpack to holds no such header). */
+extern uint8_t data_02046334[]; /* fsi_arc_rom, the ROM archive */
+
+static int unpack_quiet(unsigned long v, uintptr_t *out)
+{
+    const uint32_t low = ((uint32_t)v >> 7) & 0x00fffffcu; /* (ptr + 0x8000), as packed */
+    const uintptr_t lo = (uintptr_t)main_arena(), hi = lo + DS_MAIN_ARENA_SIZE;
+    uintptr_t c = (((lo + 0x8000u) & ~(uintptr_t)0x00ffffffu) | low) - 0x8000u;
+    if (c < lo)
+        c += 0x01000000u;
+    if (c + 12 > hi)
+        return 0; /* pack headers are allocated from the game's heaps, in the main arena */
+    *out = c;
+    return 1;
+}
+
+int kh_is_packed_handle(unsigned long v)
+{
+    uintptr_t hdr;
+    if (!(v & 0x80000000u) || !unpack_quiet(v, &hdr))
+        return 0;
+    return *(const uint32_t *)(hdr + 8) == (uint32_t)(uintptr_t)data_02046334;
 }
 
 /* ---- tick ------------------------------------------------------------------------------------ */

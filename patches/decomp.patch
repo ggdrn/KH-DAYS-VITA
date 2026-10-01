@@ -377,10 +377,10 @@ index 54d1b93a3..ab5f0d8a9 100644
  
 diff --git a/include/nitro/kh_hw.h b/include/nitro/kh_hw.h
 new file mode 100644
-index 000000000..a829ddce9
+index 000000000..ee54aefba
 --- /dev/null
 +++ b/include/nitro/kh_hw.h
-@@ -0,0 +1,45 @@
+@@ -0,0 +1,56 @@
 +/* KH_HW(addr): a fixed hardware address of the DS, as the code uses it.
 + *
 + * On the DS this is the address itself, so every source compiles to the same bytes as before.
@@ -406,6 +406,17 @@ index 000000000..a829ddce9
 +#define KH_DS_PTR(addr) kh_ds_unpack_ptr(addr)
 +#else
 +#define KH_DS_PTR(addr) (addr)
++#endif
++
++/* KH_IS_PACKED(v): whether a file argument is a packed archive handle (see KH_DS_PTR) rather
++ * than a file name. The DS tells them apart by bit 31 -- its pointers are 0x02xxxxxx -- but on
++ * the Vita every pointer has bit 31 set. There the port checks that v unpacks to a pack header
++ * in an arena whose archive (+8) is the ROM archive. Bit 31 itself on the DS. */
++#ifdef PLATFORM_VITA
++int kh_is_packed_handle(unsigned long v);
++#define KH_IS_PACKED(v) kh_is_packed_handle((unsigned long)(v))
++#else
++#define KH_IS_PACKED(v) ((u32)(v) & 0x80000000)
 +#endif
 +
 +/* KH_TRACE("..."): a boot milestone in the port's log (printf format). Nothing on the DS. */
@@ -7470,6 +7481,24 @@ index f1befb352..3b28cdb6b 100644
                      }
  
                      end = blockOffsetSample + samples;
+diff --git a/src/engine/Archive_LoadFile.c b/src/engine/Archive_LoadFile.c
+index 59d55fa08..54c654d23 100644
+--- a/src/engine/Archive_LoadFile.c
++++ b/src/engine/Archive_LoadFile.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_IS_PACKED */
+ /*
+  * Archive_LoadFile - load a whole card file into a fresh heap buffer.
+  *
+@@ -70,7 +71,7 @@ void *Archive_LoadFile(char *name, u32 kind)
+ 
+     FS_InitFile(&file);
+     FSi_WaitForCardThread();
+-    if ((u32)name & 0x80000000) {
++    if (KH_IS_PACKED(name)) {
+         opened = Archive_OpenSubfileByHandle(&file, (u32)name);
+         compressed = Archive_SubfileIsCompressed((u32)name);
+     } else {
 diff --git a/src/engine/Archive_OpenSubfileByHandle.c b/src/engine/Archive_OpenSubfileByHandle.c
 index 986fcfea2..dc071897f 100644
 --- a/src/engine/Archive_OpenSubfileByHandle.c
@@ -8062,6 +8091,42 @@ index 809f799ec..2d2b82a1f 100644
  
  static inline void G2_ChangeBlendAlpha(int eva, int evb)
  {
+diff --git a/src/engine/FileLoader_LoadInto.c b/src/engine/FileLoader_LoadInto.c
+index 25bebbdcd..2b7bd83f5 100644
+--- a/src/engine/FileLoader_LoadInto.c
++++ b/src/engine/FileLoader_LoadInto.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_IS_PACKED */
+ /* FileLoader_LoadInto -- load a file into a caller buffer through the loader thread, MAIN. Twin of
+  * Loader_RequestFile for a fixed destination: the file (an id with bit 31 set, or a path whose
+  * language placeholder Msg_BuildLangPath expands) is opened; a ".?Z" name or a compressed id is
+@@ -40,7 +41,7 @@ int FileLoader_LoadInto(const void *data, void *buffer, int maxSize)
+     FS_InitFile(file);
+     FSi_WaitForCardThread();
+ 
+-    if ((u32)data & 0x80000000) {
++    if (KH_IS_PACKED(data)) {
+         Archive_OpenSubfileByHandle(file, (u32)data);
+         flag = (int)Archive_SubfileIsCompressed((u32)data);
+     } else {
+diff --git a/src/engine/FileLoader_LoadSync.c b/src/engine/FileLoader_LoadSync.c
+index 3d4aceeeb..a2aeafef1 100644
+--- a/src/engine/FileLoader_LoadSync.c
++++ b/src/engine/FileLoader_LoadSync.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_IS_PACKED */
+ /* FileLoader_LoadSync -- load a file into a caller buffer synchronously, MAIN. The file (an id with bit 31
+  * set, or a path whose language placeholder Msg_BuildLangPath expands) is opened. A ".?Z" name or a
+  * compressed id is decompressed straight into `buffer` through the streaming reader gFileLoader[0]:
+@@ -56,7 +57,7 @@ int FileLoader_LoadSync(const void *data, void *buffer, int size)
+     FS_InitFile(file);
+     FSi_WaitForCardThread();
+ 
+-    if ((u32)data & 0x80000000) {
++    if (KH_IS_PACKED(data)) {
+         Archive_OpenSubfileByHandle(file, (u32)data);
+         flag = (int)Archive_SubfileIsCompressed((u32)data);
+     } else {
 diff --git a/src/engine/Fx_Tween.c b/src/engine/Fx_Tween.c
 index da05123c8..22ba89d07 100644
 --- a/src/engine/Fx_Tween.c
@@ -8375,6 +8440,24 @@ index ed25e0ad7..1250af5d1 100644
  #define FS_OVERLAY_ID_ov107 ((FSOverlayID)(u32) & (OVERLAY_107_ID))
  
  void LoadActorOverlay(void)
+diff --git a/src/engine/Loader_RequestFile.c b/src/engine/Loader_RequestFile.c
+index a8a3c66d1..a52c87263 100644
+--- a/src/engine/Loader_RequestFile.c
++++ b/src/engine/Loader_RequestFile.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_IS_PACKED */
+ /* Queues a file load: takes a free request, opens the file (a packed-archive handle or a path in
+  * the current language), sets up LZ decompression for compressed files or allocates the buffer
+  * otherwise, and posts the request to the loader thread; returns the destination buffer. */
+@@ -40,7 +41,7 @@ void *Loader_RequestFile(const void *data, int id)
+     FS_InitFile(file);
+     FSi_WaitForCardThread();
+ 
+-    if ((u32)data & 0x80000000) {
++    if (KH_IS_PACKED(data)) {
+         Archive_OpenSubfileByHandle(file, (u32)data);
+         flag = (int)Archive_SubfileIsCompressed((u32)data);
+     } else {
 diff --git a/src/engine/MsgQueue_Contains.c b/src/engine/MsgQueue_Contains.c
 index 08586db54..2e40f1242 100644
 --- a/src/engine/MsgQueue_Contains.c
@@ -8626,6 +8709,24 @@ index 312f4eca6..bc2093736 100644
  } RngState;
  
  extern RngState data_0204c168;
+diff --git a/src/engine/ResCache_FindSlot.c b/src/engine/ResCache_FindSlot.c
+index cb9151f21..28d90bb9e 100644
+--- a/src/engine/ResCache_FindSlot.c
++++ b/src/engine/ResCache_FindSlot.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_IS_PACKED */
+ /* ResCache_FindSlot = ResCache_FindSlot. Looks a resource up in the 128-entry cache table
+  * (gFileLoader[2], 0x30 bytes each) by `key`: a key with bit 31 set is a numeric id compared with
+  * the entries' ids (bit 31 set too), any other key is a name compared (strcmp) with the named
+@@ -27,7 +28,7 @@ ResCacheEntry *ResCache_FindSlot(const char *key)
+     int n = 0;
+     int i;
+     ResCacheEntry *unused;
+-    unsigned int keyIsId = (unsigned int)key & 0x80000000;
++    unsigned int keyIsId = KH_IS_PACKED(key);
+ 
+     unused = 0;
+     cur[n].entry = gFileLoader[2];
 diff --git a/src/engine/RoomBox_HitTop.c b/src/engine/RoomBox_HitTop.c
 index 39641ce1d..bc99e8a73 100644
 --- a/src/engine/RoomBox_HitTop.c
