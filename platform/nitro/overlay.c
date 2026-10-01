@@ -47,6 +47,56 @@ extern DtorNode *data_0204bd80;
 
 static uint8_t **s_data_snapshot;
 
+/* Which overlay is in each DS address range now: a load sequence number per overlay, 0 when
+ * it is not loaded. Loading one takes the place of every overlay its DS range overlaps. */
+static uint32_t *s_loaded_seq;
+static uint32_t s_seq;
+
+static void mark_loaded(const KhOverlay *ov)
+{
+    const uint32_t lo = ov->ds_ram, hi = ov->ds_ram + ov->ds_size + ov->ds_bss;
+    int i;
+    if (!s_loaded_seq)
+        return;
+    for (i = 0; i < kh_overlay_count; i++) {
+        const KhOverlay *o = &kh_overlays[i];
+        if (o->ds_ram < hi && o->ds_ram + o->ds_size + o->ds_bss > lo)
+            s_loaded_seq[i] = 0;
+    }
+    s_loaded_seq[ov->id] = ++s_seq;
+}
+
+/* The dispatchers of tools/ovdisp.py: tab = { DS address, n, { overlay id, function } x n }.
+ * The function of the candidate loaded last; with none loaded the first that exists (logged). */
+void *kh_ovdisp_resolve(const uint32_t *tab)
+{
+    const uint32_t n = tab[1];
+    uint32_t i, best_seq = 0;
+    void *best = NULL, *first = NULL;
+    for (i = 0; i < n; i++) {
+        const uint32_t id = tab[2 + i * 2];
+        void *fn = (void *)(uintptr_t)tab[3 + i * 2];
+        if (!fn)
+            continue;
+        if (!first)
+            first = fn;
+        if (s_loaded_seq && id < (uint32_t)kh_overlay_count && s_loaded_seq[id] > best_seq) {
+            best_seq = s_loaded_seq[id];
+            best = fn;
+        }
+    }
+    if (!best) {
+        static uint32_t logged;
+        if (logged != tab[0]) {
+            logged = tab[0];
+            LOG("overlay: call to %08x with none of its %u overlays loaded", (unsigned)tab[0],
+                (unsigned)n);
+        }
+        best = first;
+    }
+    return best;
+}
+
 static const KhOverlay *find(uint32_t id)
 {
     return id < (uint32_t)kh_overlay_count && kh_overlays[id].id == id ? &kh_overlays[id] : NULL;
@@ -62,6 +112,7 @@ void kh_overlays_snapshot(void)
     int i;
     size_t total = 0;
     s_data_snapshot = calloc(kh_overlay_count, sizeof(*s_data_snapshot));
+    s_loaded_seq = calloc(kh_overlay_count, sizeof(*s_loaded_seq));
     for (i = 0; i < kh_overlay_count; i++) {
         const KhRange *r = &kh_overlays[i].host[KH_OV_DATA];
         size_t n = range_len(r);
@@ -100,6 +151,7 @@ int FS_LoadOverlayImage(FSOverlayInfo *ovi)
         return 0;
     }
     reset_state(ov);
+    mark_loaded(ov);
     LOG("overlay: load ov%03u", (unsigned)ovi->id);
     return 1;
 }

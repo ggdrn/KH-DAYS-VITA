@@ -513,8 +513,44 @@ def pass_gxcmd(tree):
     return changed
 
 
+# ---- ovdisp --------------------------------------------------------------------------------
+# A call to an address several overlays share goes through the dispatcher that picks the one
+# loaded (tools/ovdisp.py): in every source outside the candidate overlays that names one of
+# them, a #define maps the name to its dispatcher alias, declarations included.
+
+OVDISP_MARK = "/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */"
+
+
+def pass_ovdisp(tree):
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import ovdisp
+    tgts = ovdisp.targets(tree / "config" / "arm9")
+    owner = {}  # function name -> the candidate overlay that defines it
+    for _addr, cands in tgts:
+        for ov, name in cands:
+            owner[name] = ov
+    if not owner:
+        return 0
+    word = re.compile(r"\b(" + "|".join(sorted(map(re.escape, owner), key=len, reverse=True)) + r")\b")
+    changed = 0
+    for path in sorted((tree / "src").rglob("*.c")) + sorted((tree / "libs").rglob("*.c")):
+        text = path.read_text(encoding="utf-8", errors="surrogateescape")
+        if OVDISP_MARK in text:
+            continue
+        m = re.search(r"/ov(\d{3})(?:_[^/]*)?/", path.relative_to(tree).as_posix())
+        own = int(m.group(1)) if m else -1
+        names = sorted({n for n in word.findall(text) if owner[n] != own})
+        if not names:
+            continue
+        defs = "".join(f"#define {n} {ovdisp.alias(n)}\n" for n in names)
+        path.write_text(OVDISP_MARK + "\n" + defs + text, encoding="utf-8",
+                        errors="surrogateescape")
+        changed += 1
+    return changed
+
+
 PASSES = {"abs-symbols": pass_abs_symbols, "hw": pass_hw, "vram-sync": pass_vram_sync,
-          "align64": pass_align64, "gxcmd": pass_gxcmd}
+          "align64": pass_align64, "gxcmd": pass_gxcmd, "ovdisp": pass_ovdisp}
 
 
 def main():

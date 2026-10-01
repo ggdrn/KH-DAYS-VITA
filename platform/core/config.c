@@ -7,14 +7,17 @@
 #include <stdlib.h>
 #include <string.h>
 
-KhConfig kh_config = { .render_scale = 2, .layout = 0, .inset_width = 224 };
+KhConfig kh_config = { .render_scale = 3, .layout = 0, .inset_width = 224 };
+
+#define CONFIG_VERSION 2
 
 static const char s_default[] =
     "# khdays-vita settings\n"
+    "config_version = 2\n"
     "\n"
     "# 3D internal resolution, as a multiple of the DS's 256x192: 1, 2 or 3.\n"
-    "# Higher is sharper and costs more GPU time.\n"
-    "render_scale = 2\n"
+    "# 3 (768x576) covers the Vita's 544 lines; lower ones cost less GPU time.\n"
+    "render_scale = 3\n"
     "\n"
     "# Starting screen layout: top (top screen over the whole display, the touch screen small\n"
     "# in the top-right corner), bottom (the reverse), side (both side by side).\n"
@@ -35,16 +38,37 @@ static char *trim(char *s)
     return s;
 }
 
+/* The template, line by line, with the current values in place of the defaults. */
+static void write_config(void)
+{
+    static const char *const layouts[] = { "top", "bottom", "side" };
+    const char *line = s_default;
+    FILE *f = fopen(KH_CONFIG_PATH, "w");
+    if (!f)
+        return;
+    while (*line) {
+        const char *end = strchr(line, '\n');
+        size_t n = end ? (size_t)(end - line) : strlen(line);
+        if (!strncmp(line, "render_scale", 12))
+            fprintf(f, "render_scale = %d\n", kh_config.render_scale);
+        else if (!strncmp(line, "layout", 6))
+            fprintf(f, "layout = %s\n", layouts[kh_config.layout % 3]);
+        else if (!strncmp(line, "inset_width", 11))
+            fprintf(f, "inset_width = %d\n", kh_config.inset_width);
+        else
+            fprintf(f, "%.*s\n", (int)n, line);
+        line += n + (end != NULL);
+    }
+    fclose(f);
+}
+
 void config_load(void)
 {
     char line[256];
+    int version = 0;
     FILE *f = fopen(KH_CONFIG_PATH, "r");
     if (!f) {
-        f = fopen(KH_CONFIG_PATH, "w");
-        if (f) {
-            fputs(s_default, f);
-            fclose(f);
-        }
+        write_config();
         LOG("config: %s written with the defaults", KH_CONFIG_PATH);
         return;
     }
@@ -55,7 +79,9 @@ void config_load(void)
         *v++ = 0;
         k = trim(k);
         v = trim(v);
-        if (!strcmp(k, "layout")) {
+        if (!strcmp(k, "config_version")) {
+            version = atoi(v);
+        } else if (!strcmp(k, "layout")) {
             kh_config.layout = !strcmp(v, "bottom") ? 1 : !strcmp(v, "side") ? 2 : 0;
         } else if (!strcmp(k, "inset_width")) {
             int w = atoi(v);
@@ -66,6 +92,14 @@ void config_load(void)
         }
     }
     fclose(f);
+    if (version < CONFIG_VERSION) {
+        /* a file from an older build: the 3D default went from 2x to 3x (the Vita's full
+         * height), and the newer settings get written out with it */
+        if (version < 2 && kh_config.render_scale == 2)
+            kh_config.render_scale = 3;
+        write_config();
+        LOG("config: upgraded from version %d", version);
+    }
     LOG("config: render_scale %d, layout %d, inset_width %d", kh_config.render_scale,
         kh_config.layout, kh_config.inset_width);
 }

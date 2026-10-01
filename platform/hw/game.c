@@ -99,6 +99,8 @@ static void boot_state(void)
 }
 
 static uint32_t s_render_us; /* the last frame's 2D rendering time, both engines */
+static volatile uint32_t s_vblanks; /* VBlanks raised so far (vblank_thread) */
+static uint32_t s_2d_skipped;      /* displayed frames that reused the last 2D image */
 
 /* Where the display loop is, for the stall monitor: it runs on its own, so a display loop
  * stuck in a call (GPU, worker, a lock) still gets reported. */
@@ -152,8 +154,30 @@ static void present(void)
     int a_on_top = (KH_IO16(0x04000304) >> 15) & 1;
     uint64_t t0 = sceKernelGetProcessTimeWide();
     unsigned tex3d = 0;
-    int a3d = 0, i;
+    int a3d = 0, i, draw2d;
     static Frame2d f2d;
+    static uint32_t seen_serial, serial_vb, drawn_vb, pending;
+    static int last_a3d;
+
+    /* The 2D image only changes when the game has finished a frame (its SWAP_BUFFERS) and the
+     * VBlank after it has applied the frame's OAM and register updates: at the game's 30 fps
+     * every other display frame would draw the same picture again. At least every 4 VBlanks
+     * regardless, for effects that VBlank handlers run on their own. */
+    {
+        const uint32_t serial = kh_gx3d_serial(), vb = s_vblanks;
+        if (serial != seen_serial) {
+            seen_serial = serial;
+            serial_vb = vb;
+            pending = 1;
+        }
+        draw2d = (pending && vb != serial_vb) || vb - drawn_vb >= 4;
+        if (draw2d) {
+            pending = 0;
+            drawn_vb = vb;
+        } else {
+            s_2d_skipped++;
+        }
+    }
 
     /* the helper core starts on the 2D chunks while this thread sends the 3D frame to the
      * GPU (engine A's 3D layer is on: DISPCNT bits 3 and 8), then both share what is left */
@@ -166,10 +190,12 @@ static void present(void)
         const int inset = video_inset_screen(); /* 0 top, 1 bottom, -1 none */
         const int inset_engine = inset < 0 ? -1 : ((inset == 0) == a_on_top ? KH_ENGINE_A : KH_ENGINE_B);
         f2d.neng = 0;
-        for (i = 0; i < 2; i++)
-            if (i != inset_engine || (parity & 1))
-                f2d.eng[f2d.neng++] = i;
-        parity++;
+        if (draw2d) {
+            for (i = 0; i < 2; i++)
+                if (i != inset_engine || (parity & 1))
+                    f2d.eng[f2d.neng++] = i;
+            parity++;
+        }
     }
     s_stage = "2d";
     workers_begin(render_chunk, BANDS * f2d.neng, &f2d);
@@ -188,6 +214,7 @@ static void present(void)
     }
     for (i = 0; i < BANDS; i++)
         a3d |= f2d.a3d[i];
+    (void)last_a3d;
     s_render_us = (uint32_t)(sceKernelGetProcessTimeWide() - t0);
     s_render_total += s_render_us;
     if (s_render_us > s_render_max)
@@ -205,7 +232,8 @@ static void present(void)
     s_stage = "present";
     {
         uint64_t t = sceKernelGetProcessTimeWide();
-        video_present(s_top, s_bottom);
+        /* unchanged screens are not uploaded again */
+        video_present(draw2d ? s_top : NULL, draw2d ? s_bottom : NULL);
         s_present_total += sceKernelGetProcessTimeWide() - t;
     }
     s_stage = "loop";
@@ -217,7 +245,6 @@ static void sample_input(void);
 /* VBlank at the Vita's own 60 Hz, whatever the rendering costs: the game counts time in
  * VBlanks, so tying them to the display loop slowed the whole game down with every frame
  * that took longer than 16.7 ms to draw. */
-static volatile uint32_t s_vblanks;
 
 static int vblank_thread(SceSize args, void *argp)
 {
@@ -378,9 +405,10 @@ void kh_game_run(void)
                     (unsigned)(s_vblanks - vb_last),
                     (unsigned)(6000000000ull / (now - s_window_start)) / 10,
                     (unsigned)(6000000000ull / (now - s_window_start)) % 10);
-                LOG("display: per frame 3d submit %uus, 2d after it %uus, present %uus",
-                    (unsigned)(s_t3d_total / 600), (unsigned)(s_join_total / 600),
-                    (unsigned)(s_present_total / 600));
+                LOG("display: per frame 3d submit %uus, 2d after it %uus, present %uus; 2d reused "
+                    "in %u of 600", (unsigned)(s_t3d_total / 600), (unsigned)(s_join_total / 600),
+                    (unsigned)(s_present_total / 600), (unsigned)s_2d_skipped);
+                s_2d_skipped = 0;
                 s_t3d_total = s_join_total = s_present_total = 0;
                 s_window_start = now;
                 vb_last = s_vblanks;

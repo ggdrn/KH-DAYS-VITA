@@ -58,6 +58,10 @@ void kh_gx3d_sync_gxstat(void);
  * kh_gx3d_acquire. */
 const KhGxFrame *kh_gx3d_acquire(void);
 
+/* SWAP_BUFFERS so far: the game's main loop sends one at the end of every frame it completes,
+ * 2D-only screens included (main.c), so it also counts the game's frames. */
+uint32_t kh_gx3d_serial(void);
+
 typedef struct {
     uint32_t frames, polygons, vertices, commands, unknown, overflows, culled;
 } KhGx3dStats;

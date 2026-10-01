@@ -8694,15 +8694,17 @@ index da05123c8..22ba89d07 100644
  extern int FX_Div(int x, int y);
  
 diff --git a/src/engine/Game_EnterPauseScene.c b/src/engine/Game_EnterPauseScene.c
-index b88497285..cc42700df 100644
+index b88497285..4e41c6527 100644
 --- a/src/engine/Game_EnterPauseScene.c
 +++ b/src/engine/Game_EnterPauseScene.c
-@@ -1,3 +1,4 @@
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_HoldPanelScreen kh_ovd_Ov002_HoldPanelScreen
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: fixed DS addresses */
  #pragma thumb on
  /* Game_EnterPauseScene -- enter a scene, MAIN. Unless forced (gPauseAllowed) or flag 0x20ef is set, the
   * call is refused (PauseMenu_SetMode(0)). Otherwise: graphics mode 1/0/1 when +0xe4 asks for it, the
-@@ -11,7 +12,7 @@
+@@ -11,7 +14,7 @@
  
  #include "nitro/types.h"
  
@@ -9046,6 +9048,16 @@ index 6fd5f4bbd..8fbfb58cc 100644
  
  extern int *gMsgQueue;
  
+diff --git a/src/engine/Node_FlipDoubleBuffer.c b/src/engine/Node_FlipDoubleBuffer.c
+index b9a376075..5d146ca7c 100644
+--- a/src/engine/Node_FlipDoubleBuffer.c
++++ b/src/engine/Node_FlipDoubleBuffer.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov010_BindResourceHandle kh_ovd_Ov010_BindResourceHandle
+ /* Node_FlipDoubleBuffer -- flip a node's double buffer: toggle the index at +0x1c and re-point +0x18 at
+  * the matching 0xc-byte slot. Does nothing (and reports 0) unless AsyncMessage_Flush accepts the
+  * current buffer.
 diff --git a/src/engine/Obj_CommitAlphaBlend.c b/src/engine/Obj_CommitAlphaBlend.c
 index 0df393d7c..7a5744b80 100644
 --- a/src/engine/Obj_CommitAlphaBlend.c
@@ -9290,15 +9302,17 @@ index 39641ce1d..bc99e8a73 100644
  
  static inline void CP_SetDivImm64_64(u64 numer, u64 denom)
 diff --git a/src/engine/Scene_Leave.c b/src/engine/Scene_Leave.c
-index ed8ee39cf..fcbf3794d 100644
+index ed8ee39cf..447867da7 100644
 --- a/src/engine/Scene_Leave.c
 +++ b/src/engine/Scene_Leave.c
-@@ -1,3 +1,4 @@
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_HoldPanelScreen kh_ovd_Ov002_HoldPanelScreen
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: fixed DS addresses */
  #pragma thumb on
  /* Scene_Leave -- leave the current scene, MAIN. The main screen falls back to BG0 only; in mode
   * bit 3 the effect layer is reset (SetGameMode(2)). Unless a reset is pending (data_0204c240 bit
-@@ -9,7 +10,7 @@
+@@ -9,7 +12,7 @@
  
  #include "nitro/types.h"
  
@@ -9588,15 +9602,17 @@ index 937fb230a..7470a129b 100644
  
  void UnloadActorOverlay(void) {
 diff --git a/src/engine/main.c b/src/engine/main.c
-index 8e6f54324..428c80075 100644
+index 8e6f54324..3f8747a6e 100644
 --- a/src/engine/main.c
 +++ b/src/engine/main.c
-@@ -1,3 +1,4 @@
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov001_BootInit kh_ovd_Ov001_BootInit
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: fixed DS addresses */
  /* ============================================================================
   *  main  (0x02000bcc, 0x350 bytes)  --  KH 358/2 Days ARM9 static game entry
   * ----------------------------------------------------------------------------
-@@ -30,7 +31,11 @@
+@@ -30,7 +33,11 @@
  #include "game/scene.h"
  typedef u32 FSOverlayID;
  
@@ -9608,7 +9624,7 @@ index 8e6f54324..428c80075 100644
  #define FS_OVERLAY_ID_ov001 ((FSOverlayID)(u32)&OVERLAY_1_ID)
  
  /* ---- core services / overlays ---- */
-@@ -106,9 +111,9 @@ extern struct SceneState data_020442a0;
+@@ -106,9 +113,9 @@ extern struct SceneState data_020442a0;
  
  /* the ARM7's X/Y word @ 0x027fffa8: X, Y and debug in bits 10, 11 and 13 (active low), the
   * hinge in bit 15 (1 = lid closed) */
@@ -9620,7 +9636,7 @@ index 8e6f54324..428c80075 100644
  
  int main(void) {
      struct BootSettings boot;
-@@ -116,15 +121,21 @@ int main(void) {
+@@ -116,15 +123,21 @@ int main(void) {
  
      /* --- 1. core services + ov001 one-shot HW init --- */
      OS_Init();
@@ -9642,7 +9658,7 @@ index 8e6f54324..428c80075 100644
      {
          int mode = boot.mode;
          switch (mode) {
-@@ -145,11 +156,14 @@ int main(void) {
+@@ -145,11 +158,14 @@ int main(void) {
      func_02016264(&data_027e0350);
      data_020442a0.handle = AllocFromExpHeapWrapper(FS_TryLoadTable(0, 0), data_0204c024);
      FS_TryLoadTable(data_020442a0.handle, FS_TryLoadTable(0, 0));
@@ -9657,7 +9673,7 @@ index 8e6f54324..428c80075 100644
  
      /* --- 4. FRAME LOOP (0x02000cac) --- */
      for (;;) {
-@@ -178,7 +192,7 @@ int main(void) {
+@@ -178,7 +194,7 @@ int main(void) {
          /* present (unless mode 1 already did its own swap) */
          if (gPauseMode != 1) {
              GXi_FlushCommandList();
@@ -9990,6 +10006,16 @@ index 2d139dd65..7f177fb22 100644
      int pad24;
      int nHeading;           /* +0x28 */
      int nClock;             /* +0x2c */
+diff --git a/src/overlays/enemies/ov245_enemy_infernal_engine/Ov245_EnterReaction.c b/src/overlays/enemies/ov245_enemy_infernal_engine/Ov245_EnterReaction.c
+index 5ee41e7ca..827121b74 100644
+--- a/src/overlays/enemies/ov245_enemy_infernal_engine/Ov245_EnterReaction.c
++++ b/src/overlays/enemies/ov245_enemy_infernal_engine/Ov245_EnterReaction.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov004_CanTriggerActionInRange kh_ovd_Ov004_CanTriggerActionInRange
+ /* Ov245_EnterReaction -- reaction enter, gated on bit 0 of the actor's hw60 flags.
+  * Seeds the reaction timer (node[0xb] = 0x4000) and the step size (node[0xd] = 0x1000),
+  * clears the actor's pending-reaction word at +0x4c4 and its two per-node counters, marks
 diff --git a/src/overlays/enemies/ov252_enemy_ruler_of_the_sky/Ov252_PlaceBodyParts.c b/src/overlays/enemies/ov252_enemy_ruler_of_the_sky/Ov252_PlaceBodyParts.c
 index e201c905f..dd031b5c8 100644
 --- a/src/overlays/enemies/ov252_enemy_ruler_of_the_sky/Ov252_PlaceBodyParts.c
@@ -10186,6 +10212,16 @@ index f447eb1ab..de82d1397 100644
      u8 sent054;
      char pad055[3];
  };
+diff --git a/src/overlays/field/ov013/Ov013_TaskPollResourceReady.c b/src/overlays/field/ov013/Ov013_TaskPollResourceReady.c
+index 83650816a..f636afd2b 100644
+--- a/src/overlays/field/ov013/Ov013_TaskPollResourceReady.c
++++ b/src/overlays/field/ov013/Ov013_TaskPollResourceReady.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_SetLapRunning kh_ovd_Ov002_SetLapRunning
+ /* Task step: waits until the kind's resources are all released (with a timeout), then starts a lap
+  * with the task's callbacks; returns -2 while waiting. */
+ 
 diff --git a/src/overlays/field/ov013/Ov013_UpdateSpawnGroups.c b/src/overlays/field/ov013/Ov013_UpdateSpawnGroups.c
 index 6ea0090b3..39d5d77e5 100644
 --- a/src/overlays/field/ov013/Ov013_UpdateSpawnGroups.c
@@ -10204,6 +10240,16 @@ index 6ea0090b3..39d5d77e5 100644
      char padding46c[0x20];
      char spawnData[0x230];
      int currentGroup;
+diff --git a/src/overlays/field/ov016_field_breakables/Ov016_FollowerComplete.c b/src/overlays/field/ov016_field_breakables/Ov016_FollowerComplete.c
+index 7405b5c66..7c2841a03 100644
+--- a/src/overlays/field/ov016_field_breakables/Ov016_FollowerComplete.c
++++ b/src/overlays/field/ov016_field_breakables/Ov016_FollowerComplete.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov233_NotifyPartsThenBase kh_ovd_Ov233_NotifyPartsThenBase
+ /* Ov016_FollowerComplete -- Ov016_FollowerComplete: once every player has held its follower, walk
+  * the seat owner's piece list (ov002 02073880 for the follower's bucket slot, list +0x80) and,
+  * at the first piece whose kind byte (+0x19c) is 'm', fire the completion hooks (ov233
 diff --git a/src/overlays/field/ov017_field_deposits/Ov017_ScriptOpPostScoreAndClearBgPriority.c b/src/overlays/field/ov017_field_deposits/Ov017_ScriptOpPostScoreAndClearBgPriority.c
 index 0e9b9c912..c6ca0ec32 100644
 --- a/src/overlays/field/ov017_field_deposits/Ov017_ScriptOpPostScoreAndClearBgPriority.c
@@ -10417,6 +10463,27 @@ index 12a5ecebd..4d29162fa 100644
      unsigned char pad008;
      unsigned char kind009;
      unsigned char pad00a[8];
+diff --git a/src/overlays/field/ov022_battle/Ov022_DrawSelectionMarkers.c b/src/overlays/field/ov022_battle/Ov022_DrawSelectionMarkers.c
+index 9adbd4495..f5b28ca63 100644
+--- a/src/overlays/field/ov022_battle/Ov022_DrawSelectionMarkers.c
++++ b/src/overlays/field/ov022_battle/Ov022_DrawSelectionMarkers.c
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_ReaimActor kh_ovd_Ov002_ReaimActor
++#define Ov002_ResourceNodeCallback kh_ovd_Ov002_ResourceNodeCallback
+ /* Draws the lock-on markers of the current selection: positions the three marker sprites over the
+  * focused target and animates them with the activation tween and the target's deadline. */
+ 
+diff --git a/src/overlays/field/ov022_battle/Ov022_DrawStateMarker.c b/src/overlays/field/ov022_battle/Ov022_DrawStateMarker.c
+index 881558c5f..4bda00b43 100644
+--- a/src/overlays/field/ov022_battle/Ov022_DrawStateMarker.c
++++ b/src/overlays/field/ov022_battle/Ov022_DrawStateMarker.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_ReaimActor kh_ovd_Ov002_ReaimActor
+ /* Ov022_DrawStateMarker -- draw an actor's shown state marker over a world
+  * point and age it.
+  *
 diff --git a/src/overlays/field/ov022_battle/Ov022_EndKeySharingSession.c b/src/overlays/field/ov022_battle/Ov022_EndKeySharingSession.c
 index 489f7c75e..0d011b961 100644
 --- a/src/overlays/field/ov022_battle/Ov022_EndKeySharingSession.c
@@ -10583,6 +10650,26 @@ index 5e5dbc988..fbb9e179c 100644
      char padding46c[0xc];
      unsigned short angle478;
      char padding47a[0x12];
+diff --git a/src/overlays/field/ov022_battle/Ov022_PlaceCornerMarkers.c b/src/overlays/field/ov022_battle/Ov022_PlaceCornerMarkers.c
+index e5a468ddf..31a583b76 100644
+--- a/src/overlays/field/ov022_battle/Ov022_PlaceCornerMarkers.c
++++ b/src/overlays/field/ov022_battle/Ov022_PlaceCornerMarkers.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_ResourceNodeCallback kh_ovd_Ov002_ResourceNodeCallback
+ /* Preserve the original unit's predicated-store scheduling in the point loop. */
+ #pragma opt_repositioncode on
+ 
+diff --git a/src/overlays/field/ov022_battle/Ov022_ReadSelectionInput.c b/src/overlays/field/ov022_battle/Ov022_ReadSelectionInput.c
+index e43f5318f..441dc5005 100644
+--- a/src/overlays/field/ov022_battle/Ov022_ReadSelectionInput.c
++++ b/src/overlays/field/ov022_battle/Ov022_ReadSelectionInput.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_ReaimActor kh_ovd_Ov002_ReaimActor
+ /* Reads the lock-on input for the local player: toggles the selection with the shoulder button,
+  * cycles targets with repeat, refreshes candidates and markers, and updates the caption and panel;
+  * returns whether the selection is active. */
 diff --git a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 index f3055d4ba..138ba3470 100644
 --- a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
@@ -10688,6 +10775,26 @@ index 89534721b..f71d06708 100644
      VecFx32 vecAt;            /* 0x08 */
      int nField14;                    /* 0x14 */
      u16 nField18;                    /* 0x18 */
+diff --git a/src/overlays/field/ov022_battle/Ov022_SendControlPacket.c b/src/overlays/field/ov022_battle/Ov022_SendControlPacket.c
+index 6300c90c6..8d651f8c1 100644
+--- a/src/overlays/field/ov022_battle/Ov022_SendControlPacket.c
++++ b/src/overlays/field/ov022_battle/Ov022_SendControlPacket.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetU16Via0x20Then0x58 kh_ovd_Ov002_GetU16Via0x20Then0x58
+ 
+ #include "nitro/types.h"
+ 
+diff --git a/src/overlays/field/ov022_battle/Ov022_SetAnimState.c b/src/overlays/field/ov022_battle/Ov022_SetAnimState.c
+index ba741de52..fa923f071 100644
+--- a/src/overlays/field/ov022_battle/Ov022_SetAnimState.c
++++ b/src/overlays/field/ov022_battle/Ov022_SetAnimState.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /* Ov022_SetAnimState -- switch the actor to animation nAnim.
+  *
+  * The node slot resources of the current animation are released first.
 diff --git a/src/overlays/field/ov022_battle/Ov022_SetSlotClaim.c b/src/overlays/field/ov022_battle/Ov022_SetSlotClaim.c
 index 2c15f20ae..f0bfce7b2 100644
 --- a/src/overlays/field/ov022_battle/Ov022_SetSlotClaim.c
@@ -10792,15 +10899,17 @@ index 2f793fa32..1b206a87c 100644
  void Ov022_ToggleBit13ByMode(int obj, int mode) {
      if (mode != 0) {
 diff --git a/src/overlays/field/ov022_battle/Ov022_TrackWallPress.c b/src/overlays/field/ov022_battle/Ov022_TrackWallPress.c
-index cd1deb4fa..8d08f5cf1 100644
+index cd1deb4fa..8a7ea3279 100644
 --- a/src/overlays/field/ov022_battle/Ov022_TrackWallPress.c
 +++ b/src/overlays/field/ov022_battle/Ov022_TrackWallPress.c
-@@ -1,3 +1,4 @@
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov013_SpawnAtOrientedOffset kh_ovd_Ov013_SpawnAtOrientedOffset
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
  /* ov022: track whether the actor is pressing into a wall.
   *
   * Runs from the per-frame tick, only for the local player's actor. It turns the
-@@ -26,7 +27,7 @@ struct Surface {
+@@ -26,7 +29,7 @@ struct Surface {
  
  struct WallHold {
      struct Surface *pSurface;    /* 0x00 */
@@ -10809,7 +10918,7 @@ index cd1deb4fa..8d08f5cf1 100644
  };
  
  struct CollBlock {
-@@ -37,7 +38,7 @@ struct CollBlock {
+@@ -37,7 +40,7 @@ struct CollBlock {
  };
  
  struct Actor {
@@ -10818,7 +10927,7 @@ index cd1deb4fa..8d08f5cf1 100644
      u8 nOwner;                   /* 0x008 */
      u8 pad009[9];
      u16 nHp;                     /* 0x012 */
-@@ -52,7 +53,7 @@ struct Actor {
+@@ -52,7 +55,7 @@ struct Actor {
      struct CollBlock collWallA;  /* 0x1b8 */
      struct CollBlock collWallB;  /* 0x260 */
      u8 pad308[0x15c];
@@ -10872,6 +10981,16 @@ index 99aa137aa..05f8bf9fb 100644
      u8 pad0474[0x40];
      int nInterruptCharge;            /* 0x04b4 */
      u8 pad04b8[0xcd4];
+diff --git a/src/overlays/field/ov022_battle/Ov022_UpdateCameraAndViews.c b/src/overlays/field/ov022_battle/Ov022_UpdateCameraAndViews.c
+index 571c98c86..9b683d0bb 100644
+--- a/src/overlays/field/ov022_battle/Ov022_UpdateCameraAndViews.c
++++ b/src/overlays/field/ov022_battle/Ov022_UpdateCameraAndViews.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_ReaimActor kh_ovd_Ov002_ReaimActor
+ /* Per-frame battle update: re-aims the camera at the local actor (the argument says whether to turn
+  * it; skipped while paused), draws the local group's view lists and link seats, updates the peers'
+  * animations and applies the scene scale to the views. */
 diff --git a/src/overlays/field/ov022_battle/Ov022_UpdateCommandInput.c b/src/overlays/field/ov022_battle/Ov022_UpdateCommandInput.c
 index c52f88764..ba5b156c0 100644
 --- a/src/overlays/field/ov022_battle/Ov022_UpdateCommandInput.c
@@ -10930,15 +11049,17 @@ index c52f88764..ba5b156c0 100644
              if (Ov002_IsMissionClearFinished(bNoRepeat) != 0) {
                  bNoRepeat = 0;
 diff --git a/src/overlays/field/ov022_battle/Ov022_UpdateRumble.c b/src/overlays/field/ov022_battle/Ov022_UpdateRumble.c
-index 37fa6b3a8..0feeab2ee 100644
+index 37fa6b3a8..4e6e53e71 100644
 --- a/src/overlays/field/ov022_battle/Ov022_UpdateRumble.c
 +++ b/src/overlays/field/ov022_battle/Ov022_UpdateRumble.c
-@@ -1,3 +1,4 @@
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_StopAllEmitters kh_ovd_Ov002_StopAllEmitters
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
  /* ov022: drive the rumble pak for one actor.
   *
   * Runs from the per-frame tick's common tail. A burst counter throttles how
-@@ -23,7 +24,7 @@
+@@ -23,7 +26,7 @@
  #define RUMBLE_ROUND           0x7fd87
  
  struct Rumble {
@@ -10947,7 +11068,7 @@ index 37fa6b3a8..0feeab2ee 100644
      int nCooldown;                /* 0x08 */
      u8 nLastLevel;                /* 0x0c */
      u8 nBurst;                    /* 0x0d */
-@@ -42,7 +43,7 @@ struct RumbleStatus {
+@@ -42,7 +45,7 @@ struct RumbleStatus {
  };
  
  struct Actor {
@@ -10957,15 +11078,17 @@ index 37fa6b3a8..0feeab2ee 100644
      u8 nId;                       /* 0x0009 */
      u8 pad00a[0x2a9a];
 diff --git a/src/overlays/field/ov022_battle/Ov022_UpdateSubsystems.c b/src/overlays/field/ov022_battle/Ov022_UpdateSubsystems.c
-index 26f5cc2e5..7c2fed22f 100644
+index 26f5cc2e5..ff869c9dd 100644
 --- a/src/overlays/field/ov022_battle/Ov022_UpdateSubsystems.c
 +++ b/src/overlays/field/ov022_battle/Ov022_UpdateSubsystems.c
-@@ -1,3 +1,4 @@
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov106_SetField8CCC kh_ovd_Ov106_SetField8CCC
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
  /* ov022: run everything the actor's frame still owes.
   *
   * The per-frame tick's catch-all step. For the local player it drives the two
-@@ -25,7 +26,7 @@ struct Actor;
+@@ -25,7 +28,7 @@ struct Actor;
  typedef void (*PfnUpdate)(struct Actor *pActor);
  
  struct Actor {
@@ -10974,7 +11097,7 @@ index 26f5cc2e5..7c2fed22f 100644
      u8 nOwner;                    /* 0x0008 */
      u8 nId;                       /* 0x0009 */
      u8 pad00a[8];
-@@ -37,7 +38,7 @@ struct Actor {
+@@ -37,7 +40,7 @@ struct Actor {
      short nSlotIndex;             /* 0x0066 */
      u8 collMain;                  /* 0x0068 */
      u8 pad069[0x3fb];
@@ -10983,6 +11106,37 @@ index 26f5cc2e5..7c2fed22f 100644
      u8 pad46c[0x20];
      VecFx32 vecPos;           /* 0x048c */
      u8 pad498[0x1d4];
+diff --git a/src/overlays/field/ov022_battle/Ov022_UpdateUiSelectionMarker.c b/src/overlays/field/ov022_battle/Ov022_UpdateUiSelectionMarker.c
+index 9d7e5dde5..98a39fae9 100644
+--- a/src/overlays/field/ov022_battle/Ov022_UpdateUiSelectionMarker.c
++++ b/src/overlays/field/ov022_battle/Ov022_UpdateUiSelectionMarker.c
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_ReaimActor kh_ovd_Ov002_ReaimActor
++#define Ov002_ResourceNodeCallback kh_ovd_Ov002_ResourceNodeCallback
+ /* Animates the lock-on marker sprite through its states: tweens the corner markers towards the
+  * point, then settles and holds it. */
+ 
+diff --git a/src/overlays/field/ov022_battle/func_ov022_02086e80.c b/src/overlays/field/ov022_battle/func_ov022_02086e80.c
+index 170251d12..bd7f17c6b 100644
+--- a/src/overlays/field/ov022_battle/func_ov022_02086e80.c
++++ b/src/overlays/field/ov022_battle/func_ov022_02086e80.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_ReaimActor kh_ovd_Ov002_ReaimActor
+ /* * Was parked as a register-allocation tie. It was not -- it was a THUMB function that had only
+  * ever been verified as ARM (giving a nonsense size gap), plus two ordinary steers:
+  *   - `i = 0` must be a STATEMENT after the calls, not a declaration-initialiser. As an
+diff --git a/src/overlays/field/ov022_battle/func_ov022_020aeef8.c b/src/overlays/field/ov022_battle/func_ov022_020aeef8.c
+index 73a3e7bd4..fce568167 100644
+--- a/src/overlays/field/ov022_battle/func_ov022_020aeef8.c
++++ b/src/overlays/field/ov022_battle/func_ov022_020aeef8.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov010_BindResourceHandle kh_ovd_Ov010_BindResourceHandle
+ /* func_ov022_020aeef8 -- look up the state slot for (byte@arg0+9 - 1), release it from state 9
+  * to state 1, run Ov022_FindApproachDir with a 3-word scratch, and put the slot back to 9 when the
+  * call reports work done. Returns that same result.
 diff --git a/src/overlays/field/ov023_event_script/Ov023_ApplyScreenBlend.c b/src/overlays/field/ov023_event_script/Ov023_ApplyScreenBlend.c
 index 1edf6e250..46f352ec1 100644
 --- a/src/overlays/field/ov023_event_script/Ov023_ApplyScreenBlend.c
@@ -11073,6 +11227,16 @@ index 34a4dce8e..928462399 100644
      data_ov023_0208a784.pScene->pDialog = InstantiateClass(data_ov002_0207eee8, pArg);
      Ov002_HudPage_SetDialogCallbacks(Ov023_PostMessageBox, Ov023_DialogFlagBit2);
      data_ov023_0208a784.pScene->nDialogState = 1;
+diff --git a/src/overlays/field/ov023_event_script/Ov023_ReleaseArmedSlots.c b/src/overlays/field/ov023_event_script/Ov023_ReleaseArmedSlots.c
+index cc2d4eb1a..0e406cdeb 100644
+--- a/src/overlays/field/ov023_event_script/Ov023_ReleaseArmedSlots.c
++++ b/src/overlays/field/ov023_event_script/Ov023_ReleaseArmedSlots.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_ResourceNodeCallback kh_ovd_Ov002_ResourceNodeCallback
+ /* Ov023_ReleaseArmedSlots -- release every armed slot of the ov023 scene.
+  * After the shared teardown (Ov002_ResetViewToDefault), walk the five 0x30-byte slots of the scene
+  * object (data_ov023_0208a784[1]) and hand each one whose handle at +0xf0 is set to
 diff --git a/src/overlays/field/ov023_event_script/Ov023_SceneDestroy.c b/src/overlays/field/ov023_event_script/Ov023_SceneDestroy.c
 index 56d4edb9c..09626bcf5 100644
 --- a/src/overlays/field/ov023_event_script/Ov023_SceneDestroy.c
@@ -11282,15 +11446,17 @@ index 4c56ccae7..4455d3b9b 100644
      }
      StoreToGlobalPtr4FieldE4IfSet(0);
 diff --git a/src/overlays/players/ov030_player_roxas/Ov030_ApplyModeChange.c b/src/overlays/players/ov030_player_roxas/Ov030_ApplyModeChange.c
-index f85608bc1..8eda7b769 100644
+index f85608bc1..7e329d35d 100644
 --- a/src/overlays/players/ov030_player_roxas/Ov030_ApplyModeChange.c
 +++ b/src/overlays/players/ov030_player_roxas/Ov030_ApplyModeChange.c
-@@ -1,3 +1,4 @@
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
  /*
   * Apply a mode change to the actor -- the guarded/link variant with a slot check
   * (x4: ov030/054b/074b/091b -- see the dedup fan-out for the exact twins).
-@@ -27,7 +28,7 @@
+@@ -27,7 +30,7 @@
   *    borrow order in the ROM is what tells you which. All 40 constraint-satisfying permutations
   *    were swept; exactly one matches.
   */
@@ -11299,6 +11465,58 @@ index f85608bc1..8eda7b769 100644
  
  extern int Ov022_IsIndexedRecordBit0Set(int self, int i);
  extern int func_ov022_0209fc78(int self, int i);
+diff --git a/src/overlays/players/ov030_player_roxas/func_ov030_020b3220.c b/src/overlays/players/ov030_player_roxas/func_ov030_020b3220.c
+index 7d944bef7..70f51063f 100644
+--- a/src/overlays/players/ov030_player_roxas/func_ov030_020b3220.c
++++ b/src/overlays/players/ov030_player_roxas/func_ov030_020b3220.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov030_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov030_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov031_player_axel/Ov031_initSubObjectsSetU64Flags.c b/src/overlays/players/ov031_player_axel/Ov031_initSubObjectsSetU64Flags.c
+index 499e0896f..10485cdf4 100644
+--- a/src/overlays/players/ov031_player_axel/Ov031_initSubObjectsSetU64Flags.c
++++ b/src/overlays/players/ov031_player_axel/Ov031_initSubObjectsSetU64Flags.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Forwards the global command to the three effect streams and runs their callbacks; when any stream
+  * is still busy, sets bit 16 of the local player's two 64-bit flag words; then finishes the
+  * battle-module update. */
+diff --git a/src/overlays/players/ov031_player_axel/data/ov031_pointers_020b4cd4.c b/src/overlays/players/ov031_player_axel/data/ov031_pointers_020b4cd4.c
+index ce6cb4f7c..f91a32bdd 100644
+--- a/src/overlays/players/ov031_player_axel/data/ov031_pointers_020b4cd4.c
++++ b/src/overlays/players/ov031_player_axel/data/ov031_pointers_020b4cd4.c
+@@ -1,3 +1,7 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
++#define Ov022_StepStandingShot kh_ovd_Ov022_StepStandingShot
+ /* ov031 .data pointer tables, 0x020b4cd4-0x020b4cfc.
+  *
+  * 2 tables, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov031_player_axel/func_ov031_020b3220.c b/src/overlays/players/ov031_player_axel/func_ov031_020b3220.c
+index 5dfc7fdcb..d7ad6a439 100644
+--- a/src/overlays/players/ov031_player_axel/func_ov031_020b3220.c
++++ b/src/overlays/players/ov031_player_axel/func_ov031_020b3220.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov031_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov031_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov032_player_xigbar/Ov032_InvokeBothGroupCallbacks.c b/src/overlays/players/ov032_player_xigbar/Ov032_InvokeBothGroupCallbacks.c
+index d6854f71e..e22da6d43 100644
+--- a/src/overlays/players/ov032_player_xigbar/Ov032_InvokeBothGroupCallbacks.c
++++ b/src/overlays/players/ov032_player_xigbar/Ov032_InvokeBothGroupCallbacks.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Invokes the callback of both stream groups at +0x2644. */
+ 
+ extern int Ov022_InvokeCallback24IfBit0();
 diff --git a/src/overlays/players/ov032_player_xigbar/Ov032_SpawnAttachEffects.c b/src/overlays/players/ov032_player_xigbar/Ov032_SpawnAttachEffects.c
 index fc70edc38..e235ff300 100644
 --- a/src/overlays/players/ov032_player_xigbar/Ov032_SpawnAttachEffects.c
@@ -11322,6 +11540,16 @@ index fc70edc38..e235ff300 100644
      char pad46c[0x528 - 0x46c];
      char aMatrix528[2][0x30];
      char pad588[0x6bc - 0x588];
+diff --git a/src/overlays/players/ov032_player_xigbar/func_ov032_020b3220.c b/src/overlays/players/ov032_player_xigbar/func_ov032_020b3220.c
+index 21320b4a6..f630032f1 100644
+--- a/src/overlays/players/ov032_player_xigbar/func_ov032_020b3220.c
++++ b/src/overlays/players/ov032_player_xigbar/func_ov032_020b3220.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov032_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov032_InvokeWithDataTable;
 diff --git a/src/overlays/players/ov033_player_saix/Ov033_UpdateGuardedSlots.c b/src/overlays/players/ov033_player_saix/Ov033_UpdateGuardedSlots.c
 index 48542e941..caca34916 100644
 --- a/src/overlays/players/ov033_player_saix/Ov033_UpdateGuardedSlots.c
@@ -11340,6 +11568,16 @@ index 48542e941..caca34916 100644
      char pad46c[0x2aba - 0x46c];
      short f2aba;
  } Self;
+diff --git a/src/overlays/players/ov033_player_saix/func_ov033_020b3220.c b/src/overlays/players/ov033_player_saix/func_ov033_020b3220.c
+index 7770aecfa..17af955b2 100644
+--- a/src/overlays/players/ov033_player_saix/func_ov033_020b3220.c
++++ b/src/overlays/players/ov033_player_saix/func_ov033_020b3220.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov033_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov033_InvokeWithDataTable;
 diff --git a/src/overlays/players/ov034_player_xaldin/Ov034_DriveGuardSequence.c b/src/overlays/players/ov034_player_xaldin/Ov034_DriveGuardSequence.c
 index 941db4467..f95e3b017 100644
 --- a/src/overlays/players/ov034_player_xaldin/Ov034_DriveGuardSequence.c
@@ -11358,6 +11596,119 @@ index 941db4467..f95e3b017 100644
  
  extern int Ov022_IsState9Or6WithFlag200(void *p);
  extern void Ov034_ClearTimer(int self, int p2);
+diff --git a/src/overlays/players/ov034_player_xaldin/func_ov034_020b3220.c b/src/overlays/players/ov034_player_xaldin/func_ov034_020b3220.c
+index 3259fd696..014531516 100644
+--- a/src/overlays/players/ov034_player_xaldin/func_ov034_020b3220.c
++++ b/src/overlays/players/ov034_player_xaldin/func_ov034_020b3220.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov034_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov034_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov035_player_sora/Ov035_ApplyModeChange.c b/src/overlays/players/ov035_player_sora/Ov035_ApplyModeChange.c
+index 51168c051..f944accd2 100644
+--- a/src/overlays/players/ov035_player_sora/Ov035_ApplyModeChange.c
++++ b/src/overlays/players/ov035_player_sora/Ov035_ApplyModeChange.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor (x4: ov035/054/074/091).
+  *
+diff --git a/src/overlays/players/ov035_player_sora/Ov035_Weapon_TickStreams.c b/src/overlays/players/ov035_player_sora/Ov035_Weapon_TickStreams.c
+index 96b7019c2..ffd76a472 100644
+--- a/src/overlays/players/ov035_player_sora/Ov035_Weapon_TickStreams.c
++++ b/src/overlays/players/ov035_player_sora/Ov035_Weapon_TickStreams.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Commits the widget scroll for the frame and, outside mode 0x2a, feeds both stream groups
+  * (flagging the local player when idle). */
+ 
+diff --git a/src/overlays/players/ov035_player_sora/data/ov035_pointers_020b4c08.c b/src/overlays/players/ov035_player_sora/data/ov035_pointers_020b4c08.c
+index 15539f378..46ec16709 100644
+--- a/src/overlays/players/ov035_player_sora/data/ov035_pointers_020b4c08.c
++++ b/src/overlays/players/ov035_player_sora/data/ov035_pointers_020b4c08.c
+@@ -1,3 +1,7 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
++#define Ov022_StepStandingShot kh_ovd_Ov022_StepStandingShot
+ /* ov035 .data pointer tables, 0x020b4c08-0x020b4c1c.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov035_player_sora/func_ov035_020b3220.c b/src/overlays/players/ov035_player_sora/func_ov035_020b3220.c
+index af223f33b..02f307e1b 100644
+--- a/src/overlays/players/ov035_player_sora/func_ov035_020b3220.c
++++ b/src/overlays/players/ov035_player_sora/func_ov035_020b3220.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov035_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov035_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov036_player_demyx/Ov036_ApplyModeChange.c b/src/overlays/players/ov036_player_demyx/Ov036_ApplyModeChange.c
+index 31b657b19..6674e0d4d 100644
+--- a/src/overlays/players/ov036_player_demyx/Ov036_ApplyModeChange.c
++++ b/src/overlays/players/ov036_player_demyx/Ov036_ApplyModeChange.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor (x4: ov036/055/075/092).
+  *
+diff --git a/src/overlays/players/ov036_player_demyx/Ov036_RefreshParts.c b/src/overlays/players/ov036_player_demyx/Ov036_RefreshParts.c
+index ab19d8623..4ae23b002 100644
+--- a/src/overlays/players/ov036_player_demyx/Ov036_RefreshParts.c
++++ b/src/overlays/players/ov036_player_demyx/Ov036_RefreshParts.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Run the refresh pass over this enemy's three 0x30-byte part records. */
+ 
+ extern void Ov022_InvokeCallback24IfBit0();
+diff --git a/src/overlays/players/ov036_player_demyx/data/ov036_pointers_020b4e54.c b/src/overlays/players/ov036_player_demyx/data/ov036_pointers_020b4e54.c
+index 1c5c0250e..851239d63 100644
+--- a/src/overlays/players/ov036_player_demyx/data/ov036_pointers_020b4e54.c
++++ b/src/overlays/players/ov036_player_demyx/data/ov036_pointers_020b4e54.c
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
+ /* ov036 .data pointer tables, 0x020b4e54-0x020b4e68.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov036_player_demyx/func_ov036_020b3220.c b/src/overlays/players/ov036_player_demyx/func_ov036_020b3220.c
+index 5614b64e1..053e66950 100644
+--- a/src/overlays/players/ov036_player_demyx/func_ov036_020b3220.c
++++ b/src/overlays/players/ov036_player_demyx/func_ov036_020b3220.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov036_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov036_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov037_player_larxene/Ov037_InvokeGroupCallback.c b/src/overlays/players/ov037_player_larxene/Ov037_InvokeGroupCallback.c
+index edb4f8d75..a5be5a4ba 100644
+--- a/src/overlays/players/ov037_player_larxene/Ov037_InvokeGroupCallback.c
++++ b/src/overlays/players/ov037_player_larxene/Ov037_InvokeGroupCallback.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Invokes the callback of the stream group at +0x2644. */
+ 
+ extern void Ov022_InvokeCallback24IfBit0(int arg);
+diff --git a/src/overlays/players/ov037_player_larxene/func_ov037_020b3220.c b/src/overlays/players/ov037_player_larxene/func_ov037_020b3220.c
+index 69005a9a7..da8f89011 100644
+--- a/src/overlays/players/ov037_player_larxene/func_ov037_020b3220.c
++++ b/src/overlays/players/ov037_player_larxene/func_ov037_020b3220.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov037_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov037_InvokeWithDataTable;
 diff --git a/src/overlays/players/ov038_player_lexaeus/Ov038_DriveSwingSequence.c b/src/overlays/players/ov038_player_lexaeus/Ov038_DriveSwingSequence.c
 index c185c3511..cca83e59e 100644
 --- a/src/overlays/players/ov038_player_lexaeus/Ov038_DriveSwingSequence.c
@@ -11394,6 +11745,97 @@ index 56d31567c..62c058959 100644
      char pad46c[0x250];
      int nStage6bc;
  };
+diff --git a/src/overlays/players/ov038_player_lexaeus/func_ov038_020b3220.c b/src/overlays/players/ov038_player_lexaeus/func_ov038_020b3220.c
+index 509142257..07efd6e51 100644
+--- a/src/overlays/players/ov038_player_lexaeus/func_ov038_020b3220.c
++++ b/src/overlays/players/ov038_player_lexaeus/func_ov038_020b3220.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov038_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov038_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov039_player_luxord/Ov039_ApplyMode.c b/src/overlays/players/ov039_player_luxord/Ov039_ApplyMode.c
+index 6e4dde9ba..d048b7fab 100644
+--- a/src/overlays/players/ov039_player_luxord/Ov039_ApplyMode.c
++++ b/src/overlays/players/ov039_player_luxord/Ov039_ApplyMode.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor -- the two-stage variant with a secondary UI id.
+  *
+diff --git a/src/overlays/players/ov039_player_luxord/Ov039_UpdateAnchorsAndChannels.c b/src/overlays/players/ov039_player_luxord/Ov039_UpdateAnchorsAndChannels.c
+index 69f13106f..c7906a100 100644
+--- a/src/overlays/players/ov039_player_luxord/Ov039_UpdateAnchorsAndChannels.c
++++ b/src/overlays/players/ov039_player_luxord/Ov039_UpdateAnchorsAndChannels.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Per-frame update of the ov039 enemy (x4: ov039/058/078/095): reads the node's animation frame
+  * and drives the first secondary channel (+0xda8 from the config at +0x2c2c); by mode: 0x2f and
+  * 0x32 refresh both attack anchors on the emitter's context (slot 5) while it is idle, 0x33
+diff --git a/src/overlays/players/ov039_player_luxord/data/ov039_pointers_020b5568.c b/src/overlays/players/ov039_player_luxord/data/ov039_pointers_020b5568.c
+index 5ed47438a..32070e895 100644
+--- a/src/overlays/players/ov039_player_luxord/data/ov039_pointers_020b5568.c
++++ b/src/overlays/players/ov039_player_luxord/data/ov039_pointers_020b5568.c
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
+ /* ov039 .data pointer tables, 0x020b5568-0x020b557c.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov039_player_luxord/func_ov039_020b3220.c b/src/overlays/players/ov039_player_luxord/func_ov039_020b3220.c
+index 0cb4044c3..195a1226e 100644
+--- a/src/overlays/players/ov039_player_luxord/func_ov039_020b3220.c
++++ b/src/overlays/players/ov039_player_luxord/func_ov039_020b3220.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov039_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov039_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov040_player_marluxia/func_ov040_020b3220.c b/src/overlays/players/ov040_player_marluxia/func_ov040_020b3220.c
+index de4f65175..3054a6341 100644
+--- a/src/overlays/players/ov040_player_marluxia/func_ov040_020b3220.c
++++ b/src/overlays/players/ov040_player_marluxia/func_ov040_020b3220.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov040_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov040_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov041_player_riku/Ov041_ApplyModeChange.c b/src/overlays/players/ov041_player_riku/Ov041_ApplyModeChange.c
+index e676a0b5d..62d488155 100644
+--- a/src/overlays/players/ov041_player_riku/Ov041_ApplyModeChange.c
++++ b/src/overlays/players/ov041_player_riku/Ov041_ApplyModeChange.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor (x4: ov041/060/078/095).
+  *
+diff --git a/src/overlays/players/ov041_player_riku/func_ov041_020b3220.c b/src/overlays/players/ov041_player_riku/func_ov041_020b3220.c
+index 134da166a..4aed5a93f 100644
+--- a/src/overlays/players/ov041_player_riku/func_ov041_020b3220.c
++++ b/src/overlays/players/ov041_player_riku/func_ov041_020b3220.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov041_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov041_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov042_player_vexen/Ov042_StepParts.c b/src/overlays/players/ov042_player_vexen/Ov042_StepParts.c
+index 557c0a7fe..f7755bd48 100644
+--- a/src/overlays/players/ov042_player_vexen/Ov042_StepParts.c
++++ b/src/overlays/players/ov042_player_vexen/Ov042_StepParts.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_StepShot_2 kh_ovd_Ov022_StepShot_2
+ /* Run the per-state handler of every 0x1c8-byte part of this enemy (count at +0x19, array at
+  * +0xc, handler table by the part's state byte at +2). State 2 is special: while the group is
+  * in mode 1 the parts are steered by Ov042_SteerPart, otherwise the shared handler runs and
 diff --git a/src/overlays/players/ov042_player_vexen/Ov042_UpdateSlotsWithGate.c b/src/overlays/players/ov042_player_vexen/Ov042_UpdateSlotsWithGate.c
 index c40fde68a..c5f5dba5c 100644
 --- a/src/overlays/players/ov042_player_vexen/Ov042_UpdateSlotsWithGate.c
@@ -11412,16 +11854,81 @@ index c40fde68a..c5f5dba5c 100644
  } Self;
  
  void Ov042_UpdateSlotsWithGate(Self *self, int *node, int arg) {
+diff --git a/src/overlays/players/ov042_player_vexen/Ov042_UpdateSubObjects.c b/src/overlays/players/ov042_player_vexen/Ov042_UpdateSubObjects.c
+index fb01664f0..eaab7b3d2 100644
+--- a/src/overlays/players/ov042_player_vexen/Ov042_UpdateSubObjects.c
++++ b/src/overlays/players/ov042_player_vexen/Ov042_UpdateSubObjects.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Per-frame update of the ov042 enemy's two sub-objects (x4: ov042/061/081/098), the ov031
+  * shape: (the node animation's frame is polled but unused,) each sub-object is fed the frame
+  * delta and stepped; if either is idle, the local player raises bit 0x10000 of both attack-flag
+diff --git a/src/overlays/players/ov042_player_vexen/data/ov042_pointers_020b4754.c b/src/overlays/players/ov042_player_vexen/data/ov042_pointers_020b4754.c
+index d0d31519b..985ec702d 100644
+--- a/src/overlays/players/ov042_player_vexen/data/ov042_pointers_020b4754.c
++++ b/src/overlays/players/ov042_player_vexen/data/ov042_pointers_020b4754.c
+@@ -1,3 +1,7 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
++#define Ov022_StepStandingShot kh_ovd_Ov022_StepStandingShot
+ /* ov042 .data pointer tables, 0x020b4754-0x020b4768.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov042_player_vexen/func_ov042_020b3220.c b/src/overlays/players/ov042_player_vexen/func_ov042_020b3220.c
+index e1349c759..c3b6da97f 100644
+--- a/src/overlays/players/ov042_player_vexen/func_ov042_020b3220.c
++++ b/src/overlays/players/ov042_player_vexen/func_ov042_020b3220.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov042_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov042_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov043_player_xemnas/Ov043_InvokeBothGroupCallbacks.c b/src/overlays/players/ov043_player_xemnas/Ov043_InvokeBothGroupCallbacks.c
+index ac7bef9ff..5b7e128a8 100644
+--- a/src/overlays/players/ov043_player_xemnas/Ov043_InvokeBothGroupCallbacks.c
++++ b/src/overlays/players/ov043_player_xemnas/Ov043_InvokeBothGroupCallbacks.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Invokes the callback of both stream groups at +0x2644. */
+ 
+ extern int Ov022_InvokeCallback24IfBit0();
+diff --git a/src/overlays/players/ov043_player_xemnas/data/ov043_pointers_020b5814.c b/src/overlays/players/ov043_player_xemnas/data/ov043_pointers_020b5814.c
+index 707a177e4..d3728d069 100644
+--- a/src/overlays/players/ov043_player_xemnas/data/ov043_pointers_020b5814.c
++++ b/src/overlays/players/ov043_player_xemnas/data/ov043_pointers_020b5814.c
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
+ /* ov043 .data pointer tables, 0x020b5814-0x020b5828.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov043_player_xemnas/func_ov043_020b3220.c b/src/overlays/players/ov043_player_xemnas/func_ov043_020b3220.c
+index 5c943588f..bdaacb41f 100644
+--- a/src/overlays/players/ov043_player_xemnas/func_ov043_020b3220.c
++++ b/src/overlays/players/ov043_player_xemnas/func_ov043_020b3220.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov043_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov043_InvokeWithDataTable;
 diff --git a/src/overlays/players/ov044_player_xion/Ov044_ApplyModeChange.c b/src/overlays/players/ov044_player_xion/Ov044_ApplyModeChange.c
-index 129101df8..9bd9e70bc 100644
+index 129101df8..bbfb812a5 100644
 --- a/src/overlays/players/ov044_player_xion/Ov044_ApplyModeChange.c
 +++ b/src/overlays/players/ov044_player_xion/Ov044_ApplyModeChange.c
-@@ -1,3 +1,4 @@
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
  /*
   * Apply a mode change to the actor -- the guarded/link variant (x4: ov044/063/081/098).
   *
-@@ -39,7 +40,7 @@
+@@ -39,7 +42,7 @@
   * written FIRST, leaving 020a384c as the cold tail; and 0209fc48/0209fc78 take TWO args each
   * (Ghidra invents five for the first).
   */
@@ -11430,6 +11937,226 @@ index 129101df8..9bd9e70bc 100644
  
  extern int Ov022_IsIndexedRecordBit0Set(int self, int i);
  extern int func_ov022_0209fc78(int self, int i);
+diff --git a/src/overlays/players/ov044_player_xion/func_ov044_020b3220.c b/src/overlays/players/ov044_player_xion/func_ov044_020b3220.c
+index e7b507fb1..b8c642e70 100644
+--- a/src/overlays/players/ov044_player_xion/func_ov044_020b3220.c
++++ b/src/overlays/players/ov044_player_xion/func_ov044_020b3220.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov044_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov044_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov045_player_zexion/Ov045_ApplyModeChange.c b/src/overlays/players/ov045_player_zexion/Ov045_ApplyModeChange.c
+index cf646c539..2138f700d 100644
+--- a/src/overlays/players/ov045_player_zexion/Ov045_ApplyModeChange.c
++++ b/src/overlays/players/ov045_player_zexion/Ov045_ApplyModeChange.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor (x4: ov045/064/082/099).
+  *
+diff --git a/src/overlays/players/ov045_player_zexion/Ov045_UpdateAnchorsAndChannels.c b/src/overlays/players/ov045_player_zexion/Ov045_UpdateAnchorsAndChannels.c
+index a020c6dfb..57573d549 100644
+--- a/src/overlays/players/ov045_player_zexion/Ov045_UpdateAnchorsAndChannels.c
++++ b/src/overlays/players/ov045_player_zexion/Ov045_UpdateAnchorsAndChannels.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /*
+  * Per-frame update of the actor's UI anchors and animation channels.
+  *
+diff --git a/src/overlays/players/ov045_player_zexion/data/ov045_pointers_020b4b94.c b/src/overlays/players/ov045_player_zexion/data/ov045_pointers_020b4b94.c
+index c1093c5f0..0be0c9338 100644
+--- a/src/overlays/players/ov045_player_zexion/data/ov045_pointers_020b4b94.c
++++ b/src/overlays/players/ov045_player_zexion/data/ov045_pointers_020b4b94.c
+@@ -1,3 +1,8 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
++#define Ov022_StepShot_2 kh_ovd_Ov022_StepShot_2
++#define Ov022_StepStandingShot kh_ovd_Ov022_StepStandingShot
+ /* ov045 .data pointer tables, 0x020b4b94-0x020b4ba8.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov045_player_zexion/func_ov045_020b3220.c b/src/overlays/players/ov045_player_zexion/func_ov045_020b3220.c
+index 751b2f631..cacf94b52 100644
+--- a/src/overlays/players/ov045_player_zexion/func_ov045_020b3220.c
++++ b/src/overlays/players/ov045_player_zexion/func_ov045_020b3220.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov045_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov045_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov046_player_mickey/Ov046_ApplyModeChange.c b/src/overlays/players/ov046_player_mickey/Ov046_ApplyModeChange.c
+index 74285f587..3702e6a2c 100644
+--- a/src/overlays/players/ov046_player_mickey/Ov046_ApplyModeChange.c
++++ b/src/overlays/players/ov046_player_mickey/Ov046_ApplyModeChange.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor (multiplayer/link variant).
+  *
+diff --git a/src/overlays/players/ov046_player_mickey/Ov046_TickPairedState.c b/src/overlays/players/ov046_player_mickey/Ov046_TickPairedState.c
+index e8aee2814..1660a2d58 100644
+--- a/src/overlays/players/ov046_player_mickey/Ov046_TickPairedState.c
++++ b/src/overlays/players/ov046_player_mickey/Ov046_TickPairedState.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /*
+  * Per-frame tick of the paired state: resolve the node handle, run the partner countdown in
+  * the shared block (+0x11c / +0x120, expiring at 0x6000), refresh the sub-object at +0x2644
+diff --git a/src/overlays/players/ov046_player_mickey/data/ov046_pointers_020b4ab4.c b/src/overlays/players/ov046_player_mickey/data/ov046_pointers_020b4ab4.c
+index 0eaaa1e16..5d0abc4eb 100644
+--- a/src/overlays/players/ov046_player_mickey/data/ov046_pointers_020b4ab4.c
++++ b/src/overlays/players/ov046_player_mickey/data/ov046_pointers_020b4ab4.c
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
+ /* ov046 .data pointer tables, 0x020b4ab4-0x020b4ac8.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov046_player_mickey/func_ov046_020b3220.c b/src/overlays/players/ov046_player_mickey/func_ov046_020b3220.c
+index d99515f21..21ed0795c 100644
+--- a/src/overlays/players/ov046_player_mickey/func_ov046_020b3220.c
++++ b/src/overlays/players/ov046_player_mickey/func_ov046_020b3220.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov046_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov046_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov047_player_donald/Ov047_PanelTick.c b/src/overlays/players/ov047_player_donald/Ov047_PanelTick.c
+index bbdc9aa1d..1616509b9 100644
+--- a/src/overlays/players/ov047_player_donald/Ov047_PanelTick.c
++++ b/src/overlays/players/ov047_player_donald/Ov047_PanelTick.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Per-frame tick of the ov047 panel: refreshes the sub-object at +0x2644 three times --
+  * advance it by the frame delta, step it, then ask whether it has gone idle -- and when it
+  * has, raises the 64-bit flag pairs at +0x464 and +0x46c, each guarded by its own check.
+diff --git a/src/overlays/players/ov047_player_donald/Ov047_RequestState.c b/src/overlays/players/ov047_player_donald/Ov047_RequestState.c
+index 7c913be44..1a96b87b6 100644
+--- a/src/overlays/players/ov047_player_donald/Ov047_RequestState.c
++++ b/src/overlays/players/ov047_player_donald/Ov047_RequestState.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /* State-change request for the ov047 panel. Three states are handled specially: 0x2e
+  * and 0x31 only tear down when the state actually changes, and 0/1/4 resolve a
+  * transition argument -- but only if the object is currently displayable. When it is
+diff --git a/src/overlays/players/ov047_player_donald/data/ov047_pointers_020b42e0.c b/src/overlays/players/ov047_player_donald/data/ov047_pointers_020b42e0.c
+index 3c446e245..d744a0e3b 100644
+--- a/src/overlays/players/ov047_player_donald/data/ov047_pointers_020b42e0.c
++++ b/src/overlays/players/ov047_player_donald/data/ov047_pointers_020b42e0.c
+@@ -1,3 +1,7 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
++#define Ov022_StepStandingShot kh_ovd_Ov022_StepStandingShot
+ /* ov047 .data pointer tables, 0x020b42e0-0x020b42f4.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov047_player_donald/func_ov047_020b3220.c b/src/overlays/players/ov047_player_donald/func_ov047_020b3220.c
+index c487a6a97..8a4d9089d 100644
+--- a/src/overlays/players/ov047_player_donald/func_ov047_020b3220.c
++++ b/src/overlays/players/ov047_player_donald/func_ov047_020b3220.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov047_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov047_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov048_player_goofy/func_ov048_020b3220.c b/src/overlays/players/ov048_player_goofy/func_ov048_020b3220.c
+index f892d398b..ff7895690 100644
+--- a/src/overlays/players/ov048_player_goofy/func_ov048_020b3220.c
++++ b/src/overlays/players/ov048_player_goofy/func_ov048_020b3220.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov048_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov048_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov049_player_roxas_dual/Ov049_ApplyModeChange.c b/src/overlays/players/ov049_player_roxas_dual/Ov049_ApplyModeChange.c
+index c8ea93283..437563368 100644
+--- a/src/overlays/players/ov049_player_roxas_dual/Ov049_ApplyModeChange.c
++++ b/src/overlays/players/ov049_player_roxas_dual/Ov049_ApplyModeChange.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor, driving TWO UI bands (x4: ov049/068/086b/103).
+  *
+diff --git a/src/overlays/players/ov049_player_roxas_dual/Ov049_UpdateAttachmentAndChannels.c b/src/overlays/players/ov049_player_roxas_dual/Ov049_UpdateAttachmentAndChannels.c
+index 0c209d6ce..4504aa036 100644
+--- a/src/overlays/players/ov049_player_roxas_dual/Ov049_UpdateAttachmentAndChannels.c
++++ b/src/overlays/players/ov049_player_roxas_dual/Ov049_UpdateAttachmentAndChannels.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Per-frame update of the ov049 enemy (x4: ov049/068/087/104): reads the node's animation frame,
+  * feeds the attachment with the current tick and steps it; when the attachment reports idle, the
+  * two 64-bit flag words at +0x464 and +0x46c get bit 16 (each guarded by 02030788 being idle);
+diff --git a/src/overlays/players/ov049_player_roxas_dual/data/ov049_pointers_020b4c48.c b/src/overlays/players/ov049_player_roxas_dual/data/ov049_pointers_020b4c48.c
+index b5bd29182..919ac8a55 100644
+--- a/src/overlays/players/ov049_player_roxas_dual/data/ov049_pointers_020b4c48.c
++++ b/src/overlays/players/ov049_player_roxas_dual/data/ov049_pointers_020b4c48.c
+@@ -1,3 +1,7 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
++#define Ov022_StepStandingShot kh_ovd_Ov022_StepStandingShot
+ /* ov049 .data pointer tables, 0x020b4c48-0x020b4c5c.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov049_player_roxas_dual/func_ov049_020b3220.c b/src/overlays/players/ov049_player_roxas_dual/func_ov049_020b3220.c
+index 940988300..9c6d67aa9 100644
+--- a/src/overlays/players/ov049_player_roxas_dual/func_ov049_020b3220.c
++++ b/src/overlays/players/ov049_player_roxas_dual/func_ov049_020b3220.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov049_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov049_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov050_player_axel_2/Ov050_initSubObjectsSetU64Flags.c b/src/overlays/players/ov050_player_axel_2/Ov050_initSubObjectsSetU64Flags.c
+index 0f5d2ec88..a8eb17141 100644
+--- a/src/overlays/players/ov050_player_axel_2/Ov050_initSubObjectsSetU64Flags.c
++++ b/src/overlays/players/ov050_player_axel_2/Ov050_initSubObjectsSetU64Flags.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Forwards the global command to the three effect streams and runs their callbacks; when any stream
+  * is still busy, sets bit 16 of the local player's two 64-bit flag words; then finishes the
+  * battle-module update. */
+diff --git a/src/overlays/players/ov050_player_axel_2/data/ov050_pointers_020b74d4.c b/src/overlays/players/ov050_player_axel_2/data/ov050_pointers_020b74d4.c
+index be6abd56a..43ab53735 100644
+--- a/src/overlays/players/ov050_player_axel_2/data/ov050_pointers_020b74d4.c
++++ b/src/overlays/players/ov050_player_axel_2/data/ov050_pointers_020b74d4.c
+@@ -1,3 +1,7 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
++#define Ov022_StepStandingShot kh_ovd_Ov022_StepStandingShot
+ /* ov050 .data pointer tables, 0x020b74d4-0x020b74fc.
+  *
+  * 2 tables, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov050_player_axel_2/func_ov050_020b5a20.c b/src/overlays/players/ov050_player_axel_2/func_ov050_020b5a20.c
+index b647e81e8..d596e42ff 100644
+--- a/src/overlays/players/ov050_player_axel_2/func_ov050_020b5a20.c
++++ b/src/overlays/players/ov050_player_axel_2/func_ov050_020b5a20.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov050_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov050_InvokeWithDataTable;
 diff --git a/src/overlays/players/ov051_player_saix_2/Ov051_UpdateGuardedSlots.c b/src/overlays/players/ov051_player_saix_2/Ov051_UpdateGuardedSlots.c
 index 2394dd437..f3edfe759 100644
 --- a/src/overlays/players/ov051_player_saix_2/Ov051_UpdateGuardedSlots.c
@@ -11448,6 +12175,26 @@ index 2394dd437..f3edfe759 100644
      char pad46c[0x2aba - 0x46c];
      short f2aba;
  } Self;
+diff --git a/src/overlays/players/ov051_player_saix_2/func_ov051_020b5a20.c b/src/overlays/players/ov051_player_saix_2/func_ov051_020b5a20.c
+index f4f320380..91bc4b0e8 100644
+--- a/src/overlays/players/ov051_player_saix_2/func_ov051_020b5a20.c
++++ b/src/overlays/players/ov051_player_saix_2/func_ov051_020b5a20.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov051_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov051_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov052_player_xigbar_2/Ov052_InvokeBothGroupCallbacks.c b/src/overlays/players/ov052_player_xigbar_2/Ov052_InvokeBothGroupCallbacks.c
+index bfb70a0b5..63b8caaa5 100644
+--- a/src/overlays/players/ov052_player_xigbar_2/Ov052_InvokeBothGroupCallbacks.c
++++ b/src/overlays/players/ov052_player_xigbar_2/Ov052_InvokeBothGroupCallbacks.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Invokes the callback of both stream groups at +0x2644. */
+ 
+ extern int Ov022_InvokeCallback24IfBit0();
 diff --git a/src/overlays/players/ov052_player_xigbar_2/Ov052_SpawnAttachEffects.c b/src/overlays/players/ov052_player_xigbar_2/Ov052_SpawnAttachEffects.c
 index d167071ac..fd890c8ea 100644
 --- a/src/overlays/players/ov052_player_xigbar_2/Ov052_SpawnAttachEffects.c
@@ -11471,6 +12218,16 @@ index d167071ac..fd890c8ea 100644
      char pad46c[0x528 - 0x46c];
      char aMatrix528[2][0x30];
      char pad588[0x6bc - 0x588];
+diff --git a/src/overlays/players/ov052_player_xigbar_2/func_ov052_020b5a20.c b/src/overlays/players/ov052_player_xigbar_2/func_ov052_020b5a20.c
+index 3fcdc9894..b14ba0caa 100644
+--- a/src/overlays/players/ov052_player_xigbar_2/func_ov052_020b5a20.c
++++ b/src/overlays/players/ov052_player_xigbar_2/func_ov052_020b5a20.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov052_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov052_InvokeWithDataTable;
 diff --git a/src/overlays/players/ov053_player_xaldin_2/Ov053_DriveGuardSequence.c b/src/overlays/players/ov053_player_xaldin_2/Ov053_DriveGuardSequence.c
 index 8c74db91d..78acea8e2 100644
 --- a/src/overlays/players/ov053_player_xaldin_2/Ov053_DriveGuardSequence.c
@@ -11489,6 +12246,119 @@ index 8c74db91d..78acea8e2 100644
  
  extern int Ov022_IsState9Or6WithFlag200(void *p);
  extern void Ov053_ClearTimer(int self, int p2);
+diff --git a/src/overlays/players/ov053_player_xaldin_2/func_ov053_020b5a20.c b/src/overlays/players/ov053_player_xaldin_2/func_ov053_020b5a20.c
+index 8c9abc3bd..7d1630188 100644
+--- a/src/overlays/players/ov053_player_xaldin_2/func_ov053_020b5a20.c
++++ b/src/overlays/players/ov053_player_xaldin_2/func_ov053_020b5a20.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov053_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov053_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov054_player_sora_2/Ov054_ApplyModeChange.c b/src/overlays/players/ov054_player_sora_2/Ov054_ApplyModeChange.c
+index 6986f492b..45cf89dba 100644
+--- a/src/overlays/players/ov054_player_sora_2/Ov054_ApplyModeChange.c
++++ b/src/overlays/players/ov054_player_sora_2/Ov054_ApplyModeChange.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor (x4: ov035/054/074/091).
+  *
+diff --git a/src/overlays/players/ov054_player_sora_2/Ov054_Weapon_TickStreams.c b/src/overlays/players/ov054_player_sora_2/Ov054_Weapon_TickStreams.c
+index 453759165..45ebd7046 100644
+--- a/src/overlays/players/ov054_player_sora_2/Ov054_Weapon_TickStreams.c
++++ b/src/overlays/players/ov054_player_sora_2/Ov054_Weapon_TickStreams.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Commits the widget scroll for the frame and, outside mode 0x2a, feeds both stream groups
+  * (flagging the local player when idle). */
+ 
+diff --git a/src/overlays/players/ov054_player_sora_2/data/ov054_pointers_020b7408.c b/src/overlays/players/ov054_player_sora_2/data/ov054_pointers_020b7408.c
+index c7a44a147..260ac9b35 100644
+--- a/src/overlays/players/ov054_player_sora_2/data/ov054_pointers_020b7408.c
++++ b/src/overlays/players/ov054_player_sora_2/data/ov054_pointers_020b7408.c
+@@ -1,3 +1,7 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
++#define Ov022_StepStandingShot kh_ovd_Ov022_StepStandingShot
+ /* ov054 .data pointer tables, 0x020b7408-0x020b741c.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov054_player_sora_2/func_ov054_020b5a20.c b/src/overlays/players/ov054_player_sora_2/func_ov054_020b5a20.c
+index 408bfc0e2..349875514 100644
+--- a/src/overlays/players/ov054_player_sora_2/func_ov054_020b5a20.c
++++ b/src/overlays/players/ov054_player_sora_2/func_ov054_020b5a20.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov054_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov054_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov055_player_demyx_2/Ov055_ApplyModeChange.c b/src/overlays/players/ov055_player_demyx_2/Ov055_ApplyModeChange.c
+index 6af96e948..f1ad56acd 100644
+--- a/src/overlays/players/ov055_player_demyx_2/Ov055_ApplyModeChange.c
++++ b/src/overlays/players/ov055_player_demyx_2/Ov055_ApplyModeChange.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor (x4: ov036/055/075/092).
+  *
+diff --git a/src/overlays/players/ov055_player_demyx_2/Ov055_RefreshParts.c b/src/overlays/players/ov055_player_demyx_2/Ov055_RefreshParts.c
+index 1e8bcf88b..ca3a13519 100644
+--- a/src/overlays/players/ov055_player_demyx_2/Ov055_RefreshParts.c
++++ b/src/overlays/players/ov055_player_demyx_2/Ov055_RefreshParts.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Run the refresh pass over this enemy's three 0x30-byte part records. */
+ 
+ extern void Ov022_InvokeCallback24IfBit0();
+diff --git a/src/overlays/players/ov055_player_demyx_2/data/ov055_pointers_020b7654.c b/src/overlays/players/ov055_player_demyx_2/data/ov055_pointers_020b7654.c
+index ea4ee1d4a..753c49a85 100644
+--- a/src/overlays/players/ov055_player_demyx_2/data/ov055_pointers_020b7654.c
++++ b/src/overlays/players/ov055_player_demyx_2/data/ov055_pointers_020b7654.c
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
+ /* ov055 .data pointer tables, 0x020b7654-0x020b7668.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov055_player_demyx_2/func_ov055_020b5a20.c b/src/overlays/players/ov055_player_demyx_2/func_ov055_020b5a20.c
+index aa8fddaf8..17e39c60e 100644
+--- a/src/overlays/players/ov055_player_demyx_2/func_ov055_020b5a20.c
++++ b/src/overlays/players/ov055_player_demyx_2/func_ov055_020b5a20.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov055_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov055_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov056_player_larxene_2/Ov056_InvokeGroupCallback.c b/src/overlays/players/ov056_player_larxene_2/Ov056_InvokeGroupCallback.c
+index c4adc5053..cb12a47cc 100644
+--- a/src/overlays/players/ov056_player_larxene_2/Ov056_InvokeGroupCallback.c
++++ b/src/overlays/players/ov056_player_larxene_2/Ov056_InvokeGroupCallback.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Invokes the callback of the stream group at +0x2644. */
+ 
+ extern void Ov022_InvokeCallback24IfBit0(int arg);
+diff --git a/src/overlays/players/ov056_player_larxene_2/func_ov056_020b5a20.c b/src/overlays/players/ov056_player_larxene_2/func_ov056_020b5a20.c
+index cfe9357bb..6a7c0cbf1 100644
+--- a/src/overlays/players/ov056_player_larxene_2/func_ov056_020b5a20.c
++++ b/src/overlays/players/ov056_player_larxene_2/func_ov056_020b5a20.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov056_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov056_InvokeWithDataTable;
 diff --git a/src/overlays/players/ov057_player_lexaeus_2/Ov057_DriveSwingSequence.c b/src/overlays/players/ov057_player_lexaeus_2/Ov057_DriveSwingSequence.c
 index 69d516e6b..1cf70ff6e 100644
 --- a/src/overlays/players/ov057_player_lexaeus_2/Ov057_DriveSwingSequence.c
@@ -11525,6 +12395,97 @@ index 0d559449e..16f9c3b17 100644
      char pad46c[0x250];
      int nStage6bc;
  };
+diff --git a/src/overlays/players/ov057_player_lexaeus_2/func_ov057_020b5a20.c b/src/overlays/players/ov057_player_lexaeus_2/func_ov057_020b5a20.c
+index d7576d5e2..a76db05de 100644
+--- a/src/overlays/players/ov057_player_lexaeus_2/func_ov057_020b5a20.c
++++ b/src/overlays/players/ov057_player_lexaeus_2/func_ov057_020b5a20.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov057_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov057_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov058_player_luxord_2/Ov058_ApplyMode.c b/src/overlays/players/ov058_player_luxord_2/Ov058_ApplyMode.c
+index 249081f81..b60cd3e73 100644
+--- a/src/overlays/players/ov058_player_luxord_2/Ov058_ApplyMode.c
++++ b/src/overlays/players/ov058_player_luxord_2/Ov058_ApplyMode.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor -- the two-stage variant with a secondary UI id.
+  *
+diff --git a/src/overlays/players/ov058_player_luxord_2/Ov058_UpdateAnchorsAndChannels.c b/src/overlays/players/ov058_player_luxord_2/Ov058_UpdateAnchorsAndChannels.c
+index c8ae61b45..693aa6738 100644
+--- a/src/overlays/players/ov058_player_luxord_2/Ov058_UpdateAnchorsAndChannels.c
++++ b/src/overlays/players/ov058_player_luxord_2/Ov058_UpdateAnchorsAndChannels.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Per-frame update of the ov039 enemy (x4: ov039/058/078/095): reads the node's animation frame
+  * and drives the first secondary channel (+0xda8 from the config at +0x2c2c); by mode: 0x2f and
+  * 0x32 refresh both attack anchors on the emitter's context (slot 5) while it is idle, 0x33
+diff --git a/src/overlays/players/ov058_player_luxord_2/data/ov058_pointers_020b7d68.c b/src/overlays/players/ov058_player_luxord_2/data/ov058_pointers_020b7d68.c
+index 0660ea301..ecd8e68f7 100644
+--- a/src/overlays/players/ov058_player_luxord_2/data/ov058_pointers_020b7d68.c
++++ b/src/overlays/players/ov058_player_luxord_2/data/ov058_pointers_020b7d68.c
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
+ /* ov058 .data pointer tables, 0x020b7d68-0x020b7d7c.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov058_player_luxord_2/func_ov058_020b5a20.c b/src/overlays/players/ov058_player_luxord_2/func_ov058_020b5a20.c
+index 313a1204d..ce59a7a55 100644
+--- a/src/overlays/players/ov058_player_luxord_2/func_ov058_020b5a20.c
++++ b/src/overlays/players/ov058_player_luxord_2/func_ov058_020b5a20.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov058_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov058_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov059_player_marluxia_2/func_ov059_020b5a20.c b/src/overlays/players/ov059_player_marluxia_2/func_ov059_020b5a20.c
+index 9022c2d30..d9716c326 100644
+--- a/src/overlays/players/ov059_player_marluxia_2/func_ov059_020b5a20.c
++++ b/src/overlays/players/ov059_player_marluxia_2/func_ov059_020b5a20.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov059_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov059_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov060_player_riku_2/Ov060_ApplyModeChange.c b/src/overlays/players/ov060_player_riku_2/Ov060_ApplyModeChange.c
+index a8321a40a..53437787f 100644
+--- a/src/overlays/players/ov060_player_riku_2/Ov060_ApplyModeChange.c
++++ b/src/overlays/players/ov060_player_riku_2/Ov060_ApplyModeChange.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor (x4: ov041/060/078/095).
+  *
+diff --git a/src/overlays/players/ov060_player_riku_2/func_ov060_020b5a20.c b/src/overlays/players/ov060_player_riku_2/func_ov060_020b5a20.c
+index 2d3c974be..b01f18108 100644
+--- a/src/overlays/players/ov060_player_riku_2/func_ov060_020b5a20.c
++++ b/src/overlays/players/ov060_player_riku_2/func_ov060_020b5a20.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov060_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov060_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov061_player_vexen_2/Ov061_StepParts.c b/src/overlays/players/ov061_player_vexen_2/Ov061_StepParts.c
+index a2aedffeb..7167f76da 100644
+--- a/src/overlays/players/ov061_player_vexen_2/Ov061_StepParts.c
++++ b/src/overlays/players/ov061_player_vexen_2/Ov061_StepParts.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_StepShot_2 kh_ovd_Ov022_StepShot_2
+ /* Run the per-state handler of every 0x1c8-byte part of this enemy (count at +0x19, array at
+  * +0xc, handler table by the part's state byte at +2). State 2 is special: while the group is
+  * in mode 1 the parts are steered by Ov061_SteerPart, otherwise the shared handler runs and
 diff --git a/src/overlays/players/ov061_player_vexen_2/Ov061_UpdateSlotsWithGate.c b/src/overlays/players/ov061_player_vexen_2/Ov061_UpdateSlotsWithGate.c
 index acaf4f8dc..2da026fe2 100644
 --- a/src/overlays/players/ov061_player_vexen_2/Ov061_UpdateSlotsWithGate.c
@@ -11543,16 +12504,81 @@ index acaf4f8dc..2da026fe2 100644
  } Self;
  
  void Ov061_UpdateSlotsWithGate(Self *self, int *node, int arg) {
+diff --git a/src/overlays/players/ov061_player_vexen_2/Ov061_UpdateSubObjects.c b/src/overlays/players/ov061_player_vexen_2/Ov061_UpdateSubObjects.c
+index 79fbfef1a..b18743320 100644
+--- a/src/overlays/players/ov061_player_vexen_2/Ov061_UpdateSubObjects.c
++++ b/src/overlays/players/ov061_player_vexen_2/Ov061_UpdateSubObjects.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Per-frame update of the ov042 enemy's two sub-objects (x4: ov042/061/081/098), the ov031
+  * shape: (the node animation's frame is polled but unused,) each sub-object is fed the frame
+  * delta and stepped; if either is idle, the local player raises bit 0x10000 of both attack-flag
+diff --git a/src/overlays/players/ov061_player_vexen_2/data/ov061_pointers_020b6f54.c b/src/overlays/players/ov061_player_vexen_2/data/ov061_pointers_020b6f54.c
+index a7fae78e4..ddeeee6fc 100644
+--- a/src/overlays/players/ov061_player_vexen_2/data/ov061_pointers_020b6f54.c
++++ b/src/overlays/players/ov061_player_vexen_2/data/ov061_pointers_020b6f54.c
+@@ -1,3 +1,7 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
++#define Ov022_StepStandingShot kh_ovd_Ov022_StepStandingShot
+ /* ov061 .data pointer tables, 0x020b6f54-0x020b6f68.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov061_player_vexen_2/func_ov061_020b5a20.c b/src/overlays/players/ov061_player_vexen_2/func_ov061_020b5a20.c
+index 4d33c9d83..4aa132784 100644
+--- a/src/overlays/players/ov061_player_vexen_2/func_ov061_020b5a20.c
++++ b/src/overlays/players/ov061_player_vexen_2/func_ov061_020b5a20.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov061_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov061_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov062_player_xemnas_2/Ov062_InvokeBothGroupCallbacks.c b/src/overlays/players/ov062_player_xemnas_2/Ov062_InvokeBothGroupCallbacks.c
+index 0b07294bf..f65957242 100644
+--- a/src/overlays/players/ov062_player_xemnas_2/Ov062_InvokeBothGroupCallbacks.c
++++ b/src/overlays/players/ov062_player_xemnas_2/Ov062_InvokeBothGroupCallbacks.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Invokes the callback of both stream groups at +0x2644. */
+ 
+ extern int Ov022_InvokeCallback24IfBit0();
+diff --git a/src/overlays/players/ov062_player_xemnas_2/data/ov062_pointers_020b8014.c b/src/overlays/players/ov062_player_xemnas_2/data/ov062_pointers_020b8014.c
+index 8c2c8edf1..f8b1bf8c6 100644
+--- a/src/overlays/players/ov062_player_xemnas_2/data/ov062_pointers_020b8014.c
++++ b/src/overlays/players/ov062_player_xemnas_2/data/ov062_pointers_020b8014.c
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
+ /* ov062 .data pointer tables, 0x020b8014-0x020b8028.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov062_player_xemnas_2/func_ov062_020b5a20.c b/src/overlays/players/ov062_player_xemnas_2/func_ov062_020b5a20.c
+index 136f6c368..f99b7beb8 100644
+--- a/src/overlays/players/ov062_player_xemnas_2/func_ov062_020b5a20.c
++++ b/src/overlays/players/ov062_player_xemnas_2/func_ov062_020b5a20.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov062_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov062_InvokeWithDataTable;
 diff --git a/src/overlays/players/ov063_player_xion_2/Ov063_ApplyModeChange.c b/src/overlays/players/ov063_player_xion_2/Ov063_ApplyModeChange.c
-index 80cb05e80..3edb89e1e 100644
+index 80cb05e80..b567376b5 100644
 --- a/src/overlays/players/ov063_player_xion_2/Ov063_ApplyModeChange.c
 +++ b/src/overlays/players/ov063_player_xion_2/Ov063_ApplyModeChange.c
-@@ -1,3 +1,4 @@
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
  /*
   * Apply a mode change to the actor -- the guarded/link variant (x4: ov044/063/081/098).
   *
-@@ -39,7 +40,7 @@
+@@ -39,7 +42,7 @@
   * written FIRST, leaving 020a384c as the cold tail; and 0209fc48/0209fc78 take TWO args each
   * (Ghidra invents five for the first).
   */
@@ -11561,6 +12587,226 @@ index 80cb05e80..3edb89e1e 100644
  
  extern int Ov022_IsIndexedRecordBit0Set(int self, int i);
  extern int func_ov022_0209fc78(int self, int i);
+diff --git a/src/overlays/players/ov063_player_xion_2/func_ov063_020b5a20.c b/src/overlays/players/ov063_player_xion_2/func_ov063_020b5a20.c
+index d4af84e0d..dad336f6c 100644
+--- a/src/overlays/players/ov063_player_xion_2/func_ov063_020b5a20.c
++++ b/src/overlays/players/ov063_player_xion_2/func_ov063_020b5a20.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov063_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov063_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov064_player_zexion_2/Ov064_ApplyModeChange.c b/src/overlays/players/ov064_player_zexion_2/Ov064_ApplyModeChange.c
+index 71b64f55b..6cf799220 100644
+--- a/src/overlays/players/ov064_player_zexion_2/Ov064_ApplyModeChange.c
++++ b/src/overlays/players/ov064_player_zexion_2/Ov064_ApplyModeChange.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor (x4: ov045/064/082/099).
+  *
+diff --git a/src/overlays/players/ov064_player_zexion_2/Ov064_UpdateAnchorsAndChannels.c b/src/overlays/players/ov064_player_zexion_2/Ov064_UpdateAnchorsAndChannels.c
+index 4cf9051c3..c9f3b0442 100644
+--- a/src/overlays/players/ov064_player_zexion_2/Ov064_UpdateAnchorsAndChannels.c
++++ b/src/overlays/players/ov064_player_zexion_2/Ov064_UpdateAnchorsAndChannels.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /*
+  * Per-frame update of the actor's UI anchors and animation channels.
+  *
+diff --git a/src/overlays/players/ov064_player_zexion_2/data/ov064_pointers_020b7394.c b/src/overlays/players/ov064_player_zexion_2/data/ov064_pointers_020b7394.c
+index f91bceab0..cf7ad0970 100644
+--- a/src/overlays/players/ov064_player_zexion_2/data/ov064_pointers_020b7394.c
++++ b/src/overlays/players/ov064_player_zexion_2/data/ov064_pointers_020b7394.c
+@@ -1,3 +1,8 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
++#define Ov022_StepShot_2 kh_ovd_Ov022_StepShot_2
++#define Ov022_StepStandingShot kh_ovd_Ov022_StepStandingShot
+ /* ov064 .data pointer tables, 0x020b7394-0x020b73a8.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov064_player_zexion_2/func_ov064_020b5a20.c b/src/overlays/players/ov064_player_zexion_2/func_ov064_020b5a20.c
+index 0afcd6f7c..a3261ef9d 100644
+--- a/src/overlays/players/ov064_player_zexion_2/func_ov064_020b5a20.c
++++ b/src/overlays/players/ov064_player_zexion_2/func_ov064_020b5a20.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov064_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov064_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov065_player_mickey_2/Ov065_ApplyModeChange.c b/src/overlays/players/ov065_player_mickey_2/Ov065_ApplyModeChange.c
+index 3d42c90ec..29d3b71a7 100644
+--- a/src/overlays/players/ov065_player_mickey_2/Ov065_ApplyModeChange.c
++++ b/src/overlays/players/ov065_player_mickey_2/Ov065_ApplyModeChange.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor (multiplayer/link variant).
+  *
+diff --git a/src/overlays/players/ov065_player_mickey_2/Ov065_TickPairedState.c b/src/overlays/players/ov065_player_mickey_2/Ov065_TickPairedState.c
+index 35bd290b5..d402413c6 100644
+--- a/src/overlays/players/ov065_player_mickey_2/Ov065_TickPairedState.c
++++ b/src/overlays/players/ov065_player_mickey_2/Ov065_TickPairedState.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /*
+  * Per-frame tick of the paired state: resolve the node handle, run the partner countdown in
+  * the shared block (+0x11c / +0x120, expiring at 0x6000), refresh the sub-object at +0x2644
+diff --git a/src/overlays/players/ov065_player_mickey_2/data/ov065_pointers_020b72b4.c b/src/overlays/players/ov065_player_mickey_2/data/ov065_pointers_020b72b4.c
+index 30206872f..af0c15b31 100644
+--- a/src/overlays/players/ov065_player_mickey_2/data/ov065_pointers_020b72b4.c
++++ b/src/overlays/players/ov065_player_mickey_2/data/ov065_pointers_020b72b4.c
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
+ /* ov065 .data pointer tables, 0x020b72b4-0x020b72c8.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov065_player_mickey_2/func_ov065_020b5a20.c b/src/overlays/players/ov065_player_mickey_2/func_ov065_020b5a20.c
+index 19df89a82..b878e3e70 100644
+--- a/src/overlays/players/ov065_player_mickey_2/func_ov065_020b5a20.c
++++ b/src/overlays/players/ov065_player_mickey_2/func_ov065_020b5a20.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov065_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov065_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov066_player_donald_2/Ov066_PanelTick.c b/src/overlays/players/ov066_player_donald_2/Ov066_PanelTick.c
+index d5fe77d5d..ae9d61b14 100644
+--- a/src/overlays/players/ov066_player_donald_2/Ov066_PanelTick.c
++++ b/src/overlays/players/ov066_player_donald_2/Ov066_PanelTick.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Per-frame tick of the ov066 panel: refreshes the sub-object at +0x2644 three times --
+  * advance it by the frame delta, step it, then ask whether it has gone idle -- and when it
+  * has, raises the 64-bit flag pairs at +0x464 and +0x46c, each guarded by its own check.
+diff --git a/src/overlays/players/ov066_player_donald_2/Ov066_RequestState.c b/src/overlays/players/ov066_player_donald_2/Ov066_RequestState.c
+index 86a8ddc75..22edff60b 100644
+--- a/src/overlays/players/ov066_player_donald_2/Ov066_RequestState.c
++++ b/src/overlays/players/ov066_player_donald_2/Ov066_RequestState.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /* State-change request for the ov066 panel. Three states are handled specially: 0x2e
+  * and 0x31 only tear down when the state actually changes, and 0/1/4 resolve a
+  * transition argument -- but only if the object is currently displayable. When it is
+diff --git a/src/overlays/players/ov066_player_donald_2/data/ov066_pointers_020b6ae0.c b/src/overlays/players/ov066_player_donald_2/data/ov066_pointers_020b6ae0.c
+index 1a90f0305..6e9e414c6 100644
+--- a/src/overlays/players/ov066_player_donald_2/data/ov066_pointers_020b6ae0.c
++++ b/src/overlays/players/ov066_player_donald_2/data/ov066_pointers_020b6ae0.c
+@@ -1,3 +1,7 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
++#define Ov022_StepStandingShot kh_ovd_Ov022_StepStandingShot
+ /* ov066 .data pointer tables, 0x020b6ae0-0x020b6af4.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov066_player_donald_2/func_ov066_020b5a20.c b/src/overlays/players/ov066_player_donald_2/func_ov066_020b5a20.c
+index dac1be672..9c0e8b19a 100644
+--- a/src/overlays/players/ov066_player_donald_2/func_ov066_020b5a20.c
++++ b/src/overlays/players/ov066_player_donald_2/func_ov066_020b5a20.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov066_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov066_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov067_player_goofy_2/func_ov067_020b5a20.c b/src/overlays/players/ov067_player_goofy_2/func_ov067_020b5a20.c
+index fe1e607c2..c3ada7d56 100644
+--- a/src/overlays/players/ov067_player_goofy_2/func_ov067_020b5a20.c
++++ b/src/overlays/players/ov067_player_goofy_2/func_ov067_020b5a20.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov067_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov067_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov068_player_roxas_dual_2/Ov068_ApplyModeChange.c b/src/overlays/players/ov068_player_roxas_dual_2/Ov068_ApplyModeChange.c
+index dd319ad03..96cce27f4 100644
+--- a/src/overlays/players/ov068_player_roxas_dual_2/Ov068_ApplyModeChange.c
++++ b/src/overlays/players/ov068_player_roxas_dual_2/Ov068_ApplyModeChange.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor, driving TWO UI bands (x4: ov049/068/086b/103).
+  *
+diff --git a/src/overlays/players/ov068_player_roxas_dual_2/Ov068_UpdateAttachmentAndChannels.c b/src/overlays/players/ov068_player_roxas_dual_2/Ov068_UpdateAttachmentAndChannels.c
+index 2fe11534a..7f56fc96b 100644
+--- a/src/overlays/players/ov068_player_roxas_dual_2/Ov068_UpdateAttachmentAndChannels.c
++++ b/src/overlays/players/ov068_player_roxas_dual_2/Ov068_UpdateAttachmentAndChannels.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Per-frame update of the ov049 enemy (x4: ov049/068/087/104): reads the node's animation frame,
+  * feeds the attachment with the current tick and steps it; when the attachment reports idle, the
+  * two 64-bit flag words at +0x464 and +0x46c get bit 16 (each guarded by 02030788 being idle);
+diff --git a/src/overlays/players/ov068_player_roxas_dual_2/data/ov068_pointers_020b7448.c b/src/overlays/players/ov068_player_roxas_dual_2/data/ov068_pointers_020b7448.c
+index 494491c5b..ae850f8ed 100644
+--- a/src/overlays/players/ov068_player_roxas_dual_2/data/ov068_pointers_020b7448.c
++++ b/src/overlays/players/ov068_player_roxas_dual_2/data/ov068_pointers_020b7448.c
+@@ -1,3 +1,7 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
++#define Ov022_StepStandingShot kh_ovd_Ov022_StepStandingShot
+ /* ov068 .data pointer tables, 0x020b7448-0x020b745c.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov068_player_roxas_dual_2/func_ov068_020b5a20.c b/src/overlays/players/ov068_player_roxas_dual_2/func_ov068_020b5a20.c
+index 25b7f3978..d72da9f65 100644
+--- a/src/overlays/players/ov068_player_roxas_dual_2/func_ov068_020b5a20.c
++++ b/src/overlays/players/ov068_player_roxas_dual_2/func_ov068_020b5a20.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov068_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov068_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov070_player_axel_3/Ov070_initSubObjectsSetU64Flags.c b/src/overlays/players/ov070_player_axel_3/Ov070_initSubObjectsSetU64Flags.c
+index 1f409f4a5..16e07c435 100644
+--- a/src/overlays/players/ov070_player_axel_3/Ov070_initSubObjectsSetU64Flags.c
++++ b/src/overlays/players/ov070_player_axel_3/Ov070_initSubObjectsSetU64Flags.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Forwards the global command to the three effect streams and runs their callbacks; when any stream
+  * is still busy, sets bit 16 of the local player's two 64-bit flag words; then finishes the
+  * battle-module update. */
+diff --git a/src/overlays/players/ov070_player_axel_3/data/ov070_pointers_020b9bb4.c b/src/overlays/players/ov070_player_axel_3/data/ov070_pointers_020b9bb4.c
+index 3c6e02663..c3a12c4a3 100644
+--- a/src/overlays/players/ov070_player_axel_3/data/ov070_pointers_020b9bb4.c
++++ b/src/overlays/players/ov070_player_axel_3/data/ov070_pointers_020b9bb4.c
+@@ -1,3 +1,7 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
++#define Ov022_StepStandingShot kh_ovd_Ov022_StepStandingShot
+ /* ov070 .data pointer tables, 0x020b9bb4-0x020b9bdc.
+  *
+  * 2 tables, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov070_player_axel_3/func_ov070_020b8100.c b/src/overlays/players/ov070_player_axel_3/func_ov070_020b8100.c
+index 388f7804d..517f5b8d0 100644
+--- a/src/overlays/players/ov070_player_axel_3/func_ov070_020b8100.c
++++ b/src/overlays/players/ov070_player_axel_3/func_ov070_020b8100.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov070_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov070_InvokeWithDataTable;
 diff --git a/src/overlays/players/ov071_player_saix_3/Ov071_UpdateGuardedSlots.c b/src/overlays/players/ov071_player_saix_3/Ov071_UpdateGuardedSlots.c
 index 10f220fa3..382aef8db 100644
 --- a/src/overlays/players/ov071_player_saix_3/Ov071_UpdateGuardedSlots.c
@@ -11579,6 +12825,26 @@ index 10f220fa3..382aef8db 100644
      char pad46c[0x2aba - 0x46c];
      short f2aba;
  } Self;
+diff --git a/src/overlays/players/ov071_player_saix_3/func_ov071_020b8100.c b/src/overlays/players/ov071_player_saix_3/func_ov071_020b8100.c
+index 790e27ee2..d1b403590 100644
+--- a/src/overlays/players/ov071_player_saix_3/func_ov071_020b8100.c
++++ b/src/overlays/players/ov071_player_saix_3/func_ov071_020b8100.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov071_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov071_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov072_player_xigbar_3/Ov072_InvokeBothGroupCallbacks.c b/src/overlays/players/ov072_player_xigbar_3/Ov072_InvokeBothGroupCallbacks.c
+index c0f0efa1b..a77ece257 100644
+--- a/src/overlays/players/ov072_player_xigbar_3/Ov072_InvokeBothGroupCallbacks.c
++++ b/src/overlays/players/ov072_player_xigbar_3/Ov072_InvokeBothGroupCallbacks.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Invokes the callback of both stream groups at +0x2644. */
+ 
+ extern int Ov022_InvokeCallback24IfBit0();
 diff --git a/src/overlays/players/ov072_player_xigbar_3/Ov072_SpawnAttachEffects.c b/src/overlays/players/ov072_player_xigbar_3/Ov072_SpawnAttachEffects.c
 index 498501ac8..dc71e1dc9 100644
 --- a/src/overlays/players/ov072_player_xigbar_3/Ov072_SpawnAttachEffects.c
@@ -11602,6 +12868,16 @@ index 498501ac8..dc71e1dc9 100644
      char pad46c[0x528 - 0x46c];
      char aMatrix528[2][0x30];
      char pad588[0x6bc - 0x588];
+diff --git a/src/overlays/players/ov072_player_xigbar_3/func_ov072_020b8100.c b/src/overlays/players/ov072_player_xigbar_3/func_ov072_020b8100.c
+index 128fb47be..4748f77c5 100644
+--- a/src/overlays/players/ov072_player_xigbar_3/func_ov072_020b8100.c
++++ b/src/overlays/players/ov072_player_xigbar_3/func_ov072_020b8100.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov072_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov072_InvokeWithDataTable;
 diff --git a/src/overlays/players/ov073_player_xaldin_3/Ov073_DriveGuardSequence.c b/src/overlays/players/ov073_player_xaldin_3/Ov073_DriveGuardSequence.c
 index e74835572..f6840a6d5 100644
 --- a/src/overlays/players/ov073_player_xaldin_3/Ov073_DriveGuardSequence.c
@@ -11620,6 +12896,119 @@ index e74835572..f6840a6d5 100644
  
  extern int Ov022_IsState9Or6WithFlag200(void *p);
  extern void Ov073_ClearTimer(int self, int p2);
+diff --git a/src/overlays/players/ov073_player_xaldin_3/func_ov073_020b8100.c b/src/overlays/players/ov073_player_xaldin_3/func_ov073_020b8100.c
+index e0ee2e3e2..d682b908a 100644
+--- a/src/overlays/players/ov073_player_xaldin_3/func_ov073_020b8100.c
++++ b/src/overlays/players/ov073_player_xaldin_3/func_ov073_020b8100.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov073_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov073_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov074_player_sora_3/Ov074_ApplyModeChange.c b/src/overlays/players/ov074_player_sora_3/Ov074_ApplyModeChange.c
+index cfc11f1a3..7dde03550 100644
+--- a/src/overlays/players/ov074_player_sora_3/Ov074_ApplyModeChange.c
++++ b/src/overlays/players/ov074_player_sora_3/Ov074_ApplyModeChange.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor (x4: ov035/054/074/091).
+  *
+diff --git a/src/overlays/players/ov074_player_sora_3/Ov074_Weapon_TickStreams.c b/src/overlays/players/ov074_player_sora_3/Ov074_Weapon_TickStreams.c
+index 73446f3b3..8eece25e4 100644
+--- a/src/overlays/players/ov074_player_sora_3/Ov074_Weapon_TickStreams.c
++++ b/src/overlays/players/ov074_player_sora_3/Ov074_Weapon_TickStreams.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Commits the widget scroll for the frame and, outside mode 0x2a, feeds both stream groups
+  * (flagging the local player when idle). */
+ 
+diff --git a/src/overlays/players/ov074_player_sora_3/data/ov074_pointers_020b9ae8.c b/src/overlays/players/ov074_player_sora_3/data/ov074_pointers_020b9ae8.c
+index 4f0695710..4951b505c 100644
+--- a/src/overlays/players/ov074_player_sora_3/data/ov074_pointers_020b9ae8.c
++++ b/src/overlays/players/ov074_player_sora_3/data/ov074_pointers_020b9ae8.c
+@@ -1,3 +1,7 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
++#define Ov022_StepStandingShot kh_ovd_Ov022_StepStandingShot
+ /* ov074 .data pointer tables, 0x020b9ae8-0x020b9afc.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov074_player_sora_3/func_ov074_020b8100.c b/src/overlays/players/ov074_player_sora_3/func_ov074_020b8100.c
+index 0661f2130..1a3f97258 100644
+--- a/src/overlays/players/ov074_player_sora_3/func_ov074_020b8100.c
++++ b/src/overlays/players/ov074_player_sora_3/func_ov074_020b8100.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov074_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov074_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov075_player_demyx_3/Ov075_ApplyModeChange.c b/src/overlays/players/ov075_player_demyx_3/Ov075_ApplyModeChange.c
+index 2c7ad7297..537893062 100644
+--- a/src/overlays/players/ov075_player_demyx_3/Ov075_ApplyModeChange.c
++++ b/src/overlays/players/ov075_player_demyx_3/Ov075_ApplyModeChange.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor (x4: ov036/055/075/092).
+  *
+diff --git a/src/overlays/players/ov075_player_demyx_3/Ov075_RefreshParts.c b/src/overlays/players/ov075_player_demyx_3/Ov075_RefreshParts.c
+index bed71573d..61578a9eb 100644
+--- a/src/overlays/players/ov075_player_demyx_3/Ov075_RefreshParts.c
++++ b/src/overlays/players/ov075_player_demyx_3/Ov075_RefreshParts.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Run the refresh pass over this enemy's three 0x30-byte part records. */
+ 
+ extern void Ov022_InvokeCallback24IfBit0();
+diff --git a/src/overlays/players/ov075_player_demyx_3/data/ov075_pointers_020b9d34.c b/src/overlays/players/ov075_player_demyx_3/data/ov075_pointers_020b9d34.c
+index c431057b4..6d6873584 100644
+--- a/src/overlays/players/ov075_player_demyx_3/data/ov075_pointers_020b9d34.c
++++ b/src/overlays/players/ov075_player_demyx_3/data/ov075_pointers_020b9d34.c
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
+ /* ov075 .data pointer tables, 0x020b9d34-0x020b9d48.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov075_player_demyx_3/func_ov075_020b8100.c b/src/overlays/players/ov075_player_demyx_3/func_ov075_020b8100.c
+index 9b9c413bf..4c055fe91 100644
+--- a/src/overlays/players/ov075_player_demyx_3/func_ov075_020b8100.c
++++ b/src/overlays/players/ov075_player_demyx_3/func_ov075_020b8100.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov075_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov075_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov076_player_larxene_3/Ov076_InvokeGroupCallback.c b/src/overlays/players/ov076_player_larxene_3/Ov076_InvokeGroupCallback.c
+index d72a0dd1d..7044f4426 100644
+--- a/src/overlays/players/ov076_player_larxene_3/Ov076_InvokeGroupCallback.c
++++ b/src/overlays/players/ov076_player_larxene_3/Ov076_InvokeGroupCallback.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Invokes the callback of the stream group at +0x2644. */
+ 
+ extern void Ov022_InvokeCallback24IfBit0(int arg);
+diff --git a/src/overlays/players/ov076_player_larxene_3/func_ov076_020b8100.c b/src/overlays/players/ov076_player_larxene_3/func_ov076_020b8100.c
+index a15207b8e..ec4ed2685 100644
+--- a/src/overlays/players/ov076_player_larxene_3/func_ov076_020b8100.c
++++ b/src/overlays/players/ov076_player_larxene_3/func_ov076_020b8100.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov076_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov076_InvokeWithDataTable;
 diff --git a/src/overlays/players/ov077_player_lexaeus_3/Ov077_DriveSwingSequence.c b/src/overlays/players/ov077_player_lexaeus_3/Ov077_DriveSwingSequence.c
 index f96b73986..e261daa8a 100644
 --- a/src/overlays/players/ov077_player_lexaeus_3/Ov077_DriveSwingSequence.c
@@ -11656,6 +13045,97 @@ index 24b51b483..9e019133a 100644
      char pad46c[0x250];
      int nStage6bc;
  };
+diff --git a/src/overlays/players/ov077_player_lexaeus_3/func_ov077_020b8100.c b/src/overlays/players/ov077_player_lexaeus_3/func_ov077_020b8100.c
+index 4494f5147..cd32a9991 100644
+--- a/src/overlays/players/ov077_player_lexaeus_3/func_ov077_020b8100.c
++++ b/src/overlays/players/ov077_player_lexaeus_3/func_ov077_020b8100.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov077_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov077_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov078_player_luxord_3/Ov078_ApplyMode.c b/src/overlays/players/ov078_player_luxord_3/Ov078_ApplyMode.c
+index ea3e330d4..cd096d642 100644
+--- a/src/overlays/players/ov078_player_luxord_3/Ov078_ApplyMode.c
++++ b/src/overlays/players/ov078_player_luxord_3/Ov078_ApplyMode.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor -- the two-stage variant with a secondary UI id.
+  *
+diff --git a/src/overlays/players/ov078_player_luxord_3/Ov078_UpdateAnchorsAndChannels.c b/src/overlays/players/ov078_player_luxord_3/Ov078_UpdateAnchorsAndChannels.c
+index 8b6784b81..74b29ad46 100644
+--- a/src/overlays/players/ov078_player_luxord_3/Ov078_UpdateAnchorsAndChannels.c
++++ b/src/overlays/players/ov078_player_luxord_3/Ov078_UpdateAnchorsAndChannels.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Per-frame update of the ov039 enemy (x4: ov039/058/078/095): reads the node's animation frame
+  * and drives the first secondary channel (+0xda8 from the config at +0x2c2c); by mode: 0x2f and
+  * 0x32 refresh both attack anchors on the emitter's context (slot 5) while it is idle, 0x33
+diff --git a/src/overlays/players/ov078_player_luxord_3/data/ov078_pointers_020ba448.c b/src/overlays/players/ov078_player_luxord_3/data/ov078_pointers_020ba448.c
+index da2ebb30a..d2af5b28c 100644
+--- a/src/overlays/players/ov078_player_luxord_3/data/ov078_pointers_020ba448.c
++++ b/src/overlays/players/ov078_player_luxord_3/data/ov078_pointers_020ba448.c
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
+ /* ov078 .data pointer tables, 0x020ba448-0x020ba45c.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov078_player_luxord_3/func_ov078_020b8100.c b/src/overlays/players/ov078_player_luxord_3/func_ov078_020b8100.c
+index a7ff11148..c8b149f25 100644
+--- a/src/overlays/players/ov078_player_luxord_3/func_ov078_020b8100.c
++++ b/src/overlays/players/ov078_player_luxord_3/func_ov078_020b8100.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov078_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov078_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov079_player_marluxia_3/func_ov079_020b8100.c b/src/overlays/players/ov079_player_marluxia_3/func_ov079_020b8100.c
+index ba44ffd8f..5c99e28af 100644
+--- a/src/overlays/players/ov079_player_marluxia_3/func_ov079_020b8100.c
++++ b/src/overlays/players/ov079_player_marluxia_3/func_ov079_020b8100.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov079_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov079_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov080_player_riku_3/Ov080_ApplyModeChange.c b/src/overlays/players/ov080_player_riku_3/Ov080_ApplyModeChange.c
+index 746434e9a..97e31bdd8 100644
+--- a/src/overlays/players/ov080_player_riku_3/Ov080_ApplyModeChange.c
++++ b/src/overlays/players/ov080_player_riku_3/Ov080_ApplyModeChange.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor (x4: ov041/060/078/095).
+  *
+diff --git a/src/overlays/players/ov080_player_riku_3/func_ov080_020b8100.c b/src/overlays/players/ov080_player_riku_3/func_ov080_020b8100.c
+index 4247d7517..e831f0764 100644
+--- a/src/overlays/players/ov080_player_riku_3/func_ov080_020b8100.c
++++ b/src/overlays/players/ov080_player_riku_3/func_ov080_020b8100.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov080_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov080_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov081_player_vexen_3/Ov081_StepParts.c b/src/overlays/players/ov081_player_vexen_3/Ov081_StepParts.c
+index d48013767..1a1493118 100644
+--- a/src/overlays/players/ov081_player_vexen_3/Ov081_StepParts.c
++++ b/src/overlays/players/ov081_player_vexen_3/Ov081_StepParts.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_StepShot_2 kh_ovd_Ov022_StepShot_2
+ /* Run the per-state handler of every 0x1c8-byte part of this enemy (count at +0x19, array at
+  * +0xc, handler table by the part's state byte at +2). State 2 is special: while the group is
+  * in mode 1 the parts are steered by Ov081_SteerPart, otherwise the shared handler runs and
 diff --git a/src/overlays/players/ov081_player_vexen_3/Ov081_UpdateSlotsWithGate.c b/src/overlays/players/ov081_player_vexen_3/Ov081_UpdateSlotsWithGate.c
 index 7906337fb..c7235964e 100644
 --- a/src/overlays/players/ov081_player_vexen_3/Ov081_UpdateSlotsWithGate.c
@@ -11674,16 +13154,50 @@ index 7906337fb..c7235964e 100644
  } Self;
  
  void Ov081_UpdateSlotsWithGate(Self *self, int *node, int arg) {
+diff --git a/src/overlays/players/ov081_player_vexen_3/Ov081_UpdateSubObjects.c b/src/overlays/players/ov081_player_vexen_3/Ov081_UpdateSubObjects.c
+index 9c002fda5..32458acbb 100644
+--- a/src/overlays/players/ov081_player_vexen_3/Ov081_UpdateSubObjects.c
++++ b/src/overlays/players/ov081_player_vexen_3/Ov081_UpdateSubObjects.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Per-frame update of the ov042 enemy's two sub-objects (x4: ov042/061/081/098), the ov031
+  * shape: (the node animation's frame is polled but unused,) each sub-object is fed the frame
+  * delta and stepped; if either is idle, the local player raises bit 0x10000 of both attack-flag
+diff --git a/src/overlays/players/ov081_player_vexen_3/data/ov081_pointers_020b9634.c b/src/overlays/players/ov081_player_vexen_3/data/ov081_pointers_020b9634.c
+index d7ab5f49d..ddfc47bea 100644
+--- a/src/overlays/players/ov081_player_vexen_3/data/ov081_pointers_020b9634.c
++++ b/src/overlays/players/ov081_player_vexen_3/data/ov081_pointers_020b9634.c
+@@ -1,3 +1,7 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
++#define Ov022_StepStandingShot kh_ovd_Ov022_StepStandingShot
+ /* ov081 .data pointer tables, 0x020b9634-0x020b9648.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov081_player_vexen_3/func_ov081_020b8100.c b/src/overlays/players/ov081_player_vexen_3/func_ov081_020b8100.c
+index 8549c5f72..8f39ca2f6 100644
+--- a/src/overlays/players/ov081_player_vexen_3/func_ov081_020b8100.c
++++ b/src/overlays/players/ov081_player_vexen_3/func_ov081_020b8100.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov081_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov081_InvokeWithDataTable;
 diff --git a/src/overlays/players/ov082_player_xion_3/Ov082_ApplyModeChange.c b/src/overlays/players/ov082_player_xion_3/Ov082_ApplyModeChange.c
-index 776ed669a..bbd011f95 100644
+index 776ed669a..bea276bfe 100644
 --- a/src/overlays/players/ov082_player_xion_3/Ov082_ApplyModeChange.c
 +++ b/src/overlays/players/ov082_player_xion_3/Ov082_ApplyModeChange.c
-@@ -1,3 +1,4 @@
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
  /*
   * Apply a mode change to the actor -- the guarded/link variant (x4: ov044/063/081/098).
   *
-@@ -39,7 +40,7 @@
+@@ -39,7 +42,7 @@
   * written FIRST, leaving 020a384c as the cold tail; and 0209fc48/0209fc78 take TWO args each
   * (Ghidra invents five for the first).
   */
@@ -11692,6 +13206,226 @@ index 776ed669a..bbd011f95 100644
  
  extern int Ov022_IsIndexedRecordBit0Set(int self, int i);
  extern int func_ov022_0209fc78(int self, int i);
+diff --git a/src/overlays/players/ov082_player_xion_3/func_ov082_020b8100.c b/src/overlays/players/ov082_player_xion_3/func_ov082_020b8100.c
+index 0186cf70c..57d63c271 100644
+--- a/src/overlays/players/ov082_player_xion_3/func_ov082_020b8100.c
++++ b/src/overlays/players/ov082_player_xion_3/func_ov082_020b8100.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov082_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov082_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov083_player_zexion_3/Ov083_ApplyModeChange.c b/src/overlays/players/ov083_player_zexion_3/Ov083_ApplyModeChange.c
+index e98e4b5c3..294e48ea5 100644
+--- a/src/overlays/players/ov083_player_zexion_3/Ov083_ApplyModeChange.c
++++ b/src/overlays/players/ov083_player_zexion_3/Ov083_ApplyModeChange.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor (x4: ov045/064/082/099).
+  *
+diff --git a/src/overlays/players/ov083_player_zexion_3/Ov083_UpdateAnchorsAndChannels.c b/src/overlays/players/ov083_player_zexion_3/Ov083_UpdateAnchorsAndChannels.c
+index 8a9fd4a04..d8f1bae49 100644
+--- a/src/overlays/players/ov083_player_zexion_3/Ov083_UpdateAnchorsAndChannels.c
++++ b/src/overlays/players/ov083_player_zexion_3/Ov083_UpdateAnchorsAndChannels.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /*
+  * Per-frame update of the actor's UI anchors and animation channels.
+  *
+diff --git a/src/overlays/players/ov083_player_zexion_3/data/ov083_pointers_020b9a74.c b/src/overlays/players/ov083_player_zexion_3/data/ov083_pointers_020b9a74.c
+index 0609013cb..1bb3d4fd7 100644
+--- a/src/overlays/players/ov083_player_zexion_3/data/ov083_pointers_020b9a74.c
++++ b/src/overlays/players/ov083_player_zexion_3/data/ov083_pointers_020b9a74.c
+@@ -1,3 +1,8 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
++#define Ov022_StepShot_2 kh_ovd_Ov022_StepShot_2
++#define Ov022_StepStandingShot kh_ovd_Ov022_StepStandingShot
+ /* ov083 .data pointer tables, 0x020b9a74-0x020b9a88.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov083_player_zexion_3/func_ov083_020b8100.c b/src/overlays/players/ov083_player_zexion_3/func_ov083_020b8100.c
+index 879bd58eb..cf3493d95 100644
+--- a/src/overlays/players/ov083_player_zexion_3/func_ov083_020b8100.c
++++ b/src/overlays/players/ov083_player_zexion_3/func_ov083_020b8100.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov083_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov083_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov084_player_mickey_3/Ov084_ApplyModeChange.c b/src/overlays/players/ov084_player_mickey_3/Ov084_ApplyModeChange.c
+index 582ddd41e..b73b666ca 100644
+--- a/src/overlays/players/ov084_player_mickey_3/Ov084_ApplyModeChange.c
++++ b/src/overlays/players/ov084_player_mickey_3/Ov084_ApplyModeChange.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor (multiplayer/link variant).
+  *
+diff --git a/src/overlays/players/ov084_player_mickey_3/Ov084_TickPairedState.c b/src/overlays/players/ov084_player_mickey_3/Ov084_TickPairedState.c
+index abe13c334..8c6969419 100644
+--- a/src/overlays/players/ov084_player_mickey_3/Ov084_TickPairedState.c
++++ b/src/overlays/players/ov084_player_mickey_3/Ov084_TickPairedState.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /*
+  * Per-frame tick of the paired state: resolve the node handle, run the partner countdown in
+  * the shared block (+0x11c / +0x120, expiring at 0x6000), refresh the sub-object at +0x2644
+diff --git a/src/overlays/players/ov084_player_mickey_3/data/ov084_pointers_020b9994.c b/src/overlays/players/ov084_player_mickey_3/data/ov084_pointers_020b9994.c
+index c25a2a664..275869d82 100644
+--- a/src/overlays/players/ov084_player_mickey_3/data/ov084_pointers_020b9994.c
++++ b/src/overlays/players/ov084_player_mickey_3/data/ov084_pointers_020b9994.c
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
+ /* ov084 .data pointer tables, 0x020b9994-0x020b99a8.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov084_player_mickey_3/func_ov084_020b8100.c b/src/overlays/players/ov084_player_mickey_3/func_ov084_020b8100.c
+index 953d5749c..5d8a5beef 100644
+--- a/src/overlays/players/ov084_player_mickey_3/func_ov084_020b8100.c
++++ b/src/overlays/players/ov084_player_mickey_3/func_ov084_020b8100.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov084_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov084_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov085_player_donald_3/Ov085_PanelTick.c b/src/overlays/players/ov085_player_donald_3/Ov085_PanelTick.c
+index f82f1f11e..1d8985219 100644
+--- a/src/overlays/players/ov085_player_donald_3/Ov085_PanelTick.c
++++ b/src/overlays/players/ov085_player_donald_3/Ov085_PanelTick.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Per-frame tick of the ov085 panel: refreshes the sub-object at +0x2644 three times --
+  * advance it by the frame delta, step it, then ask whether it has gone idle -- and when it
+  * has, raises the 64-bit flag pairs at +0x464 and +0x46c, each guarded by its own check.
+diff --git a/src/overlays/players/ov085_player_donald_3/Ov085_RequestState.c b/src/overlays/players/ov085_player_donald_3/Ov085_RequestState.c
+index c7a4a7673..77358d1c6 100644
+--- a/src/overlays/players/ov085_player_donald_3/Ov085_RequestState.c
++++ b/src/overlays/players/ov085_player_donald_3/Ov085_RequestState.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /* State-change request for the ov085 panel. Three states are handled specially: 0x2e
+  * and 0x31 only tear down when the state actually changes, and 0/1/4 resolve a
+  * transition argument -- but only if the object is currently displayable. When it is
+diff --git a/src/overlays/players/ov085_player_donald_3/data/ov085_pointers_020b91c0.c b/src/overlays/players/ov085_player_donald_3/data/ov085_pointers_020b91c0.c
+index 593148613..972e59b36 100644
+--- a/src/overlays/players/ov085_player_donald_3/data/ov085_pointers_020b91c0.c
++++ b/src/overlays/players/ov085_player_donald_3/data/ov085_pointers_020b91c0.c
+@@ -1,3 +1,7 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
++#define Ov022_StepStandingShot kh_ovd_Ov022_StepStandingShot
+ /* ov085 .data pointer tables, 0x020b91c0-0x020b91d4.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov085_player_donald_3/func_ov085_020b8100.c b/src/overlays/players/ov085_player_donald_3/func_ov085_020b8100.c
+index 2f641e91a..5182440a6 100644
+--- a/src/overlays/players/ov085_player_donald_3/func_ov085_020b8100.c
++++ b/src/overlays/players/ov085_player_donald_3/func_ov085_020b8100.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov085_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov085_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov086_player_goofy_3/func_ov086_020b8100.c b/src/overlays/players/ov086_player_goofy_3/func_ov086_020b8100.c
+index 2e97ba3cb..6150c3aa9 100644
+--- a/src/overlays/players/ov086_player_goofy_3/func_ov086_020b8100.c
++++ b/src/overlays/players/ov086_player_goofy_3/func_ov086_020b8100.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov086_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov086_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov087_player_roxas_dual_3/Ov087_ApplyModeChange.c b/src/overlays/players/ov087_player_roxas_dual_3/Ov087_ApplyModeChange.c
+index b6f500905..7d6e00840 100644
+--- a/src/overlays/players/ov087_player_roxas_dual_3/Ov087_ApplyModeChange.c
++++ b/src/overlays/players/ov087_player_roxas_dual_3/Ov087_ApplyModeChange.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor, driving TWO UI bands (x4: ov049/068/086b/103).
+  *
+diff --git a/src/overlays/players/ov087_player_roxas_dual_3/Ov087_UpdateAttachmentAndChannels.c b/src/overlays/players/ov087_player_roxas_dual_3/Ov087_UpdateAttachmentAndChannels.c
+index 1aa226493..6849c4564 100644
+--- a/src/overlays/players/ov087_player_roxas_dual_3/Ov087_UpdateAttachmentAndChannels.c
++++ b/src/overlays/players/ov087_player_roxas_dual_3/Ov087_UpdateAttachmentAndChannels.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Per-frame update of the ov049 enemy (x4: ov049/068/087/104): reads the node's animation frame,
+  * feeds the attachment with the current tick and steps it; when the attachment reports idle, the
+  * two 64-bit flag words at +0x464 and +0x46c get bit 16 (each guarded by 02030788 being idle);
+diff --git a/src/overlays/players/ov087_player_roxas_dual_3/data/ov087_pointers_020b9b28.c b/src/overlays/players/ov087_player_roxas_dual_3/data/ov087_pointers_020b9b28.c
+index f0b864c7d..9f6bfef37 100644
+--- a/src/overlays/players/ov087_player_roxas_dual_3/data/ov087_pointers_020b9b28.c
++++ b/src/overlays/players/ov087_player_roxas_dual_3/data/ov087_pointers_020b9b28.c
+@@ -1,3 +1,7 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
++#define Ov022_StepStandingShot kh_ovd_Ov022_StepStandingShot
+ /* ov087 .data pointer tables, 0x020b9b28-0x020b9b3c.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov087_player_roxas_dual_3/func_ov087_020b8100.c b/src/overlays/players/ov087_player_roxas_dual_3/func_ov087_020b8100.c
+index 2b685af6c..b0e57aa9e 100644
+--- a/src/overlays/players/ov087_player_roxas_dual_3/func_ov087_020b8100.c
++++ b/src/overlays/players/ov087_player_roxas_dual_3/func_ov087_020b8100.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov087_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov087_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov088_player_axel_4/Ov088_initSubObjectsSetU64Flags.c b/src/overlays/players/ov088_player_axel_4/Ov088_initSubObjectsSetU64Flags.c
+index 79d6cb61e..bb1b02b1d 100644
+--- a/src/overlays/players/ov088_player_axel_4/Ov088_initSubObjectsSetU64Flags.c
++++ b/src/overlays/players/ov088_player_axel_4/Ov088_initSubObjectsSetU64Flags.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Forwards the global command to the three effect streams and runs their callbacks; when any stream
+  * is still busy, sets bit 16 of the local player's two 64-bit flag words; then finishes the
+  * battle-module update. */
+diff --git a/src/overlays/players/ov088_player_axel_4/data/ov088_pointers_020bc274.c b/src/overlays/players/ov088_player_axel_4/data/ov088_pointers_020bc274.c
+index 219ca788d..bd3519206 100644
+--- a/src/overlays/players/ov088_player_axel_4/data/ov088_pointers_020bc274.c
++++ b/src/overlays/players/ov088_player_axel_4/data/ov088_pointers_020bc274.c
+@@ -1,3 +1,7 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
++#define Ov022_StepStandingShot kh_ovd_Ov022_StepStandingShot
+ /* ov088 .data pointer tables, 0x020bc274-0x020bc29c.
+  *
+  * 2 tables, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov088_player_axel_4/func_ov088_020ba7c0.c b/src/overlays/players/ov088_player_axel_4/func_ov088_020ba7c0.c
+index e3174fca7..08cce68d7 100644
+--- a/src/overlays/players/ov088_player_axel_4/func_ov088_020ba7c0.c
++++ b/src/overlays/players/ov088_player_axel_4/func_ov088_020ba7c0.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov088_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov088_InvokeWithDataTable;
 diff --git a/src/overlays/players/ov089_player_saix_4/Ov089_UpdateGuardedSlots.c b/src/overlays/players/ov089_player_saix_4/Ov089_UpdateGuardedSlots.c
 index 590ec708a..51404b577 100644
 --- a/src/overlays/players/ov089_player_saix_4/Ov089_UpdateGuardedSlots.c
@@ -11710,6 +13444,16 @@ index 590ec708a..51404b577 100644
      char pad46c[0x2aba - 0x46c];
      short f2aba;
  } Self;
+diff --git a/src/overlays/players/ov089_player_saix_4/func_ov089_020ba7c0.c b/src/overlays/players/ov089_player_saix_4/func_ov089_020ba7c0.c
+index aa5e5d00f..4516e4680 100644
+--- a/src/overlays/players/ov089_player_saix_4/func_ov089_020ba7c0.c
++++ b/src/overlays/players/ov089_player_saix_4/func_ov089_020ba7c0.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov089_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov089_InvokeWithDataTable;
 diff --git a/src/overlays/players/ov090_player_xaldin_4/Ov090_DriveGuardSequence.c b/src/overlays/players/ov090_player_xaldin_4/Ov090_DriveGuardSequence.c
 index 5379e26c3..2ecfbb6f4 100644
 --- a/src/overlays/players/ov090_player_xaldin_4/Ov090_DriveGuardSequence.c
@@ -11728,6 +13472,119 @@ index 5379e26c3..2ecfbb6f4 100644
  
  extern int Ov022_IsState9Or6WithFlag200(void *p);
  extern void Ov090_ClearTimer(int self, int p2);
+diff --git a/src/overlays/players/ov090_player_xaldin_4/func_ov090_020ba7c0.c b/src/overlays/players/ov090_player_xaldin_4/func_ov090_020ba7c0.c
+index b49944449..5bea6216f 100644
+--- a/src/overlays/players/ov090_player_xaldin_4/func_ov090_020ba7c0.c
++++ b/src/overlays/players/ov090_player_xaldin_4/func_ov090_020ba7c0.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov090_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov090_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov091_player_sora_4/Ov091_ApplyModeChange.c b/src/overlays/players/ov091_player_sora_4/Ov091_ApplyModeChange.c
+index cf68f7a16..c31dd4998 100644
+--- a/src/overlays/players/ov091_player_sora_4/Ov091_ApplyModeChange.c
++++ b/src/overlays/players/ov091_player_sora_4/Ov091_ApplyModeChange.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor (x4: ov035/054/074/091).
+  *
+diff --git a/src/overlays/players/ov091_player_sora_4/Ov091_Weapon_TickStreams.c b/src/overlays/players/ov091_player_sora_4/Ov091_Weapon_TickStreams.c
+index daf10780f..468c677d8 100644
+--- a/src/overlays/players/ov091_player_sora_4/Ov091_Weapon_TickStreams.c
++++ b/src/overlays/players/ov091_player_sora_4/Ov091_Weapon_TickStreams.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Commits the widget scroll for the frame and, outside mode 0x2a, feeds both stream groups
+  * (flagging the local player when idle). */
+ 
+diff --git a/src/overlays/players/ov091_player_sora_4/data/ov091_pointers_020bc1a8.c b/src/overlays/players/ov091_player_sora_4/data/ov091_pointers_020bc1a8.c
+index 8dc22bf56..5b8d8b108 100644
+--- a/src/overlays/players/ov091_player_sora_4/data/ov091_pointers_020bc1a8.c
++++ b/src/overlays/players/ov091_player_sora_4/data/ov091_pointers_020bc1a8.c
+@@ -1,3 +1,7 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
++#define Ov022_StepStandingShot kh_ovd_Ov022_StepStandingShot
+ /* ov091 .data pointer tables, 0x020bc1a8-0x020bc1bc.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov091_player_sora_4/func_ov091_020ba7c0.c b/src/overlays/players/ov091_player_sora_4/func_ov091_020ba7c0.c
+index b034ed6e9..0c494c155 100644
+--- a/src/overlays/players/ov091_player_sora_4/func_ov091_020ba7c0.c
++++ b/src/overlays/players/ov091_player_sora_4/func_ov091_020ba7c0.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov091_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov091_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov092_player_demyx_4/Ov092_ApplyModeChange.c b/src/overlays/players/ov092_player_demyx_4/Ov092_ApplyModeChange.c
+index 01a2aba29..16452ef02 100644
+--- a/src/overlays/players/ov092_player_demyx_4/Ov092_ApplyModeChange.c
++++ b/src/overlays/players/ov092_player_demyx_4/Ov092_ApplyModeChange.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor (x4: ov036/055/075/092).
+  *
+diff --git a/src/overlays/players/ov092_player_demyx_4/Ov092_RefreshParts.c b/src/overlays/players/ov092_player_demyx_4/Ov092_RefreshParts.c
+index 282b61741..c72192fd7 100644
+--- a/src/overlays/players/ov092_player_demyx_4/Ov092_RefreshParts.c
++++ b/src/overlays/players/ov092_player_demyx_4/Ov092_RefreshParts.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Run the refresh pass over this enemy's three 0x30-byte part records. */
+ 
+ extern void Ov022_InvokeCallback24IfBit0();
+diff --git a/src/overlays/players/ov092_player_demyx_4/data/ov092_pointers_020bc3f4.c b/src/overlays/players/ov092_player_demyx_4/data/ov092_pointers_020bc3f4.c
+index 4531cedbc..71e89bcef 100644
+--- a/src/overlays/players/ov092_player_demyx_4/data/ov092_pointers_020bc3f4.c
++++ b/src/overlays/players/ov092_player_demyx_4/data/ov092_pointers_020bc3f4.c
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
+ /* ov092 .data pointer tables, 0x020bc3f4-0x020bc408.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov092_player_demyx_4/func_ov092_020ba7c0.c b/src/overlays/players/ov092_player_demyx_4/func_ov092_020ba7c0.c
+index 691a5eeb7..68071064f 100644
+--- a/src/overlays/players/ov092_player_demyx_4/func_ov092_020ba7c0.c
++++ b/src/overlays/players/ov092_player_demyx_4/func_ov092_020ba7c0.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov092_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov092_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov093_player_larxene_4/Ov093_InvokeGroupCallback.c b/src/overlays/players/ov093_player_larxene_4/Ov093_InvokeGroupCallback.c
+index fd794ebc4..37ea3a065 100644
+--- a/src/overlays/players/ov093_player_larxene_4/Ov093_InvokeGroupCallback.c
++++ b/src/overlays/players/ov093_player_larxene_4/Ov093_InvokeGroupCallback.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Invokes the callback of the stream group at +0x2644. */
+ 
+ extern void Ov022_InvokeCallback24IfBit0(int arg);
+diff --git a/src/overlays/players/ov093_player_larxene_4/func_ov093_020ba7c0.c b/src/overlays/players/ov093_player_larxene_4/func_ov093_020ba7c0.c
+index b4ddd14da..edafab70a 100644
+--- a/src/overlays/players/ov093_player_larxene_4/func_ov093_020ba7c0.c
++++ b/src/overlays/players/ov093_player_larxene_4/func_ov093_020ba7c0.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov093_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov093_InvokeWithDataTable;
 diff --git a/src/overlays/players/ov094_player_lexaeus_4/Ov094_DriveSwingSequence.c b/src/overlays/players/ov094_player_lexaeus_4/Ov094_DriveSwingSequence.c
 index 740e61ffb..ab4a4b00a 100644
 --- a/src/overlays/players/ov094_player_lexaeus_4/Ov094_DriveSwingSequence.c
@@ -11764,6 +13621,97 @@ index 27d65d2aa..ff4d0cbc6 100644
      char pad46c[0x250];
      int nStage6bc;
  };
+diff --git a/src/overlays/players/ov094_player_lexaeus_4/func_ov094_020ba7c0.c b/src/overlays/players/ov094_player_lexaeus_4/func_ov094_020ba7c0.c
+index f7ea260b7..117f00cc0 100644
+--- a/src/overlays/players/ov094_player_lexaeus_4/func_ov094_020ba7c0.c
++++ b/src/overlays/players/ov094_player_lexaeus_4/func_ov094_020ba7c0.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov094_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov094_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov095_player_luxord_4/Ov095_ApplyMode.c b/src/overlays/players/ov095_player_luxord_4/Ov095_ApplyMode.c
+index ef275b3df..357c62bea 100644
+--- a/src/overlays/players/ov095_player_luxord_4/Ov095_ApplyMode.c
++++ b/src/overlays/players/ov095_player_luxord_4/Ov095_ApplyMode.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor -- the two-stage variant with a secondary UI id.
+  *
+diff --git a/src/overlays/players/ov095_player_luxord_4/Ov095_UpdateAnchorsAndChannels.c b/src/overlays/players/ov095_player_luxord_4/Ov095_UpdateAnchorsAndChannels.c
+index fbf2041ae..8efed09c5 100644
+--- a/src/overlays/players/ov095_player_luxord_4/Ov095_UpdateAnchorsAndChannels.c
++++ b/src/overlays/players/ov095_player_luxord_4/Ov095_UpdateAnchorsAndChannels.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Per-frame update of the ov039 enemy (x4: ov039/058/078/095): reads the node's animation frame
+  * and drives the first secondary channel (+0xda8 from the config at +0x2c2c); by mode: 0x2f and
+  * 0x32 refresh both attack anchors on the emitter's context (slot 5) while it is idle, 0x33
+diff --git a/src/overlays/players/ov095_player_luxord_4/data/ov095_pointers_020bcb08.c b/src/overlays/players/ov095_player_luxord_4/data/ov095_pointers_020bcb08.c
+index 0ac7fc28a..451d28376 100644
+--- a/src/overlays/players/ov095_player_luxord_4/data/ov095_pointers_020bcb08.c
++++ b/src/overlays/players/ov095_player_luxord_4/data/ov095_pointers_020bcb08.c
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
+ /* ov095 .data pointer tables, 0x020bcb08-0x020bcb1c.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov095_player_luxord_4/func_ov095_020ba7c0.c b/src/overlays/players/ov095_player_luxord_4/func_ov095_020ba7c0.c
+index 2d3fcd29a..2b36fdafd 100644
+--- a/src/overlays/players/ov095_player_luxord_4/func_ov095_020ba7c0.c
++++ b/src/overlays/players/ov095_player_luxord_4/func_ov095_020ba7c0.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov095_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov095_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov096_player_marluxia_4/func_ov096_020ba7c0.c b/src/overlays/players/ov096_player_marluxia_4/func_ov096_020ba7c0.c
+index d1f457042..df339cf35 100644
+--- a/src/overlays/players/ov096_player_marluxia_4/func_ov096_020ba7c0.c
++++ b/src/overlays/players/ov096_player_marluxia_4/func_ov096_020ba7c0.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov096_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov096_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov097_player_riku_4/Ov097_ApplyModeChange.c b/src/overlays/players/ov097_player_riku_4/Ov097_ApplyModeChange.c
+index 1deed77b2..26312042b 100644
+--- a/src/overlays/players/ov097_player_riku_4/Ov097_ApplyModeChange.c
++++ b/src/overlays/players/ov097_player_riku_4/Ov097_ApplyModeChange.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor (x4: ov041/060/078/095).
+  *
+diff --git a/src/overlays/players/ov097_player_riku_4/func_ov097_020ba7c0.c b/src/overlays/players/ov097_player_riku_4/func_ov097_020ba7c0.c
+index 25047a490..1a147884b 100644
+--- a/src/overlays/players/ov097_player_riku_4/func_ov097_020ba7c0.c
++++ b/src/overlays/players/ov097_player_riku_4/func_ov097_020ba7c0.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov097_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov097_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov098_player_vexen_4/Ov098_StepParts.c b/src/overlays/players/ov098_player_vexen_4/Ov098_StepParts.c
+index ca1f7f932..7fc2cc801 100644
+--- a/src/overlays/players/ov098_player_vexen_4/Ov098_StepParts.c
++++ b/src/overlays/players/ov098_player_vexen_4/Ov098_StepParts.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_StepShot_2 kh_ovd_Ov022_StepShot_2
+ /* Run the per-state handler of every 0x1c8-byte part of this enemy (count at +0x19, array at
+  * +0xc, handler table by the part's state byte at +2). State 2 is special: while the group is
+  * in mode 1 the parts are steered by Ov098_SteerPart, otherwise the shared handler runs and
 diff --git a/src/overlays/players/ov098_player_vexen_4/Ov098_UpdateSlotsWithGate.c b/src/overlays/players/ov098_player_vexen_4/Ov098_UpdateSlotsWithGate.c
 index abc7988ad..2c1d12c1b 100644
 --- a/src/overlays/players/ov098_player_vexen_4/Ov098_UpdateSlotsWithGate.c
@@ -11782,16 +13730,50 @@ index abc7988ad..2c1d12c1b 100644
  } Self;
  
  void Ov098_UpdateSlotsWithGate(Self *self, int *node, int arg) {
+diff --git a/src/overlays/players/ov098_player_vexen_4/Ov098_UpdateSubObjects.c b/src/overlays/players/ov098_player_vexen_4/Ov098_UpdateSubObjects.c
+index 12a70ff54..12421d0fb 100644
+--- a/src/overlays/players/ov098_player_vexen_4/Ov098_UpdateSubObjects.c
++++ b/src/overlays/players/ov098_player_vexen_4/Ov098_UpdateSubObjects.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Per-frame update of the ov042 enemy's two sub-objects (x4: ov042/061/081/098), the ov031
+  * shape: (the node animation's frame is polled but unused,) each sub-object is fed the frame
+  * delta and stepped; if either is idle, the local player raises bit 0x10000 of both attack-flag
+diff --git a/src/overlays/players/ov098_player_vexen_4/data/ov098_pointers_020bbcf4.c b/src/overlays/players/ov098_player_vexen_4/data/ov098_pointers_020bbcf4.c
+index 9d27ed965..14b683f20 100644
+--- a/src/overlays/players/ov098_player_vexen_4/data/ov098_pointers_020bbcf4.c
++++ b/src/overlays/players/ov098_player_vexen_4/data/ov098_pointers_020bbcf4.c
+@@ -1,3 +1,7 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
++#define Ov022_StepStandingShot kh_ovd_Ov022_StepStandingShot
+ /* ov098 .data pointer tables, 0x020bbcf4-0x020bbd08.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov098_player_vexen_4/func_ov098_020ba7c0.c b/src/overlays/players/ov098_player_vexen_4/func_ov098_020ba7c0.c
+index 20e7a598d..7e7ae44ff 100644
+--- a/src/overlays/players/ov098_player_vexen_4/func_ov098_020ba7c0.c
++++ b/src/overlays/players/ov098_player_vexen_4/func_ov098_020ba7c0.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov098_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov098_InvokeWithDataTable;
 diff --git a/src/overlays/players/ov099_player_xion_4/Ov099_ApplyModeChange.c b/src/overlays/players/ov099_player_xion_4/Ov099_ApplyModeChange.c
-index dc9f01804..c8e2463f0 100644
+index dc9f01804..29b25e6a3 100644
 --- a/src/overlays/players/ov099_player_xion_4/Ov099_ApplyModeChange.c
 +++ b/src/overlays/players/ov099_player_xion_4/Ov099_ApplyModeChange.c
-@@ -1,3 +1,4 @@
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
  /*
   * Apply a mode change to the actor -- the guarded/link variant (x4: ov044/063/081/098).
   *
-@@ -39,7 +40,7 @@
+@@ -39,7 +42,7 @@
   * written FIRST, leaving 020a384c as the cold tail; and 0209fc48/0209fc78 take TWO args each
   * (Ghidra invents five for the first).
   */
@@ -11800,6 +13782,194 @@ index dc9f01804..c8e2463f0 100644
  
  extern int Ov022_IsIndexedRecordBit0Set(int self, int i);
  extern int func_ov022_0209fc78(int self, int i);
+diff --git a/src/overlays/players/ov099_player_xion_4/func_ov099_020ba7c0.c b/src/overlays/players/ov099_player_xion_4/func_ov099_020ba7c0.c
+index 6ee5c1b3d..b6f4d3b61 100644
+--- a/src/overlays/players/ov099_player_xion_4/func_ov099_020ba7c0.c
++++ b/src/overlays/players/ov099_player_xion_4/func_ov099_020ba7c0.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov099_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov099_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov100_player_zexion_4/Ov100_ApplyModeChange.c b/src/overlays/players/ov100_player_zexion_4/Ov100_ApplyModeChange.c
+index 1270fa94e..129d97649 100644
+--- a/src/overlays/players/ov100_player_zexion_4/Ov100_ApplyModeChange.c
++++ b/src/overlays/players/ov100_player_zexion_4/Ov100_ApplyModeChange.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor (x4: ov045/064/082/099).
+  *
+diff --git a/src/overlays/players/ov100_player_zexion_4/Ov100_UpdateAnchorsAndChannels.c b/src/overlays/players/ov100_player_zexion_4/Ov100_UpdateAnchorsAndChannels.c
+index 1ecc88d4c..2d6dda5df 100644
+--- a/src/overlays/players/ov100_player_zexion_4/Ov100_UpdateAnchorsAndChannels.c
++++ b/src/overlays/players/ov100_player_zexion_4/Ov100_UpdateAnchorsAndChannels.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /*
+  * Per-frame update of the actor's UI anchors and animation channels.
+  *
+diff --git a/src/overlays/players/ov100_player_zexion_4/data/ov100_pointers_020bc134.c b/src/overlays/players/ov100_player_zexion_4/data/ov100_pointers_020bc134.c
+index 1063e6a49..67e7fdafb 100644
+--- a/src/overlays/players/ov100_player_zexion_4/data/ov100_pointers_020bc134.c
++++ b/src/overlays/players/ov100_player_zexion_4/data/ov100_pointers_020bc134.c
+@@ -1,3 +1,8 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
++#define Ov022_StepShot_2 kh_ovd_Ov022_StepShot_2
++#define Ov022_StepStandingShot kh_ovd_Ov022_StepStandingShot
+ /* ov100 .data pointer tables, 0x020bc134-0x020bc148.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov100_player_zexion_4/func_ov100_020ba7c0.c b/src/overlays/players/ov100_player_zexion_4/func_ov100_020ba7c0.c
+index e581ebaa3..d38942ee4 100644
+--- a/src/overlays/players/ov100_player_zexion_4/func_ov100_020ba7c0.c
++++ b/src/overlays/players/ov100_player_zexion_4/func_ov100_020ba7c0.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov100_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov100_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov101_player_mickey_4/Ov101_ApplyModeChange.c b/src/overlays/players/ov101_player_mickey_4/Ov101_ApplyModeChange.c
+index 779dbae9a..0071c4e96 100644
+--- a/src/overlays/players/ov101_player_mickey_4/Ov101_ApplyModeChange.c
++++ b/src/overlays/players/ov101_player_mickey_4/Ov101_ApplyModeChange.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor (multiplayer/link variant).
+  *
+diff --git a/src/overlays/players/ov101_player_mickey_4/Ov101_TickPairedState.c b/src/overlays/players/ov101_player_mickey_4/Ov101_TickPairedState.c
+index 08533907a..4ab535dab 100644
+--- a/src/overlays/players/ov101_player_mickey_4/Ov101_TickPairedState.c
++++ b/src/overlays/players/ov101_player_mickey_4/Ov101_TickPairedState.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /*
+  * Per-frame tick of the paired state: resolve the node handle, run the partner countdown in
+  * the shared block (+0x11c / +0x120, expiring at 0x6000), refresh the sub-object at +0x2644
+diff --git a/src/overlays/players/ov101_player_mickey_4/data/ov101_pointers_020bc054.c b/src/overlays/players/ov101_player_mickey_4/data/ov101_pointers_020bc054.c
+index d233903a0..6eb35cddf 100644
+--- a/src/overlays/players/ov101_player_mickey_4/data/ov101_pointers_020bc054.c
++++ b/src/overlays/players/ov101_player_mickey_4/data/ov101_pointers_020bc054.c
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
+ /* ov101 .data pointer tables, 0x020bc054-0x020bc068.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov101_player_mickey_4/func_ov101_020ba7c0.c b/src/overlays/players/ov101_player_mickey_4/func_ov101_020ba7c0.c
+index 8d264c35c..2fe73ba38 100644
+--- a/src/overlays/players/ov101_player_mickey_4/func_ov101_020ba7c0.c
++++ b/src/overlays/players/ov101_player_mickey_4/func_ov101_020ba7c0.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov101_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov101_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov102_player_donald_4/Ov102_PanelTick.c b/src/overlays/players/ov102_player_donald_4/Ov102_PanelTick.c
+index 2a04bd3bf..55a6e6732 100644
+--- a/src/overlays/players/ov102_player_donald_4/Ov102_PanelTick.c
++++ b/src/overlays/players/ov102_player_donald_4/Ov102_PanelTick.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Per-frame tick of the ov102 panel: refreshes the sub-object at +0x2644 three times --
+  * advance it by the frame delta, step it, then ask whether it has gone idle -- and when it
+  * has, raises the 64-bit flag pairs at +0x464 and +0x46c, each guarded by its own check.
+diff --git a/src/overlays/players/ov102_player_donald_4/Ov102_RequestState.c b/src/overlays/players/ov102_player_donald_4/Ov102_RequestState.c
+index 06e0b72ff..5c6d35a4f 100644
+--- a/src/overlays/players/ov102_player_donald_4/Ov102_RequestState.c
++++ b/src/overlays/players/ov102_player_donald_4/Ov102_RequestState.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /* State-change request for the ov102 panel. Three states are handled specially: 0x2e
+  * and 0x31 only tear down when the state actually changes, and 0/1/4 resolve a
+  * transition argument -- but only if the object is currently displayable. When it is
+diff --git a/src/overlays/players/ov102_player_donald_4/data/ov102_pointers_020bb880.c b/src/overlays/players/ov102_player_donald_4/data/ov102_pointers_020bb880.c
+index fa2eafe30..cbb9bec2d 100644
+--- a/src/overlays/players/ov102_player_donald_4/data/ov102_pointers_020bb880.c
++++ b/src/overlays/players/ov102_player_donald_4/data/ov102_pointers_020bb880.c
+@@ -1,3 +1,7 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
++#define Ov022_StepStandingShot kh_ovd_Ov022_StepStandingShot
+ /* ov102 .data pointer tables, 0x020bb880-0x020bb894.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov102_player_donald_4/func_ov102_020ba7c0.c b/src/overlays/players/ov102_player_donald_4/func_ov102_020ba7c0.c
+index f42f32303..fc64c3071 100644
+--- a/src/overlays/players/ov102_player_donald_4/func_ov102_020ba7c0.c
++++ b/src/overlays/players/ov102_player_donald_4/func_ov102_020ba7c0.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov102_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov102_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov103_player_goofy_4/func_ov103_020ba7c0.c b/src/overlays/players/ov103_player_goofy_4/func_ov103_020ba7c0.c
+index 5ca03ff44..7dc82a7f7 100644
+--- a/src/overlays/players/ov103_player_goofy_4/func_ov103_020ba7c0.c
++++ b/src/overlays/players/ov103_player_goofy_4/func_ov103_020ba7c0.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov103_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov103_InvokeWithDataTable;
+diff --git a/src/overlays/players/ov104_player_roxas_dual_4/Ov104_ApplyModeChange.c b/src/overlays/players/ov104_player_roxas_dual_4/Ov104_ApplyModeChange.c
+index 51cde1aca..31f7fb836 100644
+--- a/src/overlays/players/ov104_player_roxas_dual_4/Ov104_ApplyModeChange.c
++++ b/src/overlays/players/ov104_player_roxas_dual_4/Ov104_ApplyModeChange.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov002_GetModeBlendFrames kh_ovd_Ov002_GetModeBlendFrames
+ /*
+  * Apply a mode change to the actor, driving TWO UI bands (x4: ov049/068/086b/103).
+  *
+diff --git a/src/overlays/players/ov104_player_roxas_dual_4/Ov104_UpdateAttachmentAndChannels.c b/src/overlays/players/ov104_player_roxas_dual_4/Ov104_UpdateAttachmentAndChannels.c
+index 2249322e7..4c5660211 100644
+--- a/src/overlays/players/ov104_player_roxas_dual_4/Ov104_UpdateAttachmentAndChannels.c
++++ b/src/overlays/players/ov104_player_roxas_dual_4/Ov104_UpdateAttachmentAndChannels.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_InvokeCallback24IfBit0 kh_ovd_Ov022_InvokeCallback24IfBit0
+ /* Per-frame update of the ov049 enemy (x4: ov049/068/087/104): reads the node's animation frame,
+  * feeds the attachment with the current tick and steps it; when the attachment reports idle, the
+  * two 64-bit flag words at +0x464 and +0x46c get bit 16 (each guarded by 02030788 being idle);
+diff --git a/src/overlays/players/ov104_player_roxas_dual_4/data/ov104_pointers_020bc1e8.c b/src/overlays/players/ov104_player_roxas_dual_4/data/ov104_pointers_020bc1e8.c
+index 6fc63a769..a11a586c4 100644
+--- a/src/overlays/players/ov104_player_roxas_dual_4/data/ov104_pointers_020bc1e8.c
++++ b/src/overlays/players/ov104_player_roxas_dual_4/data/ov104_pointers_020bc1e8.c
+@@ -1,3 +1,7 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_AdvanceTimerAndLatchDone kh_ovd_Ov022_AdvanceTimerAndLatchDone
++#define Ov022_NullStep kh_ovd_Ov022_NullStep
++#define Ov022_StepStandingShot kh_ovd_Ov022_StepStandingShot
+ /* ov104 .data pointer tables, 0x020bc1e8-0x020bc1fc.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
+diff --git a/src/overlays/players/ov104_player_roxas_dual_4/func_ov104_020ba7c0.c b/src/overlays/players/ov104_player_roxas_dual_4/func_ov104_020ba7c0.c
+index ec5e44512..d07bae6a5 100644
+--- a/src/overlays/players/ov104_player_roxas_dual_4/func_ov104_020ba7c0.c
++++ b/src/overlays/players/ov104_player_roxas_dual_4/func_ov104_020ba7c0.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_0208875c kh_ovd_func_ov022_0208875c
+ /* Interworking tail-call veneer: calls srand_0x0208875c with &Ov104_InvokeWithDataTable as its first argument. */
+ extern void func_ov022_0208875c(void *p);
+ extern int Ov104_InvokeWithDataTable;
 diff --git a/src/overlays/scenes/ov000_title/Ov000_BootFadeAndSubScreenSetup.c b/src/overlays/scenes/ov000_title/Ov000_BootFadeAndSubScreenSetup.c
 index 86892c0f3..f3a70f40b 100644
 --- a/src/overlays/scenes/ov000_title/Ov000_BootFadeAndSubScreenSetup.c
@@ -12539,15 +14709,17 @@ index 09328f6ad..b5d206002 100644
      int nOwner;                         /* +0x30 */
  } Ov002PoolEntry;
 diff --git a/src/overlays/scenes/ov002_field/Ov002_Camera_UpdateFollow.c b/src/overlays/scenes/ov002_field/Ov002_Camera_UpdateFollow.c
-index a34a3af7b..af4dfc178 100644
+index a34a3af7b..d36113706 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_Camera_UpdateFollow.c
 +++ b/src/overlays/scenes/ov002_field/Ov002_Camera_UpdateFollow.c
-@@ -1,3 +1,4 @@
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_IsBit2SetVia0x20 kh_ovd_Ov022_IsBit2SetVia0x20
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
  #include "nitro/fx_types.h"
  
  #include "game/config.h"
-@@ -45,7 +46,7 @@ typedef union {
+@@ -45,7 +48,7 @@ typedef union {
  } Ov002WorldState;
  
  typedef struct {
@@ -12556,7 +14728,7 @@ index a34a3af7b..af4dfc178 100644
    unsigned char unknown08[4];
    int kind;
    unsigned char unknown10[0x10];
-@@ -97,6 +98,10 @@ extern void Ov002_TickScriptedCamera(void);
+@@ -97,6 +100,10 @@ extern void Ov002_TickScriptedCamera(void);
  extern void Ov002_ResetCamera(void);
  extern unsigned char data_0204be04;
  extern unsigned short gPadHeld;
@@ -12567,7 +14739,7 @@ index a34a3af7b..af4dfc178 100644
  extern unsigned short gPadPressed;
  extern unsigned char data_0204c240;
  extern const short data_0203d210[];
-@@ -564,6 +569,11 @@ LAB_arm9_ov002__0204d9ac:
+@@ -564,6 +571,11 @@ LAB_arm9_ov002__0204d9ac:
    }
    else {
      piVar7[0xe] = uVar16 & 0xffffffef;
@@ -12579,7 +14751,7 @@ index a34a3af7b..af4dfc178 100644
    }
    iVar11 = func_ov022_020886d0(idx);
    if (iVar11 != 0) {
-@@ -607,6 +617,9 @@ LAB_arm9_ov002__0204d9ac:
+@@ -607,6 +619,9 @@ LAB_arm9_ov002__0204d9ac:
      piVar7[1] = data_0203d210[((int)(uint)*(ushort *)((int)piVar7 + 0xa2) >> 4) * 2 + 1];
    }
    if ((piVar7[0xe] & 0x200U) == 0) {
@@ -13395,6 +15567,16 @@ index a4914fc2f..593921031 100644
      u8 pad006c[0x60];
      Ov002CountPair aCounts[4];          /* +0xcc */
      u8 pad00dc[0x18];
+diff --git a/src/overlays/scenes/ov002_field/Ov002_SetGlobalFlagOnce.c b/src/overlays/scenes/ov002_field/Ov002_SetGlobalFlagOnce.c
+index db7150def..93860f918 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_SetGlobalFlagOnce.c
++++ b/src/overlays/scenes/ov002_field/Ov002_SetGlobalFlagOnce.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_02083fa4 kh_ovd_func_ov022_02083fa4
+ /* Sets the global flag once (signed argument). */
+ 
+ extern int func_ov022_02083fa4();
 diff --git a/src/overlays/scenes/ov002_field/Ov002_SetPageMarkTarget.c b/src/overlays/scenes/ov002_field/Ov002_SetPageMarkTarget.c
 index ad6c16da4..a18d16f23 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_SetPageMarkTarget.c
@@ -13460,6 +15642,16 @@ index 151c2e390..c3c9bd617 100644
          pOfs[0] = 0x180000;
          pOfs[2] = 0x180000;
          ctx->apHandlers[0] = (void *)Ov002_SetBgOfs_sub1010;
+diff --git a/src/overlays/scenes/ov002_field/Ov002_SetRosterHighlight.c b/src/overlays/scenes/ov002_field/Ov002_SetRosterHighlight.c
+index fa4458cdd..7048c02ce 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_SetRosterHighlight.c
++++ b/src/overlays/scenes/ov002_field/Ov002_SetRosterHighlight.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_020888ec kh_ovd_func_ov022_020888ec
+ /* Turn the roster highlight on or off for every row, and remember which it is.
+  *
+  * The row count comes from the roster module, plus one more row while the phase word reads five.
 diff --git a/src/overlays/scenes/ov002_field/Ov002_SetUpSubScreen.c b/src/overlays/scenes/ov002_field/Ov002_SetUpSubScreen.c
 index 0c475b3cd..bdd4329c5 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_SetUpSubScreen.c
@@ -13582,6 +15774,36 @@ index 516e3a913..4c5e3b761 100644
  #define FS_OVERLAY_ID_ov069 ((FSOverlayID)(u32) & (OVERLAY_69_ID))
  
  extern int data_ov002_0207fa00;
+diff --git a/src/overlays/scenes/ov002_field/Ov002_SpareEntryHandleMessage.c b/src/overlays/scenes/ov002_field/Ov002_SpareEntryHandleMessage.c
+index c4acd4b23..6fef45556 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_SpareEntryHandleMessage.c
++++ b/src/overlays/scenes/ov002_field/Ov002_SpareEntryHandleMessage.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_020888ec kh_ovd_func_ov022_020888ec
+ extern void Ov002_ParkSpareEntry(void *pSlot);
+ extern int Ov002_IsSessionOpen(void);
+ extern void func_ov022_020888ec(int nIndex, int bOn);
+diff --git a/src/overlays/scenes/ov002_field/Ov002_SpareEntryStep.c b/src/overlays/scenes/ov002_field/Ov002_SpareEntryStep.c
+index 986cdfed0..3d004d05f 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_SpareEntryStep.c
++++ b/src/overlays/scenes/ov002_field/Ov002_SpareEntryStep.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_020888ec kh_ovd_func_ov022_020888ec
+ 
+ #include "nitro/types.h"
+ 
+diff --git a/src/overlays/scenes/ov002_field/Ov002_SpareEntryTryBegin.c b/src/overlays/scenes/ov002_field/Ov002_SpareEntryTryBegin.c
+index b33267a7b..0442e7f1e 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_SpareEntryTryBegin.c
++++ b/src/overlays/scenes/ov002_field/Ov002_SpareEntryTryBegin.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_020888ec kh_ovd_func_ov022_020888ec
+ extern int Ov002_Hud_IsPanelOpen(void);
+ extern int Ov002_GetRootField8b68Alt(void);
+ extern int Ov002_RunShutdownHook(void);
 diff --git a/src/overlays/scenes/ov002_field/Ov002_StartGaugeTween.c b/src/overlays/scenes/ov002_field/Ov002_StartGaugeTween.c
 index 80ef354ce..ba7acddde 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_StartGaugeTween.c
@@ -13663,6 +15885,16 @@ index fd7b62f92..7d17b1f94 100644
  
  typedef struct {
      char pad000[0x10];
+diff --git a/src/overlays/scenes/ov002_field/Ov002_StepRosterSlotRelease.c b/src/overlays/scenes/ov002_field/Ov002_StepRosterSlotRelease.c
+index 6b346f268..abbcc09ba 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_StepRosterSlotRelease.c
++++ b/src/overlays/scenes/ov002_field/Ov002_StepRosterSlotRelease.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_02087298 kh_ovd_func_ov022_02087298
+ /* Step one roster slot's release, and say whether it is finished.
+  *
+  * A slot index of -1 means the currently active slot, which comes from
 diff --git a/src/overlays/scenes/ov002_field/Ov002_TakeLock.c b/src/overlays/scenes/ov002_field/Ov002_TakeLock.c
 index 2de8d6eb6..d69323e97 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_TakeLock.c
@@ -13751,6 +15983,16 @@ index 779179365..0691779d1 100644
      int nPhase;                         /* +0x08 */
      int pad0c;
      int nPending;                       /* +0x10 */
+diff --git a/src/overlays/scenes/ov002_field/Ov002_TickCamera.c b/src/overlays/scenes/ov002_field/Ov002_TickCamera.c
+index 192cf2a6d..36c475c63 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_TickCamera.c
++++ b/src/overlays/scenes/ov002_field/Ov002_TickCamera.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_IsBit2SetVia0x20 kh_ovd_Ov022_IsBit2SetVia0x20
+ 
+ #include "nitro/fx_types.h"
+ 
 diff --git a/src/overlays/scenes/ov002_field/Ov002_TickEntryPool.c b/src/overlays/scenes/ov002_field/Ov002_TickEntryPool.c
 index 23fffaed3..117d26914 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_TickEntryPool.c
@@ -13773,6 +16015,16 @@ index 23fffaed3..117d26914 100644
      long long (*pfnSample)(void);       /* +0x4c */
      int bSampling;                      /* +0x50 */
  } Ov002PoolEntry;
+diff --git a/src/overlays/scenes/ov002_field/Ov002_TickLockedCamera.c b/src/overlays/scenes/ov002_field/Ov002_TickLockedCamera.c
+index 1111f52a7..dad527e89 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_TickLockedCamera.c
++++ b/src/overlays/scenes/ov002_field/Ov002_TickLockedCamera.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_IsBit2SetVia0x20 kh_ovd_Ov022_IsBit2SetVia0x20
+ 
+ #include "nitro/fx_types.h"
+ 
 diff --git a/src/overlays/scenes/ov002_field/Ov002_TickScene.c b/src/overlays/scenes/ov002_field/Ov002_TickScene.c
 index 245adba49..68540ed70 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_TickScene.c
@@ -13802,6 +16054,26 @@ index 245adba49..68540ed70 100644
      Ov002GaugeSlot aSlots[4];           /* +0x6c */
      Ov002CountPair aCounts[4];          /* +0xcc */
      u8 pad00dc[0x18];
+diff --git a/src/overlays/scenes/ov002_field/Ov002_TriggerOnceOnFlag.c b/src/overlays/scenes/ov002_field/Ov002_TriggerOnceOnFlag.c
+index 47c3f47ea..5faa9ec43 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_TriggerOnceOnFlag.c
++++ b/src/overlays/scenes/ov002_field/Ov002_TriggerOnceOnFlag.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_02083fa4 kh_ovd_func_ov022_02083fa4
+ /* The first time it runs outside shutdown, sets game flag 0x2086, notifies the party when the root
+  * counter at +0x8ca4 is positive, and updates the rate panel in mode 4 unless flag 0x20e8 is set;
+  * returns whether flag 0x2086 is set. */
+diff --git a/src/overlays/scenes/ov002_field/Ov002_UpdateFieldMusic.c b/src/overlays/scenes/ov002_field/Ov002_UpdateFieldMusic.c
+index faf0a7675..2f465f516 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_UpdateFieldMusic.c
++++ b/src/overlays/scenes/ov002_field/Ov002_UpdateFieldMusic.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov022_02083fa4 kh_ovd_func_ov022_02083fa4
+ #include "game/engine.h"
+ 
+ extern int func_ov022_02086ef4(void);
 diff --git a/src/overlays/scenes/ov002_field/Ov002_UpdateGaugeUnits.c b/src/overlays/scenes/ov002_field/Ov002_UpdateGaugeUnits.c
 index fb35ea937..636a0e63b 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_UpdateGaugeUnits.c
@@ -13845,6 +16117,16 @@ index a0fa19632..4d0548363 100644
 -    G2x_SetBlendAlpha_((u32 *)0x04000050, 8, 0x21, 0x10, 0);
 +    G2x_SetBlendAlpha_((u32 *)KH_HW(0x04000050), 8, 0x21, 0x10, 0);
  }
+diff --git a/src/overlays/scenes/ov002_field/func_ov002_0206d31c.c b/src/overlays/scenes/ov002_field/func_ov002_0206d31c.c
+index 18fb83be1..9d1c42366 100644
+--- a/src/overlays/scenes/ov002_field/func_ov002_0206d31c.c
++++ b/src/overlays/scenes/ov002_field/func_ov002_0206d31c.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_SetupPartyRootAndEntry kh_ovd_Ov022_SetupPartyRootAndEntry
+ /* Sets up the party root and entry (Ov022_SetupPartyRootAndEntry). */
+ 
+ extern int Ov022_SetupPartyRootAndEntry();
 diff --git a/src/overlays/scenes/ov003/Ov003_DisplaySetup.c b/src/overlays/scenes/ov003/Ov003_DisplaySetup.c
 index ab5993122..e3338f37b 100644
 --- a/src/overlays/scenes/ov003/Ov003_DisplaySetup.c
@@ -15146,6 +17428,16 @@ index a2164ec07..387c93a91 100644
  };
  
  void Ov008_GetGridMaskExtent(struct S *s, unsigned short *outW, unsigned short *outH)
+diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_GetTagIndex.c b/src/overlays/scenes/ov008_camp_menu/Ov008_GetTagIndex.c
+index e540cb7b2..7e67ffa22 100644
+--- a/src/overlays/scenes/ov008_camp_menu/Ov008_GetTagIndex.c
++++ b/src/overlays/scenes/ov008_camp_menu/Ov008_GetTagIndex.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov004_CanTriggerActionInRange kh_ovd_Ov004_CanTriggerActionInRange
+ /* Ov008_GetTagIndex -- return the 0-based index stored in a node's 1-based tag byte, ov008.
+  * Returns -1 for a null node or an unset (zero) tag; otherwise the tag minus one, kept to
+  * 16 bits.
 diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_InitCampaignMenuContext.c b/src/overlays/scenes/ov008_camp_menu/Ov008_InitCampaignMenuContext.c
 index 674ce89e4..829ba9534 100644
 --- a/src/overlays/scenes/ov008_camp_menu/Ov008_InitCampaignMenuContext.c
@@ -16897,15 +19189,17 @@ index cb32532b2..435f71b0a 100644
      *(int *)(root + 0x8bec) = keys & 8;
      return (void *)Ov012_RunOpeningScene;
 diff --git a/src/overlays/scenes/ov012_opening/Ov012_RunOpeningScene.c b/src/overlays/scenes/ov012_opening/Ov012_RunOpeningScene.c
-index 3f9b994de..4d67bb4af 100644
+index 3f9b994de..3130d3bdd 100644
 --- a/src/overlays/scenes/ov012_opening/Ov012_RunOpeningScene.c
 +++ b/src/overlays/scenes/ov012_opening/Ov012_RunOpeningScene.c
-@@ -1,3 +1,4 @@
+@@ -1,3 +1,6 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov024_MobiClip_StopPlayback kh_ovd_Ov024_MobiClip_StopPlayback
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: fixed DS addresses */
  /* Runs the opening-scene script and display loop, handles skip input and thread-count changes,
   * waits for the brightness transition, then resets the script/display state and selects the next
   * scene. */
-@@ -47,8 +48,8 @@ void *Ov012_RunOpeningScene(void) {
+@@ -47,8 +50,8 @@ void *Ov012_RunOpeningScene(void) {
              initialThreadCount = previousThreadCount;
              loopStatus = Ov024_TickStreamSlots();
              if (loopStatus == 0) {
@@ -16916,6 +19210,16 @@ index 3f9b994de..4d67bb4af 100644
                  keyMask = 0x2fff;
                  do {
                      if ((*(u16 *)(context + 2) & 4) != 0) {
+diff --git a/src/overlays/scenes/ov012_opening/Ov012_StartOpeningMovie.c b/src/overlays/scenes/ov012_opening/Ov012_StartOpeningMovie.c
+index 2775ad91e..a339828d3 100644
+--- a/src/overlays/scenes/ov012_opening/Ov012_StartOpeningMovie.c
++++ b/src/overlays/scenes/ov012_opening/Ov012_StartOpeningMovie.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov024_MobiClip_OpenStreams kh_ovd_Ov024_MobiClip_OpenStreams
+ /* Initializes the opening movie renderer and tilemaps, registers the frame callback, and opens the
+  * requested stream in slot 1. If the stream fails to open it only sets flag 2 of the context:
+  * Ov012_RunOpeningScene then never sets the movie state 3 and the scene script, waiting on
 diff --git a/src/overlays/scenes/ov012_opening/Ov012_UpdateOpeningBrightness.c b/src/overlays/scenes/ov012_opening/Ov012_UpdateOpeningBrightness.c
 index 1037d4866..36f94e9e4 100644
 --- a/src/overlays/scenes/ov012_opening/Ov012_UpdateOpeningBrightness.c
@@ -17042,6 +19346,16 @@ index e4ba7aa22..5608eb3e1 100644
  };
  
  void Ov025_GetGridMaskExtent(struct S *s, unsigned short *outW, unsigned short *outH)
+diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_GetTagIndex.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_GetTagIndex.c
+index 660afcac5..e40a93a25 100644
+--- a/src/overlays/screens/ov025_camp_menu_2/Ov025_GetTagIndex.c
++++ b/src/overlays/screens/ov025_camp_menu_2/Ov025_GetTagIndex.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov004_CanTriggerActionInRange kh_ovd_Ov004_CanTriggerActionInRange
+ /* Ov025_GetTagIndex -- return the 0-based index stored in a node's 1-based tag byte, ov025.
+  * Byte-identical twin of Ov008_GetTagIndex.
+  * Returns -1 for a null node or an unset (zero) tag; otherwise the tag minus one, kept to
 diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_Hub_SetupGraphics.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_Hub_SetupGraphics.c
 index cee0b4dc4..823664bd3 100644
 --- a/src/overlays/screens/ov025_camp_menu_2/Ov025_Hub_SetupGraphics.c
@@ -17160,6 +19474,16 @@ index 6f7de0877..bea8053cd 100644
 +    G2x_SetBlendAlpha_((volatile u16 *)KH_HW(0x04000050), 1, 0x1e, 0x10, 0x10);
  }
  
+diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_LiftTrackedNode.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_LiftTrackedNode.c
+index c82228a44..bcc1a9d5b 100644
+--- a/src/overlays/screens/ov025_camp_menu_2/Ov025_LiftTrackedNode.c
++++ b/src/overlays/screens/ov025_camp_menu_2/Ov025_LiftTrackedNode.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov008_LiftTrackedNode kh_ovd_Ov008_LiftTrackedNode
+ /* Ov025_LiftTrackedNode -- Ov008_LiftTrackedNode: collect the cells of tracked
+  * node pNode for dragging.  After the tracked grid cells are cleared, every
+  * cell of the node's box (+0xc/+0xe, +0x14 x +0x16) on its page (+0xa) other
 diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_LoadMenuBgWithVariantChars.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_LoadMenuBgWithVariantChars.c
 index 4b76e6bf3..6725c07a0 100644
 --- a/src/overlays/screens/ov025_camp_menu_2/Ov025_LoadMenuBgWithVariantChars.c
@@ -17719,6 +20043,16 @@ index cc6059c74..69bcae544 100644
 +    *(vu32 *)KH_HW(0x04001000) &= ~0x1f00;
      Ov002_SetDisplaySwap(1);
  }
+diff --git a/src/overlays/screens/ov026_shop/Ov026_RebuildShopList.c b/src/overlays/screens/ov026_shop/Ov026_RebuildShopList.c
+index c6d6202da..252441385 100644
+--- a/src/overlays/screens/ov026_shop/Ov026_RebuildShopList.c
++++ b/src/overlays/screens/ov026_shop/Ov026_RebuildShopList.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov008_RebuildShopList kh_ovd_Ov008_RebuildShopList
+ /* Ov026_RebuildShopList -- Ov008_RebuildShopList: rebuild the shop's record
+  * list for the current tab (+0xc250) and category (+0xc3c0): tab 0 builds
+  * the shop list for the story level (1 with flag 0x200b set, else field
 diff --git a/src/overlays/screens/ov026_shop/Ov026_SetupShopDisplay.c b/src/overlays/screens/ov026_shop/Ov026_SetupShopDisplay.c
 index e12b29213..24b12561e 100644
 --- a/src/overlays/screens/ov026_shop/Ov026_SetupShopDisplay.c
@@ -17741,6 +20075,36 @@ index e12b29213..24b12561e 100644
  
  extern void  GX_SetBankForTex(int nBank);
  extern void  GX_SetBankForTexPltt(int nBank);
+diff --git a/src/overlays/screens/ov026_shop/Ov026_ShopListInput.c b/src/overlays/screens/ov026_shop/Ov026_ShopListInput.c
+index a4d9230d2..a8bd1c72f 100644
+--- a/src/overlays/screens/ov026_shop/Ov026_ShopListInput.c
++++ b/src/overlays/screens/ov026_shop/Ov026_ShopListInput.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov008_RebuildShopList kh_ovd_Ov008_RebuildShopList
+ /* Ov026_ShopListInput -- Ov008_ShopListInput: one frame of input on the
+  * shop's row list; returns the next step (02088c24 after a confirmed row,
+  * 02088c00 after cancel) or 0.  Down / up (input source +0xc0fc bits 0x80 /
+diff --git a/src/overlays/screens/ov026_shop/Ov026_Shop_LayoutPage.c b/src/overlays/screens/ov026_shop/Ov026_Shop_LayoutPage.c
+index 8b36295b1..100caa751 100644
+--- a/src/overlays/screens/ov026_shop/Ov026_Shop_LayoutPage.c
++++ b/src/overlays/screens/ov026_shop/Ov026_Shop_LayoutPage.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov008_RebuildShopList kh_ovd_Ov008_RebuildShopList
+ /* Ov026_Shop_LayoutPage -- Ov008_SetupShopPage: build the shop panel for the
+  * current tab (+0xc250).  The tab's tier page (0208500c: widget ids, tag
+  * ids, list id and column) is shown, then eight row cells are created on
+diff --git a/src/overlays/screens/ov026_shop/data/ov026_tables_020910b0.c b/src/overlays/screens/ov026_shop/data/ov026_tables_020910b0.c
+index 206445bc6..852f35d25 100644
+--- a/src/overlays/screens/ov026_shop/data/ov026_tables_020910b0.c
++++ b/src/overlays/screens/ov026_shop/data/ov026_tables_020910b0.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov008_RebuildShopList kh_ovd_Ov008_RebuildShopList
+ /* ov026 .rodata tables, 0x020910b0-0x02091120.
+  *
+  * 13 contiguous tables, each written in the width its contents are in:
 diff --git a/src/overlays/screens/ov027_game_over/Ov027_GameOverChoice.c b/src/overlays/screens/ov027_game_over/Ov027_GameOverChoice.c
 index 982a98367..405bf4590 100644
 --- a/src/overlays/screens/ov027_game_over/Ov027_GameOverChoice.c
@@ -17905,6 +20269,18 @@ index a9e8d9e0e..2f359ec8f 100644
      int target;
      int value;
      unsigned short h;
+diff --git a/src/overlays/screens/ov069/Ov069_TallyMissionRecords.c b/src/overlays/screens/ov069/Ov069_TallyMissionRecords.c
+index e95b73284..2e8700fb5 100644
+--- a/src/overlays/screens/ov069/Ov069_TallyMissionRecords.c
++++ b/src/overlays/screens/ov069/Ov069_TallyMissionRecords.c
+@@ -1,3 +1,7 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov302_FindListObjectWithField10Zero kh_ovd_Ov302_FindListObjectWithField10Zero
++#define Ov302_GetId10 kh_ovd_Ov302_GetId10
++#define Ov302_InitObjectWithList kh_ovd_Ov302_InitObjectWithList
+ /* Fills the 5-word mission tally `out`: [4] whether the current level's flag is set (8704; when
+  * clear everything stays zero), [3] the number of records the ov302 record set (overlay 0x12e,
+  * built from the overlay's +0xba7ec init triple with the level from 235d0 kind 9 in the middle)
 diff --git a/src/overlays/screens/ov106/Ov106_ApplyFadeBlend.c b/src/overlays/screens/ov106/Ov106_ApplyFadeBlend.c
 index 291f1f533..94c2dff38 100644
 --- a/src/overlays/screens/ov106/Ov106_ApplyFadeBlend.c
@@ -17971,6 +20347,16 @@ index a1767748e..6dbd26893 100644
      VBlank_UnregisterCallback(1, gOv106Dual3DUpdateName);
      Gfx_SetupSubEngine(data_ov106_020b8b60 + 0x8b38);
      ReleaseField74AndCleanup(data_ov106_020b8b60 + 0x8cd0);
+diff --git a/src/overlays/screens/ov106/Ov106_UpdateInteractPrompt.c b/src/overlays/screens/ov106/Ov106_UpdateInteractPrompt.c
+index 64a5220d0..05129be71 100644
+--- a/src/overlays/screens/ov106/Ov106_UpdateInteractPrompt.c
++++ b/src/overlays/screens/ov106/Ov106_UpdateInteractPrompt.c
+@@ -1,3 +1,5 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define Ov022_IsBit2SetVia0x20 kh_ovd_Ov022_IsBit2SetVia0x20
+ /* Interaction check of the ov106 scene: unless the scene is paused (field 0x248c clear while a player
+  * is selected), with the ov022 camera, the ov002 scene, a player actor and its controller ready and
+  * the selected player's entity present, an actor that is not free to act (ov022 02086620/02086888) is
 diff --git a/src/overlays/system/ov001_boot/Ov001_BootInit.c b/src/overlays/system/ov001_boot/Ov001_BootInit.c
 index a6ecbf1df..b0f0f4c00 100644
 --- a/src/overlays/system/ov001_boot/Ov001_BootInit.c
@@ -18431,6 +20817,19 @@ index 3752020b6..44a616304 100644
      LoadOverlaySync(0, loaded);
      data_ov029_020b2f70[group].initFns[k]();
      return loaded;
+diff --git a/src/overlays/system/ov029/data/ov029_pointers_020b2f70.c b/src/overlays/system/ov029/data/ov029_pointers_020b2f70.c
+index b873c1bb1..c0e345d6d 100644
+--- a/src/overlays/system/ov029/data/ov029_pointers_020b2f70.c
++++ b/src/overlays/system/ov029/data/ov029_pointers_020b2f70.c
+@@ -1,3 +1,8 @@
++/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
++#define func_ov030_020b3220 kh_ovd_func_ov030_020b3220
++#define func_ov050_020b5a20 kh_ovd_func_ov050_020b5a20
++#define func_ov070_020b8100 kh_ovd_func_ov070_020b8100
++#define func_ov088_020ba7c0 kh_ovd_func_ov088_020ba7c0
+ /* ov029 .rodata pointer tables, 0x020b2f70-0x020b30b0.
+  *
+  * 1 table, all zero in the ROM image because every entry is a relocation;
 diff --git a/src/overlays/system/ov105_wireless/Ov105_ClearSharedRequestBit.c b/src/overlays/system/ov105_wireless/Ov105_ClearSharedRequestBit.c
 index df9817e95..e188981e1 100644
 --- a/src/overlays/system/ov105_wireless/Ov105_ClearSharedRequestBit.c

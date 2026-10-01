@@ -32,6 +32,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import ovdisp  # noqa: E402
+
 # The decomp's tools/configure.py ABSOLUTE_SYMBOLS that are second names of a data symbol.
 ALIASES = ("data_ov002_0207e9f4_default", "data_ov002_0207ef80_offsets")
 
@@ -353,11 +356,13 @@ def main():
     archives = overlay_archives(decomp)
     (out / "overlays.ld").write_text(overlay_script(archives, data_files(decomp, archives, by_addr)))
     (out / "overlays.c").write_text(overlay_table(cfg, rom, by_addr, archives))
+    tgts = ovdisp.targets(cfg)
+    asm += ovdisp.dispatcher_asm(tgts)
     (out / "ds_bss.S").write_text("\n".join(asm) + "\n")
     (out / "bss_names.txt").write_text("\n".join(names) + "\n")
     (out / "link.rsp").write_text("\n".join(link) + "\n")
     print(f"gen_link_support: {len(names)} bss symbols in {total} bytes, {len(link)} aliases,"
-          f" {len(SUBOBJECTS)} names inside blocks")
+          f" {len(SUBOBJECTS)} names inside blocks, {len(tgts)} shared-address overlay calls")
     return 0
 
 

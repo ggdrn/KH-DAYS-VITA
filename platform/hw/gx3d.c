@@ -818,6 +818,11 @@ void kh_gx3d_sync_gxstat(void)
     KH_IO32(0x04000600) = v;
 }
 
+uint32_t kh_gx3d_serial(void)
+{
+    return __atomic_load_n(&s_serial, __ATOMIC_ACQUIRE);
+}
+
 void kh_gx3d_take_stats(KhGx3dStats *out)
 {
     *out = s_stats;
