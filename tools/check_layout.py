@@ -52,6 +52,29 @@ def main():
             if where[y][0] - where[x][0] != b - a:
                 bad.append(f"{member.split('/')[-1]}: {x} -> {y}: DS +{b - a:#x}, ELF "
                            f"{where[y][0] - where[x][0]:+#x} ({section})")
+    # across files: objects back to back on the DS (one ends where the next starts) should be
+    # back to back here too; gen_link_support.py orders them so. Reported, not fatal.
+    sizes = {}
+    for line in out.splitlines():
+        p = line.split()
+        if len(p) >= 6 and p[2] == "O" and DS_NAME.match(p[-1]):
+            sizes[p[-1]] = int(p[4], 16)
+    runs = defaultdict(list)
+    for name, (addr, section) in where.items():
+        m = DS_NAME.match(name)
+        if m and name in sizes:
+            runs[(m.group(1) or "", section)].append((int(m.group(2), 16), name))
+    split = 0
+    for items in runs.values():
+        items.sort()
+        for (a, x), (b, y) in zip(items, items[1:]):
+            if a + sizes[x] == b and where[y][0] - where[x][0] != b - a:
+                split += 1
+                if split <= 10:
+                    print(f"  across files: {x} -> {y}: DS +{b - a:#x}, ELF "
+                          f"{where[y][0] - where[x][0]:+#x}", file=sys.stderr)
+    if split:
+        print(f"check_layout: {split} DS-contiguous object pairs apart in the ELF", file=sys.stderr)
     if bad:
         print(f"check_layout: {len(bad)} neighbouring objects out of their DS layout:", file=sys.stderr)
         for b in bad[:int(os.environ.get("KH_LAYOUT_SHOW", "40"))]:

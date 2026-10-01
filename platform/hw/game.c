@@ -14,6 +14,7 @@
 #include "hw/shared_area.h"
 #include "config.h"
 #include "console.h"
+#include "workers.h"
 #include "input.h"
 #include "log.h"
 #include "nitro/arm7.h"
@@ -32,6 +33,8 @@
 #include <psp2/kernel/cpu.h>
 
 static int s_gpu3d;          /* the GPU 3D renderer is up */
+static uint64_t s_render_total, s_window_start; /* 2D time and wall clock since the last report */
+static uint32_t s_render_max;
 
 extern void NitroMain(void);
 
@@ -70,6 +73,8 @@ static void boot_state(void)
     kh_romfs_init();
     kh_gx3d_init();
     s_gpu3d = kh_gpu3d_init(kh_config.render_scale);
+    kh_gpu2d_init();
+    workers_init();
     kh_hw_reset();
     memcpy(KH_SHARED(HW_ROM_HEADER_BUF), rom_header(), HW_ROM_HEADER_SIZE);
     memcpy(KH_SHARED(HW_CARD_ROM_HEADER), rom_header(), HW_ROM_HEADER_SIZE);
@@ -94,6 +99,21 @@ static void boot_state(void)
 
 static uint32_t s_render_us; /* the last frame's 2D rendering time, both engines */
 
+typedef struct {
+    uint32_t *a, *b; /* the engines' screens */
+    int y0, y1, a3d;
+} Band;
+
+/* lines per band: the upper band also carries the 3D submission */
+#define BAND_SPLIT 88
+
+static void render_band(void *arg)
+{
+    Band *band = arg;
+    band->a3d = kh_gpu2d_render_lines(KH_ENGINE_A, band->a, band->y0, band->y1);
+    kh_gpu2d_render_lines(KH_ENGINE_B, band->b, band->y0, band->y1);
+}
+
 static void present(void)
 {
     /* POWCNT1 bit 15: engine A on the top screen */
@@ -101,10 +121,22 @@ static void present(void)
     uint64_t t0 = sceKernelGetProcessTimeWide();
     unsigned tex3d = 0;
     int a3d;
-    a3d = kh_gpu2d_render(KH_ENGINE_A, a_on_top ? s_top : s_bottom);
-    kh_gpu2d_render(KH_ENGINE_B, a_on_top ? s_bottom : s_top);
-    s_render_us = (uint32_t)(sceKernelGetProcessTimeWide() - t0);
+    Band low = { a_on_top ? s_top : s_bottom, a_on_top ? s_bottom : s_top, BAND_SPLIT, 192, 0 };
+
+    /* the 2D engines in two bands: the lower one on the helper core while this one draws the
+     * upper band and sends the 3D frame to the GPU */
+    workers_post(render_band, &low);
+    a3d = kh_gpu2d_render_lines(KH_ENGINE_A, low.a, 0, BAND_SPLIT);
+    kh_gpu2d_render_lines(KH_ENGINE_B, low.b, 0, BAND_SPLIT);
     if (a3d && s_gpu3d)
+        tex3d = kh_gpu3d_render(kh_gx3d_acquire());
+    workers_wait();
+    s_render_us = (uint32_t)(sceKernelGetProcessTimeWide() - t0);
+    s_render_total += s_render_us;
+    if (s_render_us > s_render_max)
+        s_render_max = s_render_us;
+    a3d |= low.a3d;
+    if (a3d && s_gpu3d && !tex3d)
         tex3d = kh_gpu3d_render(kh_gx3d_acquire());
     video_set_3d(tex3d ? (a_on_top ? 0 : 1) : -1, tex3d, KH_IO16(0x0400006c));
     if (a3d && !tex3d) {
@@ -245,7 +277,16 @@ void kh_game_run(void)
         }
         if ((++frame % 600) == 0) {
             KhGx3dStats gs;
-            LOG("game: %s 2d %uus", status, (unsigned)s_render_us);
+            {
+                uint64_t now = sceKernelGetProcessTimeWide();
+                LOG("game: %s 2d avg %uus max %uus, %u.%u fps", status,
+                    (unsigned)(s_render_total / 600), (unsigned)s_render_max,
+                    (unsigned)(6000000000ull / (now - s_window_start)) / 10,
+                    (unsigned)(6000000000ull / (now - s_window_start)) % 10);
+                s_window_start = now;
+                s_render_total = 0;
+                s_render_max = 0;
+            }
             kh_gx3d_take_stats(&gs);
             {
                 KhGpu3dStats rs;

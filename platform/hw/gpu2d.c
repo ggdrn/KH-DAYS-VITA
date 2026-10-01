@@ -500,10 +500,16 @@ static int window_line(const Engine *e, int line, const ObjLine *o, uint8_t *ctl
 /* One line into out as BGR555. The layers shown are put in drawing order once per line
  * (priority, then BG number); per pixel only those are looked at, and the window and colour
  * effect work is done only when they are on. */
-static void compose_line(const Engine *e, int line, uint16_t *out, uint8_t *code)
+typedef struct {
+    uint16_t bgl[4][W];
+    ObjLine obj;
+} Scratch; /* one per thread rendering lines */
+
+static void compose_line(const Engine *e, int line, uint16_t *out, uint8_t *code, Scratch *sc)
 {
-    static uint16_t bgl[4][W];
-    static ObjLine obj;
+    uint16_t (*bgl)[W] = sc->bgl;
+    ObjLine *const objp = &sc->obj;
+#define obj (*objp)
     uint8_t ctl[W];
     const uint16_t bldcnt = io16(e, 0x50), bldalpha = io16(e, 0x52);
     const int effect = (bldcnt >> 6) & 3;
@@ -609,67 +615,85 @@ static void compose_line(const Engine *e, int line, uint16_t *out, uint8_t *code
     }
 }
 
-static void master_brightness(const Engine *e, uint32_t *fb)
+#undef obj
+
+/* MASTER_BRIGHT as (mode, factor): mode 1 brighter, 2 darker, 0 off */
+static int master_mode(const Engine *e, int *f)
 {
     const uint16_t mb = io16(e, 0x6c);
     const int mode = (mb >> 14) & 3;
-    int f = mb & 31, i;
-    if (mode != 1 && mode != 2)
-        return;
-    if (f > 16)
-        f = 16;
-    if (!f)
-        return;
-    for (i = 0; i < W * H; i++) {
-        uint32_t c = fb[i], o = 0xff000000u;
-        int ch;
-        for (ch = 0; ch < 24; ch += 8) {
-            int v = (c >> ch) & 0xff;
-            v = mode == 1 ? v + (((255 - v) * f) >> 4) : v - ((v * f) >> 4);
-            o |= (uint32_t)v << ch;
-        }
-        fb[i] = o;
+    *f = mb & 31;
+    if (*f > 16)
+        *f = 16;
+    return (mode == 1 || mode == 2) && *f ? mode : 0;
+}
+
+/* one BGR555 row to RGBA, through master brightness */
+static void row_out(const uint16_t *row, uint32_t *dst, int mmode, int mf)
+{
+    int x;
+    if (mmode == 1)
+        for (x = 0; x < W; x++)
+            dst[x] = to_rgba(brighten(row[x], mf));
+    else if (mmode == 2)
+        for (x = 0; x < W; x++)
+            dst[x] = to_rgba(darken(row[x], mf));
+    else
+        for (x = 0; x < W; x++)
+            dst[x] = to_rgba(row[x]);
+}
+
+void kh_gpu2d_init(void)
+{
+    init_rgba();
+}
+
+int kh_gpu2d_render_lines(int engine, uint32_t *fb, int y0, int y1)
+{
+    Engine e;
+    Scratch sc;
+    int mode, line, x, mmode, mf;
+
+    engine_setup(&e, engine);
+    mode = (e.dispcnt >> 16) & (e.is_a ? 3 : 1);
+    fb += y0 * W;
+    if (mode == 0 || (e.dispcnt & 0x80)) { /* display off, or forced blank: white */
+        memset(fb, 0xff, (size_t)(y1 - y0) * W * sizeof(*fb));
+        return 0;
     }
+    mmode = master_mode(&e, &mf);
+    if (mode == 2) { /* engine A shows a VRAM bank (A-D) as a 256x192 direct-colour bitmap */
+        const uint8_t *bank = kh_vram_bank_home((e.dispcnt >> 18) & 3);
+        for (line = y0; line < y1; line++, fb += W) {
+            uint16_t row[W];
+            memcpy(row, bank + line * W * 2, sizeof(row));
+            for (x = 0; x < W; x++)
+                row[x] &= 0x7fff;
+            row_out(row, fb, mmode, mf);
+        }
+        return 0;
+    }
+    if (mode == 3) { /* main memory display FIFO: not emulated */
+        memset(fb, 0, (size_t)(y1 - y0) * W * sizeof(*fb));
+        return 0;
+    }
+    for (line = y0; line < y1; line++, fb += W) {
+        uint16_t row[W];
+        uint8_t code[W];
+        compose_line(&e, line, row, code, &sc);
+        if (e.has3d) {
+            /* master brightness then comes after the composition, on the GPU */
+            for (x = 0; x < W; x++)
+                fb[x] = (to_rgba(row[x]) & 0xffffffu) | (uint32_t)code[x] << 24;
+        } else {
+            row_out(row, fb, mmode, mf);
+        }
+    }
+    return e.has3d;
 }
 
 int kh_gpu2d_render(int engine, uint32_t *fb)
 {
-    Engine e;
-    int mode, line, x;
-
     init_rgba();
-    engine_setup(&e, engine);
-    mode = (e.dispcnt >> 16) & (e.is_a ? 3 : 1);
-    if (mode == 0 || (e.dispcnt & 0x80)) { /* display off, or forced blank: white */
-        memset(fb, 0xff, W * H * sizeof(*fb));
-        return 0;
-    }
-    if (mode == 2) { /* engine A shows a VRAM bank (A-D) as a 256x192 direct-colour bitmap */
-        const uint8_t *bank = kh_vram_bank_home((e.dispcnt >> 18) & 3);
-        for (x = 0; x < W * H; x++) {
-            uint16_t c;
-            memcpy(&c, bank + x * 2, 2);
-            fb[x] = to_rgba(c);
-        }
-    } else if (mode == 3) { /* main memory display FIFO: not emulated */
-        memset(fb, 0, W * H * sizeof(*fb));
-    } else {
-        for (line = 0; line < H; line++) {
-            uint16_t row[W];
-            uint8_t code[W];
-            uint32_t *dst = fb + line * W;
-            compose_line(&e, line, row, code);
-            if (e.has3d) {
-                for (x = 0; x < W; x++)
-                    dst[x] = (to_rgba(row[x]) & 0xffffffu) | (uint32_t)code[x] << 24;
-            } else {
-                for (x = 0; x < W; x++)
-                    dst[x] = to_rgba(row[x]);
-            }
-        }
-        if (e.has3d)
-            return 1; /* master brightness then comes after the composition, on the GPU */
-    }
-    master_brightness(&e, fb);
-    return 0;
+    return kh_gpu2d_render_lines(engine, fb, 0, H);
 }

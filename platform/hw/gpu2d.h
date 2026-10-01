@@ -25,4 +25,9 @@ enum {
  * left to the composition. */
 int kh_gpu2d_render(int engine, uint32_t *fb);
 
+/* Lines y0..y1-1 only (fb is still the whole screen), from any thread: bands of one frame can
+ * be rendered in parallel. kh_gpu2d_init first. */
+void kh_gpu2d_init(void);
+int kh_gpu2d_render_lines(int engine, uint32_t *fb, int y0, int y1);
+
 #endif
