@@ -22,10 +22,8 @@ static const struct {
 };
 
 static uint32_t s_prev_buttons;
-static uint64_t s_back_since; /* when the rear touchpad was first touched, 0 when untouched */
-static int s_back_fired;      /* the current hold already swapped the screens */
-
-#define BACK_HOLD_US 1000000
+static int s_front_down;  /* a finger is on the front panel */
+static int s_front_swap;  /* that touch began on the small screen: it swaps, it is no tap */
 
 /* ---- game-side hooks (decomp patch, PLATFORM_VITA) ------------------------------------------
  * The right stick turns the field camera and the Vita's d-pad moves the command deck's
@@ -114,7 +112,6 @@ void input_init(void)
 {
     sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
     sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
-    sceTouchSetSamplingState(SCE_TOUCH_PORT_BACK, SCE_TOUCH_SAMPLING_STATE_START);
 }
 
 void input_poll(InputState *out)
@@ -184,26 +181,23 @@ void input_poll(InputState *out)
     sceTouchPeek(SCE_TOUCH_PORT_FRONT, &touch, 1);
     if (touch.reportNum > 0) {
         /* front panel reports 1920x1088 */
+        const int px = touch.report[0].x / 2, py = touch.report[0].y / 2;
         int x, y;
-        if (video_map_touch(touch.report[0].x / 2, touch.report[0].y / 2, &x, &y)) {
+        if (!s_front_down) {
+            /* a touch that lands on the small screen swaps the screens; the whole touch,
+             * until the finger lifts, then belongs to that gesture */
+            s_front_down = 1;
+            s_front_swap = video_on_inset(px, py);
+            if (s_front_swap)
+                out->swap_screens = 1;
+        }
+        if (!s_front_swap && video_map_touch(px, py, &x, &y)) {
             out->touching = 1;
             out->touch_x = x;
             out->touch_y = y;
         }
-    }
-
-    /* rear touchpad held for a second: swap the screens, once per hold */
-    sceTouchPeek(SCE_TOUCH_PORT_BACK, &touch, 1);
-    if (touch.reportNum > 0) {
-        uint64_t now = sceKernelGetProcessTimeWide();
-        if (!s_back_since)
-            s_back_since = now;
-        if (!s_back_fired && now - s_back_since >= BACK_HOLD_US) {
-            out->swap_screens = 1;
-            s_back_fired = 1;
-        }
     } else {
-        s_back_since = 0;
-        s_back_fired = 0;
+        s_front_down = 0;
+        s_front_swap = 0;
     }
 }

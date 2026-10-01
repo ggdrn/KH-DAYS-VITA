@@ -25,6 +25,8 @@ void video_set_layout(ScreenLayout layout);
 ScreenLayout video_layout(void);
 /* Where the bottom (touch) screen currently is on the display. */
 ScreenRect video_bottom_rect(void);
+/* Whether display pixel (960x544) lies on the small screen (touching it swaps the screens). */
+int video_on_inset(int px, int py);
 /* Display pixel (960x544) -> DS touch-screen pixel; 0 when it is not on the touch screen. */
 int video_map_touch(int px, int py, int *x, int *y);
 /* The screen drawn small (0 top, 1 bottom), -1 when both are full size. */

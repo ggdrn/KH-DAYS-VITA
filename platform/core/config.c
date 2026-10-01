@@ -18,7 +18,7 @@ static const char s_default[] =
     "\n"
     "# Starting screen layout: top (top screen over the whole display, the touch screen small\n"
     "# in the top-right corner), bottom (the reverse), side (both side by side).\n"
-    "# Holding the rear touchpad for 1 second swaps top and bottom; L+R+Select cycles them.\n"
+    "# Touching the small screen swaps top and bottom; L+R+Select cycles the layouts.\n"
     "layout = top\n"
     "\n"
     "# Width in pixels of the small screen (it keeps the DS's 4:3), 128 to 480.\n"

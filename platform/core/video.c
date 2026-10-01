@@ -187,15 +187,20 @@ void video_swap_screens(void)
     video_set_layout(video_layout() == LAYOUT_TOP_MAIN ? LAYOUT_BOTTOM_MAIN : LAYOUT_TOP_MAIN);
 }
 
+int video_on_inset(int px, int py)
+{
+    const ScreenRect *r;
+    if (s_inset < 0 || s_pending >= 0)
+        return 0;
+    r = &s_rect[s_inset];
+    return px >= r->x && px < r->x + r->w && py >= r->y && py < r->y + r->h;
+}
+
 int video_map_touch(int px, int py, int *x, int *y)
 {
     const ScreenRect *r = &s_rect[1];
-    if (s_inset == 0) {
-        /* the top screen lies over the touch screen there */
-        const ScreenRect *t = &s_rect[0];
-        if (px >= t->x && px < t->x + t->w && py >= t->y && py < t->y + t->h)
-            return 0;
-    }
+    if (s_inset >= 0 && video_on_inset(px, py))
+        return 0; /* the small screen is a button (it swaps the screens), not the DS's */
     if (px < r->x || px >= r->x + r->w || py < r->y || py >= r->y + r->h)
         return 0;
     *x = (px - r->x) * DS_SCREEN_W / r->w;
