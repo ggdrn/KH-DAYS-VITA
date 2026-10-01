@@ -41,7 +41,8 @@ void video_set_overlay(const uint32_t *pixels);
 /* For the next video_present: screen (0 top, 1 bottom, -1 none) carries engine A's 3D layer
  * (alpha codes from hw/gpu2d.h) to lay in from the GL texture tex, then the engine's master
  * brightness (its 0x0400006c value) applied after. */
-void video_set_3d(int screen, unsigned tex, uint16_t master_bright);
+/* hofs: the 3D layer's horizontal scroll (BG0HOFS, G3X_SetHOffset), in DS pixels. */
+void video_set_3d(int screen, unsigned tex, uint16_t master_bright, int hofs);
 
 /* A CG shader program with attribs[i] at location i; 0 (logged) on failure. */
 unsigned video_build_program(const char *vs, const char *fs, const char *const *attribs,

@@ -15,6 +15,11 @@ unsigned kh_gpu3d_render(const KhGxFrame *frame);
 
 typedef struct {
     uint32_t render_us, batches, textures_decoded, textures_live, skipped;
+    uint32_t fmt[8];      /* textures decoded per format */
+    uint32_t empty_src;   /* of them, read from all-zero texture VRAM */
+    uint32_t slots;       /* kh_tex_slots_mapped at the last frame */
+    uint32_t modes[4];    /* polygons drawn per mode: modulation, decal, toon/highlight, shadow */
+    uint32_t disp3dcnt;   /* of the last frame */
 } KhGpu3dStats;
 void kh_gpu3d_take_stats(KhGpu3dStats *out);
 

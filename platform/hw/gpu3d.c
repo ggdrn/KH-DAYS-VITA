@@ -137,6 +137,9 @@ static void tex_upload(TexEntry *e, uint32_t teximage, uint32_t pltt)
             return;
     }
     kh_tex_decode(teximage, pltt, s_decode);
+    s_stats.fmt[kh_tex_format(teximage)]++;
+    if (kh_tex_source_empty(teximage))
+        s_stats.empty_src++;
     glBindTexture(GL_TEXTURE_2D, e->tex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, s_decode);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -172,7 +175,9 @@ static TexEntry *tex_get(uint32_t teximage, uint32_t pltt)
         s_tex_live++;
     }
     e->used = s_frame;
-    if (e->gen != s_tex_gen) {
+    /* the VRAM generation says when bytes can have changed; besides, every entry is checked
+     * again every 32 frames in turn, in case some path writes texture VRAM unseen */
+    if (e->gen != s_tex_gen || ((uint32_t)(e - s_tex) & 31) == (s_frame & 31)) {
         /* only after a bank A-G was remapped can the bytes have changed */
         uint32_t hv = kh_tex_hash(teximage, kp);
         e->gen = s_tex_gen;
@@ -314,6 +319,7 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
     if (f->serial == s_last_serial)
         return s_color; /* same frame as last time: the target still holds it */
     s_last_serial = f->serial;
+    s_stats.disp3dcnt = f->disp3dcnt;
     t0 = sceKernelGetProcessTimeWide();
     s_frame++;
     if ((s_frame & 63) == 0 || s_tex_live >= TEX_MAX_LIVE)
@@ -369,6 +375,7 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
             const int fmt = kh_tex_format(p->teximage);
             DrawState *ps = &s_pstate[i];
             ps->mode = (p->attr >> 4) & 3;
+            s_stats.modes[ps->mode]++;
             if (ps->mode == 3 || alpha == 0) {
                 s_stats.skipped++; /* shadow polygons, wireframe: not yet */
                 s_pkey[i] = 0xffffffffu;
@@ -473,5 +480,6 @@ void kh_gpu3d_take_stats(KhGpu3dStats *out)
 {
     *out = s_stats;
     out->textures_live = (uint32_t)s_tex_live;
+    out->slots = kh_tex_slots_mapped();
     memset(&s_stats, 0, sizeof(s_stats));
 }

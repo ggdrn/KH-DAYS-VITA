@@ -218,6 +218,34 @@ static void decode_4x4(uint32_t addr, uint32_t pltt, int w, int h, uint32_t *out
     }
 }
 
+unsigned kh_tex_slots_mapped(void)
+{
+    unsigned bits = 0;
+    int i;
+    for (i = 0; i < 4; i++)
+        bits |= (s_tex_slot[i] != NULL) << i;
+    for (i = 0; i < 6; i++)
+        bits |= (s_pal_slot[i] != NULL) << (8 + i);
+    return bits;
+}
+
+int kh_tex_source_empty(uint32_t teximage)
+{
+    const int fmt = kh_tex_format(teximage);
+    uint32_t avail, n, i;
+    const uint8_t *p;
+    if (fmt == 0)
+        return 0;
+    p = tex_ptr((teximage & 0xffff) * 8, &avail);
+    n = tex_bytes(fmt, kh_tex_width(teximage), kh_tex_height(teximage));
+    if (n > avail)
+        n = avail;
+    for (i = 0; i < n; i++)
+        if (p[i])
+            return 0;
+    return 1;
+}
+
 void kh_tex_decode(uint32_t teximage, uint32_t pltt, uint32_t *out)
 {
     const int fmt = kh_tex_format(teximage), w = kh_tex_width(teximage), h = kh_tex_height(teximage);

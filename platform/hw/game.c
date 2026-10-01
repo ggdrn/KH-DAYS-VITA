@@ -221,7 +221,9 @@ static void present(void)
         s_render_max = s_render_us;
     if (!a3d)
         tex3d = 0;
-    video_set_3d(tex3d ? (a_on_top ? 0 : 1) : -1, tex3d, KH_IO16(0x0400006c));
+    video_set_3d(tex3d ? (a_on_top ? 0 : 1) : -1, tex3d, KH_IO16(0x0400006c),
+                 /* BG0HOFS scrolls the 3D layer: 9 bits, signed */
+                 (int)((int16_t)(KH_IO16(0x04000010) << 7) >> 7));
     if (a3d && !tex3d) {
         /* no 3D to lay in: the 3D pixels show what is under them */
         uint32_t *fb = a_on_top ? s_top : s_bottom;
@@ -419,11 +421,21 @@ void kh_game_run(void)
             {
                 KhGpu3dStats rs;
                 kh_gpu3d_take_stats(&rs);
-                if (rs.batches || rs.textures_decoded)
+                if (rs.batches || rs.textures_decoded) {
                     LOG("gpu3d: 10 s: %u us drawing, %u batches, %u textures decoded (%u live), "
                         "%u polys skipped", (unsigned)rs.render_us, (unsigned)rs.batches,
                         (unsigned)rs.textures_decoded, (unsigned)rs.textures_live,
                         (unsigned)rs.skipped);
+                    LOG("gpu3d: textures by format %u/%u/%u/%u/%u/%u/%u (A3I5 4c 16c 256c 4x4 "
+                        "A5I3 direct), %u from empty VRAM; slots tex %x pltt %02x",
+                        (unsigned)rs.fmt[1], (unsigned)rs.fmt[2], (unsigned)rs.fmt[3],
+                        (unsigned)rs.fmt[4], (unsigned)rs.fmt[5], (unsigned)rs.fmt[6],
+                        (unsigned)rs.fmt[7], (unsigned)rs.empty_src, rs.slots & 15,
+                        (rs.slots >> 8) & 63);
+                    LOG("gpu3d: polygons by mode %u/%u/%u/%u (modulate decal toon shadow), "
+                        "DISP3DCNT %04x", (unsigned)rs.modes[0], (unsigned)rs.modes[1],
+                        (unsigned)rs.modes[2], (unsigned)rs.modes[3], (unsigned)rs.disp3dcnt);
+                }
             }
             if (gs.commands)
                 LOG("gx3d: 10 s: %u swaps, %u cmds, %u polys (%u culled), %u verts, %u unknown, "

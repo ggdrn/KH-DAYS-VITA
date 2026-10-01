@@ -15,7 +15,8 @@ static ScreenRect s_rect[2];
 static int s_inset = -1; /* the screen drawn small over the other one, -1 for none */
 static volatile int s_pending = -1; /* a layout asked for from another thread (input) */
 static GLuint s_compose, s_compose_vbo;
-static GLint u_c2d, u_c3d, u_bright;
+static GLint u_c2d, u_c3d, u_bright, u_hofs;
+static float s_3d_hofs;
 static int s_3d_screen = -1;
 static GLuint s_3d_tex;
 static uint16_t s_3d_bright;
@@ -30,13 +31,16 @@ static const char s_compose_vs[] =
     "}\n";
 static const char s_compose_fs[] =
     "float4 main(float2 vUv : TEXCOORD0, uniform sampler2D u2d, uniform sampler2D u3d,\n"
-    "            uniform float2 uBright) : COLOR\n"
+    "            uniform float2 uBright, uniform float uHofs) : COLOR\n"
     "{\n"
     "    float4 b = tex2D(u2d, vUv);\n"
     "    float3 c = b.rgb;\n"
     "    if (b.a < 0.99) {\n"
     "        float code = floor(b.a * 255.0 + 0.5);\n"
-    "        float4 t = tex2D(u3d, float2(vUv.x, 1.0 - vUv.y));\n"
+    "        float u = vUv.x + uHofs;\n"
+    "        float4 t = tex2D(u3d, float2(u, 1.0 - vUv.y));\n"
+    "        if (u < 0.0 || u > 1.0)\n"
+    "            t = float4(0.0, 0.0, 0.0, 0.0);\n"
     "        c = t.rgb + b.rgb * (1.0 - t.a);\n"
     "        if (code >= 128.0)\n"
     "            c = c - c * ((code - 128.0) / 16.0);\n"
@@ -101,11 +105,13 @@ static void compose_init(void)
     u_c2d = glGetUniformLocation(s_compose, "u2d");
     u_c3d = glGetUniformLocation(s_compose, "u3d");
     u_bright = glGetUniformLocation(s_compose, "uBright");
+    u_hofs = glGetUniformLocation(s_compose, "uHofs");
     glGenBuffers(1, &s_compose_vbo);
 }
 
-void video_set_3d(int screen, unsigned tex, uint16_t master_bright)
+void video_set_3d(int screen, unsigned tex, uint16_t master_bright, int hofs)
 {
+    s_3d_hofs = (float)hofs / 256.0f;
     s_3d_screen = (s_compose && tex) ? screen : -1;
     s_3d_tex = tex;
     s_3d_bright = master_bright;
@@ -131,6 +137,7 @@ static void draw_composed(int screen)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glUniform1i(u_c2d, 0);
     glUniform1i(u_c3d, 1);
+    glUniform1f(u_hofs, s_3d_hofs);
     glUniform2f(u_bright, (mode == 1 || mode == 2) ? (float)mode : 0.0f, (float)f / 16.0f);
     glBindBuffer(GL_ARRAY_BUFFER, s_compose_vbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(v), v, GL_DYNAMIC_DRAW);

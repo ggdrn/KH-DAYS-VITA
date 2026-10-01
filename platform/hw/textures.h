@@ -18,6 +18,11 @@ static inline int kh_tex_format(uint32_t teximage) { return (teximage >> 26) & 7
  * texture and palette VRAM it reads. */
 uint32_t kh_tex_hash(uint32_t teximage, uint32_t pltt);
 
+/* Diagnostics: bits 0-3 the texture slots mapped, 8-13 the palette slots. */
+unsigned kh_tex_slots_mapped(void);
+/* Diagnostics: the texture's texel bytes are all zero (an unmapped slot, or not loaded yet). */
+int kh_tex_source_empty(uint32_t teximage);
+
 /* Decode into out (width x height texels). */
 void kh_tex_decode(uint32_t teximage, uint32_t pltt, uint32_t *out);
 
