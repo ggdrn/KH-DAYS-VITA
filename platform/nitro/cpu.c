@@ -91,6 +91,7 @@ typedef struct Deferred {
     struct Deferred *next;
 } Deferred;
 
+static volatile uint32_t s_irq_cpsr = 0x80; /* IRQ mode's own I/F bits (see OS_DisableInterrupts) */
 static Deferred *volatile s_deferred;      /* interrupt completions: need IME and IE */
 static Deferred *volatile s_task_deferred; /* thread completions: need only the I bit clear */
 static SceUID s_deferred_lock = -1;
@@ -185,6 +186,7 @@ static void release(void)
 static void run_handlers(void)
 {
     s_irq_thread = sceKernelGetThreadId();
+    s_irq_cpsr = 0x80; /* IRQ mode is entered with IRQs masked */
     while (irq_work() || s_task_deferred) {
         uint32_t live = (KH_IO16(REG_IME) & 1) ? KH_IO32(REG_IE) & s_pending : 0;
         if (live) {
@@ -296,27 +298,48 @@ static void wait_for_handler(void)
         ;
 }
 
+/* IRQ mode has its own CPSR on the DS: a handler masks and unmasks without touching the I bit of
+ * the code it interrupted, which the hardware restores on return. Here handlers run on another
+ * Vita thread (or nested on the baton holder), so they get their own copy, s_irq_cpsr, set
+ * masked on entry (run_handlers). Sharing kh_cpsr_if let a handler's OS_DisableInterrupts land
+ * in the interrupted thread's saved state: it then restored "disabled" and stayed so (0.0.26
+ * waited in TP_WaitBusy with the I bit set for good). */
 uint32_t OS_DisableInterrupts(void)
 {
     KH_PROBE("OS_DisableInterrupts");
-    uint32_t old = __atomic_fetch_or(&kh_cpsr_if, 0x80, __ATOMIC_SEQ_CST) & 0x80;
-    wait_for_handler();
-    return old;
+    if (kh_cpu_in_irq()) {
+        uint32_t old = s_irq_cpsr & 0x80;
+        s_irq_cpsr |= 0x80;
+        return old;
+    } else {
+        uint32_t old = __atomic_fetch_or(&kh_cpsr_if, 0x80, __ATOMIC_SEQ_CST) & 0x80;
+        wait_for_handler();
+        return old;
+    }
 }
 
 uint32_t OS_EnableInterrupts(void)
 {
     KH_PROBE("OS_EnableInterrupts");
-    uint32_t old = __atomic_fetch_and(&kh_cpsr_if, ~0x80u, __ATOMIC_SEQ_CST) & 0x80;
-    kh_cpu_poll();
-    return old;
+    if (kh_cpu_in_irq()) {
+        uint32_t old = s_irq_cpsr & 0x80;
+        s_irq_cpsr &= ~0x80u; /* nested interrupts are not taken: the round goes on */
+        return old;
+    } else {
+        uint32_t old = __atomic_fetch_and(&kh_cpsr_if, ~0x80u, __ATOMIC_SEQ_CST) & 0x80;
+        kh_cpu_poll();
+        return old;
+    }
 }
 
 uint32_t OS_RestoreInterrupts(uint32_t state)
 {
     KH_PROBE("OS_RestoreInterrupts");
     uint32_t old;
-    if (state & 0x80) {
+    if (kh_cpu_in_irq()) {
+        old = s_irq_cpsr & 0x80;
+        s_irq_cpsr = (s_irq_cpsr & ~0x80u) | (state & 0x80);
+    } else if (state & 0x80) {
         old = __atomic_fetch_or(&kh_cpsr_if, 0x80, __ATOMIC_SEQ_CST) & 0x80;
         wait_for_handler();
     } else {
@@ -329,15 +352,27 @@ uint32_t OS_RestoreInterrupts(uint32_t state)
 uint32_t OS_DisableInterrupts_IrqAndFiq(void)
 {
     KH_PROBE("OS_DisableInterrupts_IrqAndFiq");
-    uint32_t old = __atomic_fetch_or(&kh_cpsr_if, 0xc0, __ATOMIC_SEQ_CST) & 0xc0;
-    wait_for_handler();
-    return old;
+    if (kh_cpu_in_irq()) {
+        uint32_t old = s_irq_cpsr & 0xc0;
+        s_irq_cpsr |= 0xc0;
+        return old;
+    } else {
+        uint32_t old = __atomic_fetch_or(&kh_cpsr_if, 0xc0, __ATOMIC_SEQ_CST) & 0xc0;
+        wait_for_handler();
+        return old;
+    }
 }
 
 uint32_t OS_RestoreInterrupts_IrqAndFiq(uint32_t state)
 {
     KH_PROBE("OS_RestoreInterrupts_IrqAndFiq");
-    uint32_t old = kh_cpsr_if & 0xc0;
+    uint32_t old;
+    if (kh_cpu_in_irq()) {
+        old = s_irq_cpsr & 0xc0;
+        s_irq_cpsr = (s_irq_cpsr & ~0xc0u) | (state & 0xc0);
+        return old;
+    }
+    old = kh_cpsr_if & 0xc0;
     kh_cpsr_if = (kh_cpsr_if & ~0xc0u) | (state & 0xc0);
     if (!(state & 0x80))
         kh_cpu_poll();
@@ -347,7 +382,7 @@ uint32_t OS_RestoreInterrupts_IrqAndFiq(uint32_t state)
 uint32_t OS_GetCpsrIrq(void)
 {
     KH_PROBE("OS_GetCpsrIrq");
-    return kh_cpsr_if & 0x80;
+    return (kh_cpu_in_irq() ? s_irq_cpsr : kh_cpsr_if) & 0x80;
 }
 
 uint32_t OS_GetProcMode(void)
