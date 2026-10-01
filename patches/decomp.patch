@@ -6422,7 +6422,7 @@ index 6830d75a6..12791b305 100644
  
  extern void GX_SendFifoWords(u32 op, const void *args, u32 numWords);
 diff --git a/libs/nitro/nns/calls/func_02010f7c.c b/libs/nitro/nns/calls/func_02010f7c.c
-index 347c41637..6fd2ae0f6 100644
+index 347c41637..6fea22c5f 100644
 --- a/libs/nitro/nns/calls/func_02010f7c.c
 +++ b/libs/nitro/nns/calls/func_02010f7c.c
 @@ -1,3 +1,4 @@
@@ -6430,8 +6430,14 @@ index 347c41637..6fd2ae0f6 100644
  
  
  #include "nitro/types.h"
-@@ -154,6 +155,24 @@ NNSGfdTexKey func_02010f7c(u32 szByte, BOOL is4x4comp, u32 opt)
+@@ -152,8 +153,30 @@ NNSGfdTexKey func_02010f7c(u32 szByte, BOOL is4x4comp, u32 opt)
+     }
+ 
      if (result) {
++#ifdef PLATFORM_VITA
++        KH_TRACE("gfd: texture VRAM %x bytes (4x4 %d) at %x", (unsigned)szByte, is4x4comp,
++                 (unsigned)addr);
++#endif
          return NNS_GfdMakeTexKey(addr, szByte, is4x4comp);
      } else {
 +#ifdef PLATFORM_VITA
@@ -8786,7 +8792,7 @@ index da05123c8..22ba89d07 100644
  extern int FX_Div(int x, int y);
  
 diff --git a/src/engine/G3dRes_DefaultSetup.c b/src/engine/G3dRes_DefaultSetup.c
-index e1767903c..acd42f566 100644
+index e1767903c..858674a52 100644
 --- a/src/engine/G3dRes_DefaultSetup.c
 +++ b/src/engine/G3dRes_DefaultSetup.c
 @@ -1,3 +1,4 @@
@@ -8794,7 +8800,17 @@ index e1767903c..acd42f566 100644
  /* G3dRes_DefaultSetup -- the game's NNS_G3dResDefaultSetup, MAIN. Model and texture files get their
   * texture/4x4/palette VRAM from the GFD allocator hooks (NNS_GfdAllocTexVram & co.) -- unless the
   * loader's texture flag (data_020427f0, InstallHandlerPairByFlag) is off -- and are uploaded with the game's
-@@ -104,6 +105,9 @@ BOOL G3dRes_DefaultSetup(void *pResData)
+@@ -71,6 +72,9 @@ BOOL G3dRes_DefaultSetup(void *pResData)
+             NNSG3dPlttKey keyPltt;
+ 
+             tex = NNS_G3dGetTex(pResData);
++            KH_TRACE("g3d: setup of %s file %p (textures %s)",
++                     *(u32 *)&binFile[0] == NNS_G3D_SIGNATURE_NSBMD ? "model" : "texture",
++                     pResData, tex ? "yes" : "no");
+             if (tex) {
+                 szTex = NNS_G3dTexGetRequiredSize(tex);
+                 szTex4x4 = NNS_G3dTex4x4GetRequiredSize(tex);
+@@ -104,6 +108,9 @@ BOOL G3dRes_DefaultSetup(void *pResData)
                  }
  
                  if (!sucTex || !sucTex4x4 || !sucPltt) {
@@ -8804,7 +8820,7 @@ index e1767903c..acd42f566 100644
                      NNS_GfdFreePlttVram(keyPltt);
                      NNS_GfdFreeTexVram(keyTex4x4);
                      NNS_GfdFreeTexVram(keyTex);
-@@ -120,7 +124,13 @@ BOOL G3dRes_DefaultSetup(void *pResData)
+@@ -120,7 +127,13 @@ BOOL G3dRes_DefaultSetup(void *pResData)
                  void *mdlSet = NNS_G3dGetMdlSet(pResData);
  
                  if (tex) {
