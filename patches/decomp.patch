@@ -377,10 +377,10 @@ index 54d1b93a3..ab5f0d8a9 100644
  
 diff --git a/include/nitro/kh_hw.h b/include/nitro/kh_hw.h
 new file mode 100644
-index 000000000..ee54aefba
+index 000000000..ce767ded3
 --- /dev/null
 +++ b/include/nitro/kh_hw.h
-@@ -0,0 +1,56 @@
+@@ -0,0 +1,66 @@
 +/* KH_HW(addr): a fixed hardware address of the DS, as the code uses it.
 + *
 + * On the DS this is the address itself, so every source compiles to the same bytes as before.
@@ -417,6 +417,16 @@ index 000000000..ee54aefba
 +#define KH_IS_PACKED(v) kh_is_packed_handle((unsigned long)(v))
 +#else
 +#define KH_IS_PACKED(v) ((u32)(v) & 0x80000000)
++#endif
++
++/* KH_GX_CMD(reg, v): a store to a geometry command register (or the GX FIFO port). On the
++ * Vita a store would only land in memory, so it goes to the port's geometry engine; the store
++ * itself on the DS. tools/rewrite_decomp.py (gxcmd) writes these. */
++#ifdef PLATFORM_VITA
++void kh_gx_cmd(volatile void *reg, unsigned long value);
++#define KH_GX_CMD(reg, v) kh_gx_cmd((volatile void *)&(reg), (unsigned long)(v))
++#else
++#define KH_GX_CMD(reg, v) ((reg) = (v))
 +#endif
 +
 +/* KH_TRACE("..."): a boot milestone in the port's log (printf format). Nothing on the DS. */
@@ -1236,6 +1246,92 @@ index 3a3de48ed..0c104d4ae 100644
      case 6:
          return 0;
      default:
+diff --git a/libs/nitro/gx/auto/G2x_ChangeBlendBrightness_.c b/libs/nitro/gx/auto/G2x_ChangeBlendBrightness_.c
+index af4d1054c..f76121112 100644
+--- a/libs/nitro/gx/auto/G2x_ChangeBlendBrightness_.c
++++ b/libs/nitro/gx/auto/G2x_ChangeBlendBrightness_.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_GX_CMD */
+ 
+ 
+ /* NitroSDK GX 3D engine registers (g3x.h / g3imm.h inlines, ioreg_G3X.h). */
+@@ -55,7 +56,7 @@ static inline BOOL G3X_IsGeometryBusy(void)
+ 
+ static inline void G3_End(void)
+ {
+-    reg_G3_END_VTXS = 0;
++    KH_GX_CMD(reg_G3_END_VTXS, 0);
+ }
+ 
+ static inline void G3X_ResetListRamOverflow(void)
+@@ -123,20 +124,20 @@ static inline void G2_SetBG0Priority(int priority)
+ 
+ static inline void G3_Direct1(int op, u32 param0)
+ {
+-    *(REGType32v *)(REG_MTX_MODE_ADDR + ((op - G3OP_MTX_MODE) * 4)) = param0;
++    KH_GX_CMD(*(REGType32v *)(REG_MTX_MODE_ADDR + ((op - G3OP_MTX_MODE) * 4)), param0);
+ }
+ 
+ static inline void G3_PolygonAttr(int light, GXPolygonMode polyMode, GXCull cullMode, int polygonID, int alpha, int misc)
+ {
+-    reg_G3_POLYGON_ATTR = (u32)(light | (polyMode << REG_G3_POLYGON_ATTR_PM_SHIFT) | cullMode |
++    KH_GX_CMD(reg_G3_POLYGON_ATTR, (u32)(light | (polyMode << REG_G3_POLYGON_ATTR_PM_SHIFT) | cullMode |
+                                 (polygonID << REG_G3_POLYGON_ATTR_ID_SHIFT) |
+-                                (alpha << REG_G3_POLYGON_ATTR_ALPHA_SHIFT) | misc);
++                                (alpha << REG_G3_POLYGON_ATTR_ALPHA_SHIFT) | misc));
+ }
+ 
+ static inline void G3_TexImageParam(GXTexFmt texFmt, GXTexGen texGen, GXTexSizeS s, GXTexSizeT t,
+                                     GXTexRepeat repeat, GXTexFlip flip, GXTexPlttColor0 pltt0, u32 addr)
+ {
+-    reg_G3_TEXIMAGE_PARAM = (u32)(texFmt | texGen | s | t | repeat | flip | pltt0 | (addr >> 3));
++    KH_GX_CMD(reg_G3_TEXIMAGE_PARAM, (u32)(texFmt | texGen | s | t | repeat | flip | pltt0 | (addr >> 3)));
+ }
+ 
+ #define G2_BLENDTYPE_FADEIN  0x0080
+diff --git a/libs/nitro/gx/auto/G2x_SetBlendBrightnessExt_.c b/libs/nitro/gx/auto/G2x_SetBlendBrightnessExt_.c
+index b19970d61..314f191cd 100644
+--- a/libs/nitro/gx/auto/G2x_SetBlendBrightnessExt_.c
++++ b/libs/nitro/gx/auto/G2x_SetBlendBrightnessExt_.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_GX_CMD */
+ 
+ 
+ /* NitroSDK GX 3D engine registers (g3x.h / g3imm.h inlines, ioreg_G3X.h). */
+@@ -55,7 +56,7 @@ static inline BOOL G3X_IsGeometryBusy(void)
+ 
+ static inline void G3_End(void)
+ {
+-    reg_G3_END_VTXS = 0;
++    KH_GX_CMD(reg_G3_END_VTXS, 0);
+ }
+ 
+ static inline void G3X_ResetListRamOverflow(void)
+@@ -123,20 +124,20 @@ static inline void G2_SetBG0Priority(int priority)
+ 
+ static inline void G3_Direct1(int op, u32 param0)
+ {
+-    *(REGType32v *)(REG_MTX_MODE_ADDR + ((op - G3OP_MTX_MODE) * 4)) = param0;
++    KH_GX_CMD(*(REGType32v *)(REG_MTX_MODE_ADDR + ((op - G3OP_MTX_MODE) * 4)), param0);
+ }
+ 
+ static inline void G3_PolygonAttr(int light, GXPolygonMode polyMode, GXCull cullMode, int polygonID, int alpha, int misc)
+ {
+-    reg_G3_POLYGON_ATTR = (u32)(light | (polyMode << REG_G3_POLYGON_ATTR_PM_SHIFT) | cullMode |
++    KH_GX_CMD(reg_G3_POLYGON_ATTR, (u32)(light | (polyMode << REG_G3_POLYGON_ATTR_PM_SHIFT) | cullMode |
+                                 (polygonID << REG_G3_POLYGON_ATTR_ID_SHIFT) |
+-                                (alpha << REG_G3_POLYGON_ATTR_ALPHA_SHIFT) | misc);
++                                (alpha << REG_G3_POLYGON_ATTR_ALPHA_SHIFT) | misc));
+ }
+ 
+ static inline void G3_TexImageParam(GXTexFmt texFmt, GXTexGen texGen, GXTexSizeS s, GXTexSizeT t,
+                                     GXTexRepeat repeat, GXTexFlip flip, GXTexPlttColor0 pltt0, u32 addr)
+ {
+-    reg_G3_TEXIMAGE_PARAM = (u32)(texFmt | texGen | s | t | repeat | flip | pltt0 | (addr >> 3));
++    KH_GX_CMD(reg_G3_TEXIMAGE_PARAM, (u32)(texFmt | texGen | s | t | repeat | flip | pltt0 | (addr >> 3)));
+ }
+ 
+ #define G2_BLENDTYPE_FADEIN  0x0080
 diff --git a/libs/nitro/gx/auto/G3X_GetMtxStackLevelPJ.c b/libs/nitro/gx/auto/G3X_GetMtxStackLevelPJ.c
 index 0379b0a62..e651cbb70 100644
 --- a/libs/nitro/gx/auto/G3X_GetMtxStackLevelPJ.c
@@ -1663,8 +1759,51 @@ index 834312765..ca371bc22 100644
      if (*gxstat & 0x8000000) {
          return -1;
      }
+diff --git a/libs/nitro/gx/calls/G3X_Init.c b/libs/nitro/gx/calls/G3X_Init.c
+index 171e40200..62b0ebb18 100644
+--- a/libs/nitro/gx/calls/G3X_Init.c
++++ b/libs/nitro/gx/calls/G3X_Init.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_GX_CMD */
+ 
+ 
+ /* NitroSDK GX 3D engine registers (g3x.h / g3imm.h inlines, ioreg_G3X.h). */
+@@ -55,7 +56,7 @@ static inline BOOL G3X_IsGeometryBusy(void)
+ 
+ static inline void G3_End(void)
+ {
+-    reg_G3_END_VTXS = 0;
++    KH_GX_CMD(reg_G3_END_VTXS, 0);
+ }
+ 
+ static inline void G3X_ResetListRamOverflow(void)
+@@ -123,20 +124,20 @@ static inline void G2_SetBG0Priority(int priority)
+ 
+ static inline void G3_Direct1(int op, u32 param0)
+ {
+-    *(REGType32v *)(REG_MTX_MODE_ADDR + ((op - G3OP_MTX_MODE) * 4)) = param0;
++    KH_GX_CMD(*(REGType32v *)(REG_MTX_MODE_ADDR + ((op - G3OP_MTX_MODE) * 4)), param0);
+ }
+ 
+ static inline void G3_PolygonAttr(int light, GXPolygonMode polyMode, GXCull cullMode, int polygonID, int alpha, int misc)
+ {
+-    reg_G3_POLYGON_ATTR = (u32)(light | (polyMode << REG_G3_POLYGON_ATTR_PM_SHIFT) | cullMode |
++    KH_GX_CMD(reg_G3_POLYGON_ATTR, (u32)(light | (polyMode << REG_G3_POLYGON_ATTR_PM_SHIFT) | cullMode |
+                                 (polygonID << REG_G3_POLYGON_ATTR_ID_SHIFT) |
+-                                (alpha << REG_G3_POLYGON_ATTR_ALPHA_SHIFT) | misc);
++                                (alpha << REG_G3_POLYGON_ATTR_ALPHA_SHIFT) | misc));
+ }
+ 
+ static inline void G3_TexImageParam(GXTexFmt texFmt, GXTexGen texGen, GXTexSizeS s, GXTexSizeT t,
+                                     GXTexRepeat repeat, GXTexFlip flip, GXTexPlttColor0 pltt0, u32 addr)
+ {
+-    reg_G3_TEXIMAGE_PARAM = (u32)(texFmt | texGen | s | t | repeat | flip | pltt0 | (addr >> 3));
++    KH_GX_CMD(reg_G3_TEXIMAGE_PARAM, (u32)(texFmt | texGen | s | t | repeat | flip | pltt0 | (addr >> 3)));
+ }
+ 
+ #define G2_BLENDTYPE_FADEIN  0x0080
 diff --git a/libs/nitro/gx/calls/G3X_InitMtxStack.c b/libs/nitro/gx/calls/G3X_InitMtxStack.c
-index d32269c24..d85b56747 100644
+index d32269c24..c2df6e7ca 100644
 --- a/libs/nitro/gx/calls/G3X_InitMtxStack.c
 +++ b/libs/nitro/gx/calls/G3X_InitMtxStack.c
 @@ -1,15 +1,16 @@
@@ -1688,8 +1827,127 @@ index d32269c24..d85b56747 100644
      int levelPV;
      int levelPJ;
  
+@@ -18,16 +19,16 @@ void G3X_InitMtxStack(void) {
+     while (G3X_GetMtxStackLevelPV(&levelPV) != 0) {}
+     while (G3X_GetMtxStackLevelPJ(&levelPJ) != 0) {}
+ 
+-    reg_G3_MTX_MODE = 3;
+-    reg_G3_MTX_IDENTITY = 0;
+-    reg_G3_MTX_MODE = 0;
++    KH_GX_CMD(reg_G3_MTX_MODE, 3);
++    KH_GX_CMD(reg_G3_MTX_IDENTITY, 0);
++    KH_GX_CMD(reg_G3_MTX_MODE, 0);
+ 
+     if (levelPJ != 0) {
+-        reg_G3_MTX_POP = levelPJ;
++        KH_GX_CMD(reg_G3_MTX_POP, levelPJ);
+     }
+ 
+-    reg_G3_MTX_IDENTITY = 0;
+-    reg_G3_MTX_MODE = 2;
+-    reg_G3_MTX_POP = levelPV;
+-    reg_G3_MTX_IDENTITY = 0;
++    KH_GX_CMD(reg_G3_MTX_IDENTITY, 0);
++    KH_GX_CMD(reg_G3_MTX_MODE, 2);
++    KH_GX_CMD(reg_G3_MTX_POP, levelPV);
++    KH_GX_CMD(reg_G3_MTX_IDENTITY, 0);
+ }
+diff --git a/libs/nitro/gx/calls/G3X_InitTable.c b/libs/nitro/gx/calls/G3X_InitTable.c
+index 9c6bff78b..4ce27b11f 100644
+--- a/libs/nitro/gx/calls/G3X_InitTable.c
++++ b/libs/nitro/gx/calls/G3X_InitTable.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_GX_CMD */
+ 
+ 
+ /* NitroSDK GX 3D engine registers (g3x.h / g3imm.h inlines, ioreg_G3X.h). */
+@@ -55,7 +56,7 @@ static inline BOOL G3X_IsGeometryBusy(void)
+ 
+ static inline void G3_End(void)
+ {
+-    reg_G3_END_VTXS = 0;
++    KH_GX_CMD(reg_G3_END_VTXS, 0);
+ }
+ 
+ static inline void G3X_ResetListRamOverflow(void)
+@@ -123,20 +124,20 @@ static inline void G2_SetBG0Priority(int priority)
+ 
+ static inline void G3_Direct1(int op, u32 param0)
+ {
+-    *(REGType32v *)(REG_MTX_MODE_ADDR + ((op - G3OP_MTX_MODE) * 4)) = param0;
++    KH_GX_CMD(*(REGType32v *)(REG_MTX_MODE_ADDR + ((op - G3OP_MTX_MODE) * 4)), param0);
+ }
+ 
+ static inline void G3_PolygonAttr(int light, GXPolygonMode polyMode, GXCull cullMode, int polygonID, int alpha, int misc)
+ {
+-    reg_G3_POLYGON_ATTR = (u32)(light | (polyMode << REG_G3_POLYGON_ATTR_PM_SHIFT) | cullMode |
++    KH_GX_CMD(reg_G3_POLYGON_ATTR, (u32)(light | (polyMode << REG_G3_POLYGON_ATTR_PM_SHIFT) | cullMode |
+                                 (polygonID << REG_G3_POLYGON_ATTR_ID_SHIFT) |
+-                                (alpha << REG_G3_POLYGON_ATTR_ALPHA_SHIFT) | misc);
++                                (alpha << REG_G3_POLYGON_ATTR_ALPHA_SHIFT) | misc));
+ }
+ 
+ static inline void G3_TexImageParam(GXTexFmt texFmt, GXTexGen texGen, GXTexSizeS s, GXTexSizeT t,
+                                     GXTexRepeat repeat, GXTexFlip flip, GXTexPlttColor0 pltt0, u32 addr)
+ {
+-    reg_G3_TEXIMAGE_PARAM = (u32)(texFmt | texGen | s | t | repeat | flip | pltt0 | (addr >> 3));
++    KH_GX_CMD(reg_G3_TEXIMAGE_PARAM, (u32)(texFmt | texGen | s | t | repeat | flip | pltt0 | (addr >> 3)));
+ }
+ 
+ #define G2_BLENDTYPE_FADEIN  0x0080
+@@ -156,6 +157,6 @@ void G3X_InitTable (void)
+ 	}
+ 
+ 	for (i = 0; i < 32; ++i) {
+-		reg_G3_SHININESS = 0;
++		KH_GX_CMD(reg_G3_SHININESS, 0);
+ 	}
+ }
+diff --git a/libs/nitro/gx/calls/G3X_ResetMtxStack.c b/libs/nitro/gx/calls/G3X_ResetMtxStack.c
+index d7ded8a03..6575125bb 100644
+--- a/libs/nitro/gx/calls/G3X_ResetMtxStack.c
++++ b/libs/nitro/gx/calls/G3X_ResetMtxStack.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_GX_CMD */
+ 
+ 
+ /* NitroSDK GX 3D engine registers (g3x.h / g3imm.h inlines, ioreg_G3X.h). */
+@@ -55,7 +56,7 @@ static inline BOOL G3X_IsGeometryBusy(void)
+ 
+ static inline void G3_End(void)
+ {
+-    reg_G3_END_VTXS = 0;
++    KH_GX_CMD(reg_G3_END_VTXS, 0);
+ }
+ 
+ static inline void G3X_ResetListRamOverflow(void)
+@@ -123,20 +124,20 @@ static inline void G2_SetBG0Priority(int priority)
+ 
+ static inline void G3_Direct1(int op, u32 param0)
+ {
+-    *(REGType32v *)(REG_MTX_MODE_ADDR + ((op - G3OP_MTX_MODE) * 4)) = param0;
++    KH_GX_CMD(*(REGType32v *)(REG_MTX_MODE_ADDR + ((op - G3OP_MTX_MODE) * 4)), param0);
+ }
+ 
+ static inline void G3_PolygonAttr(int light, GXPolygonMode polyMode, GXCull cullMode, int polygonID, int alpha, int misc)
+ {
+-    reg_G3_POLYGON_ATTR = (u32)(light | (polyMode << REG_G3_POLYGON_ATTR_PM_SHIFT) | cullMode |
++    KH_GX_CMD(reg_G3_POLYGON_ATTR, (u32)(light | (polyMode << REG_G3_POLYGON_ATTR_PM_SHIFT) | cullMode |
+                                 (polygonID << REG_G3_POLYGON_ATTR_ID_SHIFT) |
+-                                (alpha << REG_G3_POLYGON_ATTR_ALPHA_SHIFT) | misc);
++                                (alpha << REG_G3_POLYGON_ATTR_ALPHA_SHIFT) | misc));
+ }
+ 
+ static inline void G3_TexImageParam(GXTexFmt texFmt, GXTexGen texGen, GXTexSizeS s, GXTexSizeT t,
+                                     GXTexRepeat repeat, GXTexFlip flip, GXTexPlttColor0 pltt0, u32 addr)
+ {
+-    reg_G3_TEXIMAGE_PARAM = (u32)(texFmt | texGen | s | t | repeat | flip | pltt0 | (addr >> 3));
++    KH_GX_CMD(reg_G3_TEXIMAGE_PARAM, (u32)(texFmt | texGen | s | t | repeat | flip | pltt0 | (addr >> 3)));
+ }
+ 
+ #define G2_BLENDTYPE_FADEIN  0x0080
 diff --git a/libs/nitro/gx/calls/G3X_ResetMtxStack_2.c b/libs/nitro/gx/calls/G3X_ResetMtxStack_2.c
-index d92898f5a..7adc6ab33 100644
+index d92898f5a..cf7d0baed 100644
 --- a/libs/nitro/gx/calls/G3X_ResetMtxStack_2.c
 +++ b/libs/nitro/gx/calls/G3X_ResetMtxStack_2.c
 @@ -1,10 +1,11 @@
@@ -1708,6 +1966,29 @@ index d92898f5a..7adc6ab33 100644
  
  extern int G3X_GetMtxStackLevelPV(int *level);
  extern int G3X_GetMtxStackLevelPJ(int *level);
+@@ -18,15 +19,15 @@ void G3X_ResetMtxStack_2(void) {
+     while (G3X_GetMtxStackLevelPV(&pvLevel) != 0) {}
+     while (G3X_GetMtxStackLevelPJ(&pjLevel) != 0) {}
+ 
+-    reg_G3_MTX_MODE = 3;
+-    reg_G3_MTX_IDENTITY = 0;
+-    reg_G3_MTX_MODE = 0;
++    KH_GX_CMD(reg_G3_MTX_MODE, 3);
++    KH_GX_CMD(reg_G3_MTX_IDENTITY, 0);
++    KH_GX_CMD(reg_G3_MTX_MODE, 0);
+ 
+     if (pjLevel != 0) {
+-        reg_G3_MTX_POP = pjLevel;
++        KH_GX_CMD(reg_G3_MTX_POP, pjLevel);
+     }
+ 
+-    reg_G3_MTX_MODE = 2;
+-    reg_G3_MTX_POP = pvLevel;
+-    reg_G3_MTX_IDENTITY = 0;
++    KH_GX_CMD(reg_G3_MTX_MODE, 2);
++    KH_GX_CMD(reg_G3_MTX_POP, pvLevel);
++    KH_GX_CMD(reg_G3_MTX_IDENTITY, 0);
+ }
 diff --git a/libs/nitro/gx/calls/G3X_SetHOffset.c b/libs/nitro/gx/calls/G3X_SetHOffset.c
 index 98f8ebba1..691ec6c58 100644
 --- a/libs/nitro/gx/calls/G3X_SetHOffset.c
@@ -1721,7 +2002,7 @@ index 98f8ebba1..691ec6c58 100644
 +    *(volatile int *)KH_HW(0x04000010) = value;
  }
 diff --git a/libs/nitro/gx/calls/G3_LoadMtx43.c b/libs/nitro/gx/calls/G3_LoadMtx43.c
-index af049ac91..d66ef76bd 100644
+index af049ac91..e5173c51f 100644
 --- a/libs/nitro/gx/calls/G3_LoadMtx43.c
 +++ b/libs/nitro/gx/calls/G3_LoadMtx43.c
 @@ -1,9 +1,10 @@
@@ -1734,11 +2015,11 @@ index af049ac91..d66ef76bd 100644
  void G3_LoadMtx43(const MtxFx43 *m) {
 -    *(volatile unsigned int *)0x4000400 = 0x17;
 -    GX_SendFifo48B(m, (void *)0x4000400);
-+    *(volatile unsigned int *)KH_HW(0x4000400) = 0x17;
++    KH_GX_CMD(*(volatile unsigned int *)KH_HW(0x4000400), 0x17);
 +    GX_SendFifo48B(m, (void *)KH_HW(0x4000400));
  }
 diff --git a/libs/nitro/gx/calls/G3_MultMtx33.c b/libs/nitro/gx/calls/G3_MultMtx33.c
-index c39dbd9f3..7521e325c 100644
+index c39dbd9f3..5f715b57f 100644
 --- a/libs/nitro/gx/calls/G3_MultMtx33.c
 +++ b/libs/nitro/gx/calls/G3_MultMtx33.c
 @@ -1,9 +1,10 @@
@@ -1751,11 +2032,11 @@ index c39dbd9f3..7521e325c 100644
  void G3_MultMtx33(const MtxFx33 *m) {
 -    *(volatile unsigned int *)0x4000400 = 0x1a;
 -    MI_Copy36B(m, (void *)0x4000400);
-+    *(volatile unsigned int *)KH_HW(0x4000400) = 0x1a;
++    KH_GX_CMD(*(volatile unsigned int *)KH_HW(0x4000400), 0x1a);
 +    MI_Copy36B(m, (void *)KH_HW(0x4000400));
  }
 diff --git a/libs/nitro/gx/calls/G3_MultMtx43.c b/libs/nitro/gx/calls/G3_MultMtx43.c
-index 65739e425..14bab0fcf 100644
+index 65739e425..0f847864b 100644
 --- a/libs/nitro/gx/calls/G3_MultMtx43.c
 +++ b/libs/nitro/gx/calls/G3_MultMtx43.c
 @@ -1,9 +1,10 @@
@@ -1768,7 +2049,7 @@ index 65739e425..14bab0fcf 100644
  void G3_MultMtx43(const MtxFx43 *m) {
 -    *(volatile unsigned int *)0x4000400 = 0x19;
 -    GX_SendFifo48B(m, (void *)0x4000400);
-+    *(volatile unsigned int *)KH_HW(0x4000400) = 0x19;
++    KH_GX_CMD(*(volatile unsigned int *)KH_HW(0x4000400), 0x19);
 +    GX_SendFifo48B(m, (void *)KH_HW(0x4000400));
  }
 diff --git a/libs/nitro/gx/calls/GXS_LoadBGExtPltt.c b/libs/nitro/gx/calls/GXS_LoadBGExtPltt.c
@@ -5915,7 +6196,7 @@ index 9f0409622..f04d1b290 100644
  
  void BgCharVram_Upload(NNSG2dBGSelect bg, const NNSG2dScreenData *pScreenData)
 diff --git a/libs/nitro/nns/calls/GX_SendFifoWords.c b/libs/nitro/nns/calls/GX_SendFifoWords.c
-index b4fed1a67..c51d3cb74 100644
+index b4fed1a67..ede8d40b7 100644
 --- a/libs/nitro/nns/calls/GX_SendFifoWords.c
 +++ b/libs/nitro/nns/calls/GX_SendFifoWords.c
 @@ -1,3 +1,4 @@
@@ -5934,7 +6215,7 @@ index b4fed1a67..c51d3cb74 100644
  
 -    *(volatile u32 *)0x04000400 = op;
 -    MIi_CpuSend32(args, (volatile void *)0x04000400, numWords << 2);
-+    *(volatile u32 *)KH_HW(0x04000400) = op;
++    KH_GX_CMD(*(volatile u32 *)KH_HW(0x04000400), op);
 +    MIi_CpuSend32(args, (volatile void *)KH_HW(0x04000400), numWords << 2);
  }
 diff --git a/libs/nitro/nns/calls/NNS_G3dGeSendDL.c b/libs/nitro/nns/calls/NNS_G3dGeSendDL.c
@@ -5997,7 +6278,7 @@ index 783f6102b..e414a38a8 100644
              *restoreRegister = entry->matrixIndex;
              registers->mode = 1;
 diff --git a/libs/nitro/nns/calls/NNSi_G3dGeBufferCommand1.c b/libs/nitro/nns/calls/NNSi_G3dGeBufferCommand1.c
-index 0a60d2f11..7eafbeeea 100644
+index 0a60d2f11..991be4f4a 100644
 --- a/libs/nitro/nns/calls/NNSi_G3dGeBufferCommand1.c
 +++ b/libs/nitro/nns/calls/NNSi_G3dGeBufferCommand1.c
 @@ -1,3 +1,4 @@
@@ -6017,8 +6298,8 @@ index 0a60d2f11..7eafbeeea 100644
  
 -    *(volatile u32 *)0x04000400 = command;
 -    *(volatile u32 *)0x04000400 = argument;
-+    *(volatile u32 *)KH_HW(0x04000400) = command;
-+    *(volatile u32 *)KH_HW(0x04000400) = argument;
++    KH_GX_CMD(*(volatile u32 *)KH_HW(0x04000400), command);
++    KH_GX_CMD(*(volatile u32 *)KH_HW(0x04000400), argument);
  }
 diff --git a/libs/nitro/nns/calls/NNSi_G3dSendTexMtxMode0.c b/libs/nitro/nns/calls/NNSi_G3dSendTexMtxMode0.c
 index 8b82fc6d1..f9b47632c 100644
@@ -7360,7 +7641,7 @@ index d6dc91b64..51201b7f4 100644
      {
          return (s32)(v >> 12 );
 diff --git a/libs/nns/g3d/calls/NNSi_G3dFuncSbc_BB.c b/libs/nns/g3d/calls/NNSi_G3dFuncSbc_BB.c
-index ff5728a95..56c47f9d4 100644
+index ff5728a95..444b007b3 100644
 --- a/libs/nns/g3d/calls/NNSi_G3dFuncSbc_BB.c
 +++ b/libs/nns/g3d/calls/NNSi_G3dFuncSbc_BB.c
 @@ -1,3 +1,4 @@
@@ -7377,8 +7658,42 @@ index ff5728a95..56c47f9d4 100644
  
  #define NNS_G3D_SBCFLG_001 0x20
  #define NNS_G3D_SBCFLG_010 0x40
+@@ -91,9 +92,9 @@ void NNSi_G3dFuncSbc_BB(NNSG3dRS *rs, u32 opt)
+     if (!(rs->flag & NNS_G3D_RSFLAG_OPT_NOGECMD)) {
+         GXi_FlushCommandList();
+ 
+-        reg_G3X_GXFIFO = 0x00151110;    /* MTX_MODE, MTX_PUSH, MTX_IDENTITY */
+-        reg_G3X_GXFIFO = 0;             /* GX_MTXMODE_PROJECTION */
+-        reg_G3X_GXFIFO = 0;
++        KH_GX_CMD(reg_G3X_GXFIFO, 0x00151110);    /* MTX_MODE, MTX_PUSH, MTX_IDENTITY */
++        KH_GX_CMD(reg_G3X_GXFIFO, 0);             /* GX_MTXMODE_PROJECTION */
++        KH_GX_CMD(reg_G3X_GXFIFO, 0);
+ 
+         while (G3X_GetClipMtx(&m)) {
+         }
+@@ -121,16 +122,16 @@ void NNSi_G3dFuncSbc_BB(NNSG3dRS *rs, u32 opt)
+         scale->z = VEC_Mag((VecFx32 *)&m._20);
+ 
+         if (data_02047394.flag & NNS_G3D_GLB_FLAG_FLUSH_WVP) {
+-            reg_G3X_GXFIFO = 0x00171012;    /* MTX_POP, MTX_MODE, MTX_LOAD_4x3 */
++            KH_GX_CMD(reg_G3X_GXFIFO, 0x00171012);    /* MTX_POP, MTX_MODE, MTX_LOAD_4x3 */
+             MIi_CpuSend32(data_02042848, &reg_G3X_GXFIFO, 2 * sizeof(u32));
+             MIi_CpuSend32(GetOrInitResource74cc(), &reg_G3X_GXFIFO, 12 * sizeof(u32));
+-            reg_G3X_GXFIFO = 0x00001b19;    /* MTX_MULT_4x3, MTX_SCALE */
++            KH_GX_CMD(reg_G3X_GXFIFO, 0x00001b19);    /* MTX_MULT_4x3, MTX_SCALE */
+             MIi_CpuSend32(data_02042850, &reg_G3X_GXFIFO, sizeof(MtxFx43) + sizeof(VecFx32));
+         } else if (data_02047394.flag & NNS_G3D_GLB_FLAG_FLUSH_VP) {
+-            reg_G3X_GXFIFO = 0x00171012;
++            KH_GX_CMD(reg_G3X_GXFIFO, 0x00171012);
+             MIi_CpuSend32(data_02042848, &reg_G3X_GXFIFO, 2 * sizeof(u32));
+             MIi_CpuSend32(G3d_GetInverseCameraMtx(), &reg_G3X_GXFIFO, 12 * sizeof(u32));
+-            reg_G3X_GXFIFO = 0x00001b19;
++            KH_GX_CMD(reg_G3X_GXFIFO, 0x00001b19);
+             MIi_CpuSend32(data_02042850, &reg_G3X_GXFIFO, sizeof(MtxFx43) + sizeof(VecFx32));
+         } else {
+             MIi_CpuSend32(data_02042844, &reg_G3X_GXFIFO, 18 * sizeof(u32));
 diff --git a/libs/nns/g3d/calls/NNSi_G3dFuncSbc_BBY.c b/libs/nns/g3d/calls/NNSi_G3dFuncSbc_BBY.c
-index 4746c1422..204909db4 100644
+index 4746c1422..efbf30bae 100644
 --- a/libs/nns/g3d/calls/NNSi_G3dFuncSbc_BBY.c
 +++ b/libs/nns/g3d/calls/NNSi_G3dFuncSbc_BBY.c
 @@ -1,3 +1,4 @@
@@ -7395,8 +7710,42 @@ index 4746c1422..204909db4 100644
  
  #define NNS_G3D_SBCFLG_001 0x20
  #define NNS_G3D_SBCFLG_010 0x40
+@@ -92,9 +93,9 @@ void NNSi_G3dFuncSbc_BBY(NNSG3dRS *rs, u32 opt)
+     if (!(rs->flag & NNS_G3D_RSFLAG_OPT_NOGECMD)) {
+         GXi_FlushCommandList();
+ 
+-        reg_G3X_GXFIFO = 0x00151110;    /* MTX_MODE, MTX_PUSH, MTX_IDENTITY */
+-        reg_G3X_GXFIFO = 0;             /* GX_MTXMODE_PROJECTION */
+-        reg_G3X_GXFIFO = 0;
++        KH_GX_CMD(reg_G3X_GXFIFO, 0x00151110);    /* MTX_MODE, MTX_PUSH, MTX_IDENTITY */
++        KH_GX_CMD(reg_G3X_GXFIFO, 0);             /* GX_MTXMODE_PROJECTION */
++        KH_GX_CMD(reg_G3X_GXFIFO, 0);
+ 
+         while (G3X_GetClipMtx(&m)) {
+         }
+@@ -134,16 +135,16 @@ void NNSi_G3dFuncSbc_BBY(NNSG3dRS *rs, u32 opt)
+         }
+ 
+         if (data_02047394.flag & NNS_G3D_GLB_FLAG_FLUSH_WVP) {
+-            reg_G3X_GXFIFO = 0x00171012;    /* MTX_POP, MTX_MODE, MTX_LOAD_4x3 */
++            KH_GX_CMD(reg_G3X_GXFIFO, 0x00171012);    /* MTX_POP, MTX_MODE, MTX_LOAD_4x3 */
+             MIi_CpuSend32(data_02042890, &reg_G3X_GXFIFO, 2 * sizeof(u32));
+             MIi_CpuSend32(GetOrInitResource74cc(), &reg_G3X_GXFIFO, 12 * sizeof(u32));
+-            reg_G3X_GXFIFO = 0x00001b19;    /* MTX_MULT_4x3, MTX_SCALE */
++            KH_GX_CMD(reg_G3X_GXFIFO, 0x00001b19);    /* MTX_MULT_4x3, MTX_SCALE */
+             MIi_CpuSend32(&data_02042898, &reg_G3X_GXFIFO, sizeof(MtxFx43) + sizeof(VecFx32));
+         } else if (data_02047394.flag & NNS_G3D_GLB_FLAG_FLUSH_VP) {
+-            reg_G3X_GXFIFO = 0x00171012;
++            KH_GX_CMD(reg_G3X_GXFIFO, 0x00171012);
+             MIi_CpuSend32(data_02042890, &reg_G3X_GXFIFO, 2 * sizeof(u32));
+             MIi_CpuSend32(G3d_GetInverseCameraMtx(), &reg_G3X_GXFIFO, 12 * sizeof(u32));
+-            reg_G3X_GXFIFO = 0x00001b19;
++            KH_GX_CMD(reg_G3X_GXFIFO, 0x00001b19);
+             MIi_CpuSend32(&data_02042898, &reg_G3X_GXFIFO, sizeof(MtxFx43) + sizeof(VecFx32));
+         } else {
+             MIi_CpuSend32(data_0204288c, &reg_G3X_GXFIFO, 18 * sizeof(u32));
 diff --git a/libs/nns/g3d/calls/NNSi_G3dFuncSbc_PRJMAP.c b/libs/nns/g3d/calls/NNSi_G3dFuncSbc_PRJMAP.c
-index 1453b55d2..853a6d77b 100644
+index 1453b55d2..3b525101a 100644
 --- a/libs/nns/g3d/calls/NNSi_G3dFuncSbc_PRJMAP.c
 +++ b/libs/nns/g3d/calls/NNSi_G3dFuncSbc_PRJMAP.c
 @@ -1,3 +1,4 @@
@@ -7404,7 +7753,7 @@ index 1453b55d2..853a6d77b 100644
  /* NNSi_G3dFuncSbc_PRJMAP -- SBC projection-map command (PRJMAP) (NitroSystem G3D). NitroSystem's
   * NNSi_G3dFuncSbc_PRJMAP as built here, without the render callbacks: for a visible node it saves the current
   * position matrix to the system stack slot, forces the material's texture coordinate generation to
-@@ -113,10 +114,10 @@ extern void GXi_FlushCommandList(void);                                /* NNS_G3
+@@ -113,29 +114,29 @@ extern void GXi_FlushCommandList(void);                                /* NNS_G3
  extern const MtxFx43 *G3d_GetInverseCameraMtx(void);                      /* NNS_G3dGlbGetInvV */
  extern int G3X_GetClipMtx(MtxFx44 *m);
  
@@ -7419,6 +7768,29 @@ index 1453b55d2..853a6d77b 100644
  
  static inline void G3_MtxMode(u32 mode)
  {
+-    reg_G3_MTX_MODE = mode;
++    KH_GX_CMD(reg_G3_MTX_MODE, mode);
+ }
+ 
+ static inline void G3_PushMtx(void)
+ {
+-    reg_G3_MTX_PUSH = 0;
++    KH_GX_CMD(reg_G3_MTX_PUSH, 0);
+ }
+ 
+ static inline void G3_PopMtx(int num)
+ {
+-    reg_G3_MTX_POP = (u32)num;
++    KH_GX_CMD(reg_G3_MTX_POP, (u32)num);
+ }
+ 
+ static inline void G3_Identity(void)
+ {
+-    reg_G3_MTX_IDENTITY = 0;
++    KH_GX_CMD(reg_G3_MTX_IDENTITY, 0);
+ }
+ 
+ static inline void NNS_G3dGeMtxMode(u32 mode)
 diff --git a/libs/nns/snd/calls/NNS_SndArcGetBankInfo.c b/libs/nns/snd/calls/NNS_SndArcGetBankInfo.c
 index 5fc8c8039..827ac91cc 100644
 --- a/libs/nns/snd/calls/NNS_SndArcGetBankInfo.c
@@ -7978,7 +8350,7 @@ index c931ed625..b8abc51d2 100644
          | (size << 0xe) | (colorMode << 7) | (screenBase << 8) | (charBase << 2) | (extPal << 0xd);
  }
 diff --git a/src/engine/Billboard_DrawList.c b/src/engine/Billboard_DrawList.c
-index 90ffca526..8b3c8c3c3 100644
+index 90ffca526..eb87fd60b 100644
 --- a/src/engine/Billboard_DrawList.c
 +++ b/src/engine/Billboard_DrawList.c
 @@ -1,3 +1,4 @@
@@ -8009,6 +8381,54 @@ index 90ffca526..8b3c8c3c3 100644
  
  #define GX_FX16PAIR(a, b) ((u32)(((u32)(u16)(a)) | ((u32)(u16)(b) << 16)))
  #define GX_BEGIN_QUADS 1
+@@ -25,18 +26,18 @@ typedef struct { fx32 _00, _01, _02, _10, _11, _12, _20, _21, _22, _30, _31, _32
+ 
+ static inline void G3_Vtx(fx16 x, fx16 y, fx16 z)
+ {
+-    reg_G3_VTX_16 = GX_FX16PAIR(x, y);
+-    reg_G3_VTX_16 = (u32)(u16)z;
++    KH_GX_CMD(reg_G3_VTX_16, GX_FX16PAIR(x, y));
++    KH_GX_CMD(reg_G3_VTX_16, (u32)(u16)z);
+ }
+ 
+ static inline void G3_VtxXY(fx16 x, fx16 y)
+ {
+-    reg_G3_VTX_XY = GX_FX16PAIR(x, y);
++    KH_GX_CMD(reg_G3_VTX_XY, GX_FX16PAIR(x, y));
+ }
+ 
+ static inline void G3_TexCoordPx(int s, int t)
+ {
+-    reg_G3_TEXCOORD = ((u32)s << 4) | ((u32)t << 20);
++    KH_GX_CMD(reg_G3_TEXCOORD, ((u32)s << 4) | ((u32)t << 20));
+ }
+ 
+ typedef struct SpriteTex {
+@@ -71,12 +72,12 @@ void Billboard_DrawList(Billboard **ppList)
+     for (node = *ppList; node != 0; node = node->next) {
+         fx16 hw = (fx16)(node->width / 2);
+ 
+-        reg_G3_TEXIMAGE_PARAM = node->pTex->texImageParam;
+-        reg_G3_TEXPLTT_BASE = node->pTex->plttBase;
++        KH_GX_CMD(reg_G3_TEXIMAGE_PARAM, node->pTex->texImageParam);
++        KH_GX_CMD(reg_G3_TEXPLTT_BASE, node->pTex->plttBase);
+         MTX_MultVec43(&node->pos, &data_020473e0, (VecFx32 *)((char *)&data_020428e0 + 0x24));
+         G3_LoadMtx43(&data_020428e0);
+-        reg_G3_POLYGON_ATTR = (node->alpha << 16) | ((node->polygonId << 24) | (GX_CULL_NONE << 6));
+-        reg_G3_BEGIN_VTXS = GX_BEGIN_QUADS;
++        KH_GX_CMD(reg_G3_POLYGON_ATTR, (node->alpha << 16) | ((node->polygonId << 24) | (GX_CULL_NONE << 6)));
++        KH_GX_CMD(reg_G3_BEGIN_VTXS, GX_BEGIN_QUADS);
+         G3_TexCoordPx(node->s0, node->t0);
+         G3_Vtx(-hw, node->height, 0);
+         G3_TexCoordPx(node->s0, node->t1);
+@@ -85,6 +86,6 @@ void Billboard_DrawList(Billboard **ppList)
+         G3_VtxXY(hw, 0);
+         G3_TexCoordPx(node->s1, node->t0);
+         G3_VtxXY(hw, node->height);
+-        reg_G3_END_VTXS = 0;
++        KH_GX_CMD(reg_G3_END_VTXS, 0);
+     }
+ }
 diff --git a/src/engine/Boot_InitScene.c b/src/engine/Boot_InitScene.c
 index ac86b7f53..d9f181fb3 100644
 --- a/src/engine/Boot_InitScene.c

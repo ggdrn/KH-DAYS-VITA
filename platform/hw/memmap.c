@@ -2,6 +2,7 @@
  * computes when they are read. */
 #include "hw/memmap.h"
 
+#include "hw/gx3d.h"
 #include "hw/io.h"
 #include "hw/timers.h"
 #include "nitro/cpu.h"
@@ -170,12 +171,11 @@ uintptr_t kh_hw_sync_timers(void)
     return (uintptr_t)KH_IO_PTR(0x04000100);
 }
 
-/* GXSTAT: until the geometry engine exists the FIFO is always empty and idle. The IRQ mode
- * bits (30-31) are the game's; a write that dropped the "under half full" and "empty" bits
- * would otherwise leave MI_SendGXCommandAsync waiting forever. */
+/* GXSTAT: the geometry engine runs every command as it arrives, so the FIFO is always empty
+ * and idle; the stack levels and the box-test result are the engine's (hw/gx3d.c). */
 uintptr_t kh_hw_sync_gxstat(void)
 {
     KH_PROBE("GXSTAT");
-    KH_IO32(0x04000600) = (KH_IO32(0x04000600) & 0xc0000000u) | 0x06000000u;
+    kh_gx3d_sync_gxstat();
     return (uintptr_t)KH_IO_PTR(0x04000600);
 }

@@ -11,6 +11,7 @@
  *
  * Asynchronous transfers complete like the DMA-end interrupt: the callback runs at the next
  * interrupt point, on the running NitroSDK thread, in IRQ mode. */
+#include "hw/gx3d.h"
 #include "hw/io.h"
 #include "log.h"
 #include "nitro/cpu.h"
@@ -65,6 +66,11 @@ static void run(uint32_t ch, uint32_t src, uint32_t dst, uint32_t ctrl)
     }
     switch (CNT_TIMING(ctrl)) {
     case TIMING_IMM:
+        if (unit == 4 && kh_gx3d_is_port((void *)(uintptr_t)dst)) {
+            for (i = 0; i < count; i++, src += sstep, dst += dstep)
+                kh_gx_cmd((volatile void *)(uintptr_t)dst, *(volatile uint32_t *)(uintptr_t)src);
+            break;
+        }
         for (i = 0; i < count; i++, src += sstep, dst += dstep) {
             if (unit == 4)
                 *(volatile uint32_t *)(uintptr_t)dst = *(volatile uint32_t *)(uintptr_t)src;

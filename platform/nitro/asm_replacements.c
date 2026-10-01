@@ -7,6 +7,7 @@
  * that only makes sense on the ARM946E (cache and protection-unit maintenance, CPU mode, BIOS
  * busy loops) becomes a no-op. Thread contexts belong to the NitroSDK scheduler, which the port
  * replaces with its own (platform/nitro/os_*.c); until then those entries only log. */
+#include "hw/gx3d.h"
 #include "hw/io.h"
 #include "hw/memmap.h"
 #include "hw/shared_area.h"
@@ -102,9 +103,23 @@ void MIi_CpuSend32(const void *src, volatile void *port, uint32_t size)
         kh_io_fifo_write32(port, *s++);
 }
 
-void MI_Copy36B(const void *src, void *dst) { memcpy(dst, src, 36); }
-void MI_Copy48B(const void *src, void *dst) { memcpy(dst, src, 48); }
-void MI_Copy64B(const void *src, void *dst) { memcpy(dst, src, 64); }
+/* MI_Copy*B also feed matrices to the geometry ports (G3_MultMtx33, G3_LoadMtx44): word by
+ * word into the engine there, as the STMIA does on the DS. */
+static void copy_words(const void *src, void *dst, uint32_t size)
+{
+    if (kh_gx3d_is_port(dst)) {
+        const uint32_t *s = src;
+        uint32_t i;
+        for (i = 0; i < size / 4; i++)
+            kh_gx_cmd((volatile uint32_t *)dst + i, s[i]);
+        return;
+    }
+    memcpy(dst, src, size);
+}
+
+void MI_Copy36B(const void *src, void *dst) { copy_words(src, dst, 36); }
+void MI_Copy48B(const void *src, void *dst) { copy_words(src, dst, 48); }
+void MI_Copy64B(const void *src, void *dst) { copy_words(src, dst, 64); }
 void MI_Zero36B(void *dst) { memset(dst, 0, 36); }
 
 uint32_t MI_SwapWord(uint32_t value, volatile uint32_t *p)

@@ -6,6 +6,7 @@
  * What the boot ROM and the ARM7 leave in memory before the ARM9 starts is set up here: the
  * cartridge header in the shared area and the ARM7's PXI handlers. */
 #include "hw/gpu2d.h"
+#include "hw/gx3d.h"
 #include "hw/io.h"
 #include "hw/memmap.h"
 #include "hw/overlays.h"
@@ -63,6 +64,7 @@ static int game_thread(SceSize args, void *argp)
 static void boot_state(void)
 {
     kh_romfs_init();
+    kh_gx3d_init();
     kh_hw_reset();
     memcpy(KH_SHARED(HW_ROM_HEADER_BUF), rom_header(), HW_ROM_HEADER_SIZE);
     memcpy(KH_SHARED(HW_CARD_ROM_HEADER), rom_header(), HW_ROM_HEADER_SIZE);
@@ -225,7 +227,14 @@ void kh_game_run(void)
             }
         }
         if ((++frame % 600) == 0) {
+            KhGx3dStats gs;
             LOG("game: %s 2d %uus", status, (unsigned)s_render_us);
+            kh_gx3d_take_stats(&gs);
+            if (gs.commands)
+                LOG("gx3d: 10 s: %u swaps, %u cmds, %u polys (%u culled), %u verts, %u unknown, "
+                    "%u over RAM", (unsigned)gs.frames, (unsigned)gs.commands, (unsigned)gs.polygons,
+                    (unsigned)gs.culled, (unsigned)gs.vertices, (unsigned)gs.unknown,
+                    (unsigned)gs.overflows);
             log_flush();
         }
     }

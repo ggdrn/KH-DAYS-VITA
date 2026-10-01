@@ -21,6 +21,8 @@ Passes:
                 `--report` lists every remaining in-range literal for review.
   vram-sync     The NitroSDK functions that write VRAMCNT get KH_VRAM_SYNC_ON_EXIT() at the top
                 of their body, so the port moves the VRAM banks when they return.
+  gxcmd         Stores to geometry command registers become KH_GX_CMD(register, value), which the
+                Vita build turns into a call to its geometry engine (a plain store is the DS's).
   align64       Struct and union members declared as a plain `long long` get KH_ALIGN64: the
                 DS's 4-byte alignment for them on the Vita (GCC would use 8 and pad the struct
                 differently). u64/s64 members need nothing: the typedefs carry it.
@@ -406,8 +408,49 @@ def pass_align64(tree):
     return changed
 
 
+# ---- gxcmd ---------------------------------------------------------------------------------
+# Geometry commands written straight to their registers (reg_G3_X = v, the GX FIFO port, or a
+# raw 0x04000400-0x040005ff store) become KH_GX_CMD(register, v): the store itself on the DS, a
+# call into the port's geometry engine on the Vita, where a plain store would only land in
+# memory. reg_G3X_* other than the FIFO are control registers the renderer reads: left alone.
+
+GX_LVALUE = re.compile(
+    r"(?P<lv>\breg_G3_\w+|\breg_G3X_GXFIFO\b|\*\s*\(\s*[\w ]+\*\s*\)\s*KH_HW\(\s*0x0*4000[45][0-9a-fA-F]{2}\s*\)"
+    r"|\*\s*\(\s*REGType32v\s*\*\s*\)\s*\(\s*REG_\w+_ADDR\b[^;=]*\))"
+    r"\s*=(?!=)\s*(?P<v>[^;{}]+);")
+GX_MARK = "KH_GX_CMD("
+
+
+def pass_gxcmd(tree):
+    changed = 0
+    for path in sorted(tree.rglob("*")):
+        if path.suffix not in (".c", ".h", ".cpp") or not path.is_file():
+            continue
+        rel = path.relative_to(tree).as_posix()
+        if not rel.startswith(("include/", "libs/", "src/")):
+            continue
+        text = path.read_text(encoding="utf-8", errors="surrogateescape")
+        if "reg_G3" not in text and "KH_HW(0x0400" not in text and "KH_HW(0x400" not in text:
+            continue
+        # Whole text, not line by line: a value may span lines (G3_PolygonAttr).
+        def sub(m):
+            bol = text.rfind("\n", 0, m.start()) + 1
+            if text[bol:m.start()].lstrip().startswith(("/*", "*", "//")):
+                return m.group(0)
+            return f"KH_GX_CMD({m.group('lv')}, {m.group('v').strip()});"
+        new = GX_LVALUE.sub(sub, text)
+        dirty = new != text
+        if dirty:
+            text = new
+            if HW_INCLUDE not in text:
+                text = HW_INCLUDE + "  /* PLATFORM_VITA: KH_GX_CMD */\n" + text
+            path.write_text(text, encoding="utf-8", errors="surrogateescape")
+            changed += 1
+    return changed
+
+
 PASSES = {"abs-symbols": pass_abs_symbols, "hw": pass_hw, "vram-sync": pass_vram_sync,
-          "align64": pass_align64}
+          "align64": pass_align64, "gxcmd": pass_gxcmd}
 
 
 def main():
