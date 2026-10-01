@@ -149,6 +149,8 @@ int main(void)
         pal[8 + 1] = 0x001f;           /* palette base 1 (16 bytes): entry 1 red */
         pal[8 + 2] = 0x7c00;           /* entry 2 blue */
         s_bank[1][0x100] = 0x21;       /* texels 0,1 = 1,2 */
+        for (i = 0; i < 7; i++)
+            kh_ds_io[0x240 + i] = s_cnt[i]; /* VRAMCNT A-G */
         kh_tex_map_slots();
         ti = (0x100 / 8) | 3u << 26 | 1u << 29; /* 8x8, 16-colour, colour 0 clear */
         kh_tex_decode(ti, 1, out);

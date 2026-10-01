@@ -5,6 +5,7 @@
  * the banks' home storage is current while they are mapped here. */
 #include "hw/textures.h"
 
+#include "hw/io.h"
 #include "hw/vram.h"
 
 #include <string.h>
@@ -12,31 +13,63 @@
 static const uint8_t *s_tex_slot[4];
 static const uint8_t *s_pal_slot[6];
 
-void kh_tex_map_slots(void)
+/* VRAMCNT as the register holds it: texture and palette banks are not CPU-visible, so the
+ * register alone says where they are (the moved-views bookkeeping of hw/vram.c follows writes
+ * that go through kh_vram_sync, which a wide store over the four registers can skip) */
+static uint8_t vramcnt(int bank)
 {
+    static const uint16_t reg[7] = { 0x240, 0x241, 0x242, 0x243, 0x244, 0x245, 0x246 };
+    return kh_ds_io[reg[bank]];
+}
+
+static uint32_t s_stale_cnt;
+
+uint32_t kh_tex_stale_vramcnt(void)
+{
+    uint32_t n = s_stale_cnt;
+    s_stale_cnt = 0;
+    return n;
+}
+
+uint32_t kh_tex_map_slots(void)
+{
+    static uint8_t last[7];
+    static uint32_t gen;
     int bank, i;
+    for (bank = 0; bank < 7; bank++) {
+        uint8_t cnt = vramcnt(bank);
+        if (cnt != last[bank]) {
+            last[bank] = cnt;
+            gen++;
+        }
+    }
+    for (bank = 0; bank < 7; bank++)
+        if (vramcnt(bank) != kh_vram_bank_cnt(bank))
+            s_stale_cnt++;
     for (i = 0; i < 4; i++)
         s_tex_slot[i] = NULL;
     for (i = 0; i < 6; i++)
         s_pal_slot[i] = NULL;
     for (bank = 0; bank < 4; bank++) {
-        uint8_t cnt = kh_vram_bank_cnt(bank);
-        if ((cnt & 0x80) && (cnt & 7) == 3)
+        uint8_t cnt = vramcnt(bank);
+        /* MST is 2 bits for A and B, 3 for C and D */
+        if ((cnt & 0x80) && (cnt & (bank < 2 ? 3 : 7)) == 3)
             s_tex_slot[(cnt >> 3) & 3] = kh_vram_bank_home(bank);
     }
     {
-        uint8_t cnt = kh_vram_bank_cnt(4); /* E: 64 KiB, slots 0-3 */
+        uint8_t cnt = vramcnt(4); /* E: 64 KiB, slots 0-3 */
         if ((cnt & 0x80) && (cnt & 7) == 3)
             for (i = 0; i < 4; i++)
                 s_pal_slot[i] = kh_vram_bank_home(4) + i * 0x4000;
     }
     for (bank = 5; bank <= 6; bank++) { /* F, G: 16 KiB each */
-        uint8_t cnt = kh_vram_bank_cnt(bank);
+        uint8_t cnt = vramcnt(bank);
         if ((cnt & 0x80) && (cnt & 7) == 3) {
             int ofs = (cnt >> 3) & 3;
             s_pal_slot[(ofs & 1) + ((ofs >> 1) & 1) * 4] = kh_vram_bank_home(bank);
         }
     }
+    return gen;
 }
 
 static const uint8_t s_zero[0x20000];

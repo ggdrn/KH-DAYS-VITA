@@ -171,6 +171,12 @@ void input_poll(InputState *out)
         out->toggle_console = (s_prev_buttons & SCE_CTRL_START) == 0;
         held &= ~(DS_KEY_L | DS_KEY_R | DS_KEY_START);
     }
+    /* L+R+Triangle dumps the 3D frame (textures, polygons) for diagnosis; swallowed. */
+    if ((pad.buttons & (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_TRIANGLE)) ==
+        (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_TRIANGLE)) {
+        out->dump_3d = (s_prev_buttons & SCE_CTRL_TRIANGLE) == 0;
+        held &= ~(DS_KEY_L | DS_KEY_R | DS_KEY_X);
+    }
     s_prev_buttons = pad.buttons;
 
     out->held = held;

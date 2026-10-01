@@ -6,8 +6,9 @@
 
 #include <stdint.h>
 
-/* Rebuild the slot map from the banks' VRAMCNT (once per rendered frame). */
-void kh_tex_map_slots(void);
+/* Rebuild the slot map from the banks' VRAMCNT registers (once per rendered frame). Returns a
+ * count that changes whenever one of VRAMCNT A-G did. */
+uint32_t kh_tex_map_slots(void);
 
 /* Texture size from TEXIMAGE_PARAM. */
 static inline int kh_tex_width(uint32_t teximage) { return 8 << ((teximage >> 20) & 7); }
@@ -18,6 +19,9 @@ static inline int kh_tex_format(uint32_t teximage) { return (teximage >> 26) & 7
  * texture and palette VRAM it reads. */
 uint32_t kh_tex_hash(uint32_t teximage, uint32_t pltt);
 
+/* Diagnostics: bank-frames where VRAMCNT differed from what hw/vram.c applied, since the
+ * last call. */
+uint32_t kh_tex_stale_vramcnt(void);
 /* Diagnostics: bits 0-3 the texture slots mapped, 8-13 the palette slots. */
 unsigned kh_tex_slots_mapped(void);
 /* Diagnostics: the texture's texel bytes are all zero (an unmapped slot, or not loaded yet). */

@@ -8,6 +8,7 @@
 #include "hw/gpu2d.h"
 #include "hw/gpu3d.h"
 #include "hw/gx3d.h"
+#include "hw/textures.h"
 #include "hw/io.h"
 #include "hw/memmap.h"
 #include "hw/overlays.h"
@@ -272,6 +273,8 @@ static void sample_input(void)
         video_set_layout(video_layout() + 1);
     if (in.swap_screens)
         video_swap_screens();
+    if (in.dump_3d)
+        kh_gpu3d_request_dump();
     if (in.toggle_console)
         s_console = !s_console;
     KH_IO16(0x04000130) = in.keyinput;
@@ -427,11 +430,12 @@ void kh_game_run(void)
                         (unsigned)rs.textures_decoded, (unsigned)rs.textures_live,
                         (unsigned)rs.skipped);
                     LOG("gpu3d: textures by format %u/%u/%u/%u/%u/%u/%u (A3I5 4c 16c 256c 4x4 "
-                        "A5I3 direct), %u from empty VRAM; slots tex %x pltt %02x",
+                        "A5I3 direct), %u from empty VRAM; slots tex %x pltt %02x; VRAMCNT "
+                        "ahead of the applied banks %u times",
                         (unsigned)rs.fmt[1], (unsigned)rs.fmt[2], (unsigned)rs.fmt[3],
                         (unsigned)rs.fmt[4], (unsigned)rs.fmt[5], (unsigned)rs.fmt[6],
                         (unsigned)rs.fmt[7], (unsigned)rs.empty_src, rs.slots & 15,
-                        (rs.slots >> 8) & 63);
+                        (rs.slots >> 8) & 63, (unsigned)kh_tex_stale_vramcnt());
                     LOG("gpu3d: polygons by mode %u/%u/%u/%u (modulate decal toon shadow), "
                         "DISP3DCNT %04x", (unsigned)rs.modes[0], (unsigned)rs.modes[1],
                         (unsigned)rs.modes[2], (unsigned)rs.modes[3], (unsigned)rs.disp3dcnt);

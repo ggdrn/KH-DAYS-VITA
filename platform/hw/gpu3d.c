@@ -11,12 +11,15 @@
  * anti-aliasing, the rear-plane bitmap, w-buffering (drawn with the z-buffer). */
 #include "hw/gpu3d.h"
 
+#include "hw/io.h"
 #include "hw/textures.h"
 #include "hw/vram.h"
 #include "log.h"
 #include "video.h"
 
 #include <psp2/kernel/processmgr.h>
+#include <stdio.h>
+#include <psp2/io/stat.h>
 #include <stdlib.h>
 #include <string.h>
 #include <vitaGL.h>
@@ -306,6 +309,90 @@ static void upload_toon(const KhGxFrame *f)
     glActiveTexture(GL_TEXTURE0);
 }
 
+/* ---- diagnosis dump -------------------------------------------------------------------- */
+
+static volatile int s_dump_request;
+
+void kh_gpu3d_request_dump(void)
+{
+    s_dump_request = 1;
+}
+
+static void dump_tga(const char *path, const uint32_t *px, int w, int h)
+{
+    FILE *f = fopen(path, "wb");
+    uint8_t hdr[18] = { 0 };
+    int y, x;
+    if (!f)
+        return;
+    hdr[2] = 2; /* uncompressed true colour */
+    hdr[12] = (uint8_t)w, hdr[13] = (uint8_t)(w >> 8);
+    hdr[14] = (uint8_t)h, hdr[15] = (uint8_t)(h >> 8);
+    hdr[16] = 32;
+    hdr[17] = 0x28; /* top-left origin, 8 alpha bits */
+    fwrite(hdr, 1, sizeof(hdr), f);
+    for (y = 0; y < h; y++)
+        for (x = 0; x < w; x++) {
+            const uint32_t c = px[y * w + x];
+            const uint8_t bgra[4] = { (uint8_t)(c >> 16), (uint8_t)(c >> 8), (uint8_t)c,
+                                      (uint8_t)(c >> 24) };
+            fwrite(bgra, 1, 4, f);
+        }
+    fclose(f);
+}
+
+static void dump_frame(const KhGxFrame *f)
+{
+    static const char dir[] = "ux0:data/khdays/dump";
+    char path[128];
+    FILE *list;
+    int i, k, ntex = 0;
+    static uint32_t seen_img[512], seen_pal[512];
+
+    sceIoMkdir(dir, 0777);
+    snprintf(path, sizeof(path), "%s/polygons.txt", dir);
+    list = fopen(path, "w");
+    if (!list)
+        return;
+    fprintf(list, "frame %u: %d polygons, %d vertices, DISP3DCNT %04x, swap %u\n",
+            (unsigned)f->serial, f->npoly, f->nvtx, (unsigned)f->disp3dcnt, (unsigned)f->swap);
+    fprintf(list, "VRAMCNT A-G %02x %02x %02x %02x %02x %02x %02x\n", kh_ds_io[0x240],
+            kh_ds_io[0x241], kh_ds_io[0x242], kh_ds_io[0x243], kh_ds_io[0x244], kh_ds_io[0x245],
+            kh_ds_io[0x246]);
+    for (i = 0; i < f->npoly; i++) {
+        const KhGxPolygon *p = &f->poly[f->order[i]];
+        fprintf(list, "poly %d: attr %08x teximage %08x pltt %04x tr %d |", i, (unsigned)p->attr,
+                (unsigned)p->teximage, (unsigned)p->pltt, p->translucent);
+        for (k = 0; k < p->count; k++) {
+            const KhGxVertex *v = &f->vtx[p->v[k]];
+            fprintf(list, " (%.1f %.1f %.1f %.1f st %.2f %.2f rgb %d %d %d)", v->x / v->w,
+                    v->y / v->w, v->z, v->w, v->s, v->t, v->r, v->g, v->b);
+        }
+        fputc('\n', list);
+        if (kh_tex_format(p->teximage) && ntex < 512) {
+            const uint32_t img = p->teximage & 0x3fffffffu, pal = p->pltt;
+            int j;
+            for (j = 0; j < ntex && (seen_img[j] != img || seen_pal[j] != pal); j++)
+                ;
+            if (j == ntex) {
+                const int w = kh_tex_width(img), h = kh_tex_height(img);
+                uint32_t *px = malloc((size_t)w * h * 4);
+                seen_img[ntex] = img, seen_pal[ntex] = pal, ntex++;
+                if (px) {
+                    kh_tex_decode(img, pal, px);
+                    snprintf(path, sizeof(path), "%s/tex_%08x_%04x.tga", dir, (unsigned)img,
+                             (unsigned)pal);
+                    dump_tga(path, px, w, h);
+                    free(px);
+                }
+            }
+        }
+    }
+    fclose(list);
+    LOG("gpu3d: dumped frame %u: %d polygons, %d textures to %s", (unsigned)f->serial,
+        f->npoly, ntex, dir);
+}
+
 unsigned kh_gpu3d_render(const KhGxFrame *f)
 {
     uint64_t t0;
@@ -324,8 +411,11 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
     s_frame++;
     if ((s_frame & 63) == 0 || s_tex_live >= TEX_MAX_LIVE)
         tex_evict_old();
-    kh_tex_map_slots();
-    s_tex_gen = kh_vram_tex_generation();
+    s_tex_gen = kh_vram_tex_generation() + kh_tex_map_slots();
+    if (s_dump_request) {
+        s_dump_request = 0;
+        dump_frame(f);
+    }
 
     glBindFramebuffer(GL_FRAMEBUFFER, s_fbo);
     glViewport(0, 0, s_w, s_h);
