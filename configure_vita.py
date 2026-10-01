@@ -38,6 +38,9 @@ COMMON_CFLAGS = [
 PORT_CFLAGS = ["-std=gnu11", "-O3", "-Wall", "-Wno-unused-function", "-funwind-tables"]
 GAME_CFLAGS = [
     "-std=gnu11", "-O2", "-w", "-funwind-tables",
+    # objects in source order, as mwcc emits them: the decomp's data files list a module's
+    # objects in DS address order, and code reads from one into the next (tools/check_layout.py)
+    "-fno-toplevel-reorder",
     # The decomp's K&R-style calls and int<->pointer casts are deliberate: mwccarm accepted
     # them, and GCC 14+ turns these diagnostics into errors by default.
     "-Wno-error=implicit-function-declaration", "-Wno-error=int-conversion",
@@ -45,7 +48,8 @@ GAME_CFLAGS = [
     "-Wno-error=return-mismatch",
 ]
 
-GAME_CXXFLAGS = ["-std=gnu++11", "-O2", "-w", "-fno-exceptions", "-funwind-tables", "-fpermissive"]
+GAME_CXXFLAGS = ["-std=gnu++11", "-O2", "-w", "-fno-exceptions", "-funwind-tables",
+                 "-fno-toplevel-reorder", "-fpermissive"]
 
 LIBS = [
     "-lvitaGL", "-lvitashark", "-lSceShaccCgExt", "-lmathneon", "-lstdc++", "-lm", "-lc",
@@ -160,6 +164,11 @@ def main():
             relsrc = os.path.relpath(src, decomp)
             obj = "build/game/" + os.path.splitext(relsrc)[0] + ".o"
             w(f"build {obj.replace(' ', '$ ')}: {rule[kind]} {str(src).replace(' ', '$ ')}")
+            if kind == "c" and "/data/" in relsrc.replace(os.sep, "/"):
+                # data-only files, laid out as mwcc did: at -Os, as GCC for ARM word-aligns
+                # arrays and structs only when optimising for speed (ARM_EXPAND_ALIGNMENT), and
+                # with zero initialisers kept in .data next to their neighbours, not moved to .bss
+                w("  game_cflags = $game_cflags -Os -fno-zero-initialized-in-bss")
             modules.setdefault(decomp_sources.module_of(relsrc), []).append(obj)
     link_extra = ""
     if game_srcs:

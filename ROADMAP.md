@@ -37,7 +37,7 @@ Phases follow the generic "port a decompiled game to the Vita" plan. ✅ done ·
     (copies, matrices, MATH_QSort, streaming LZ, SHA-1, CP context, interrupt state, MobiClip
     blit); `platform/nitro/dsprotect.c`: DS Protect answers "genuine"
 - ✅ Hardware addresses translated; a scan of the linked ELF finds no DS address left
-- 🔶 Console: boots to `NitroMain` (0.0.8); 0.0.9 past the GBA-slot probe and into the first SDK thread; 0.0.10 pins the shared-bss statics (OSi_CurrentThreadPtr was NULL); 0.0.11 = 0.0.10 on decomp ea39ead5e; 0.0.12 defines those names in assembly (--defsym block+off was absolute, not relocated); 0.0.13 gives 64-bit struct members the DS 4-byte alignment (OSThread.state was at +0x68); 0.0.15 completes async card reads without IME (main loads ov001 before interrupts are on); 0.0.17 keeps the I bit per thread across switches and reaches the frame loop (IME on, both screens configured); 0.0.18 renders 2D ~5x faster; 0.0.19 wakes OS_WaitIrq sleepers on the right queue (the frame loop hung on its first VBlank); 0.0.20 unwraps REG_G3X_GXSTAT_GE_MASK (G3X_ResetMtxStack spun forever) and loads the title overlay (ov000); 0.0.21 answers its CARD_IdentifyBackup (the save works); 0.0.22 unpacks archive handles (pointers packed into 24 bits); 0.0.24 tells file names from handles on the Vita (bit 31 is set on every Vita pointer) and reads the boot text; 0.0.25 completes card reads with the DS timing (task path at once, DMA path later)
+- 🔶 Console: boots to `NitroMain` (0.0.8); 0.0.9 past the GBA-slot probe and into the first SDK thread; 0.0.10 pins the shared-bss statics (OSi_CurrentThreadPtr was NULL); 0.0.11 = 0.0.10 on decomp ea39ead5e; 0.0.12 defines those names in assembly (--defsym block+off was absolute, not relocated); 0.0.13 gives 64-bit struct members the DS 4-byte alignment (OSThread.state was at +0x68); 0.0.15 completes async card reads without IME (main loads ov001 before interrupts are on); 0.0.17 keeps the I bit per thread across switches and reaches the frame loop (IME on, both screens configured); 0.0.18 renders 2D ~5x faster; 0.0.19 wakes OS_WaitIrq sleepers on the right queue (the frame loop hung on its first VBlank); 0.0.20 unwraps REG_G3X_GXSTAT_GE_MASK (G3X_ResetMtxStack spun forever) and loads the title overlay (ov000); 0.0.21 answers its CARD_IdentifyBackup (the save works); 0.0.22 unpacks archive handles (pointers packed into 24 bits); 0.0.24 tells file names from handles on the Vita (bit 31 is set on every Vita pointer) and reads the boot text; 0.0.25 completes card reads with the DS timing (task path at once, DMA path later) and loads the font; 0.0.26 keeps the DS data layout (GCC reordered and realigned objects)
 
 ## 6. Platform layer 🔶
 - ✅ main/system: clocks, data dir, log + previous log, ROM open/verify (cached SHA-1), msg dialog
@@ -70,6 +70,11 @@ Phases follow the generic "port a decompiled game to the Vita" plan. ✅ done ·
 - 🔶 Save (`platform/nitro/backup.c`): the ARM7's backup service over PXI (identify, read,
   program, verify, erase) on `days.sav`, raw chip image compatible with emulator saves;
   written a second after the last change, atomically. ⬜ flush on suspend
+
+- 🔶 Data layout (`tools/check_layout.py`): objects of one file keep their DS order and
+  spacing (`-fno-toplevel-reorder`; data files at `-Os -fno-zero-initialized-in-bss`):
+  1384 differing pairs down to 19, all in overlays off the boot path (field, MobiClip,
+  camp menu 2, enemies: objects declared at a size other than the DS's)
 
 ## 7. Diagnostics 🔶
 - ✅ kubridge fault handler (all registers, run-time `main` for the load bias)
