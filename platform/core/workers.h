@@ -1,12 +1,15 @@
-/* A helper thread on the core the game leaves free (core 2; core 0 is the display's, core 1
- * the game's), for splitting per-frame work: post a job, do your own share, wait. */
+/* Helper threads for splitting per-frame work into chunks. Core 0 is the display's and core 1
+ * the game's; the helper runs on core 2. A job is n chunks pulled from a shared counter, so the
+ * caller and the helper balance themselves whatever else runs on their cores. */
 #ifndef KH_WORKERS_H
 #define KH_WORKERS_H
 
+typedef void (*WorkFn)(int chunk, void *arg);
+
 void workers_init(void);
-/* Run fn(arg) on the helper; one job at a time. Without a helper it runs here and now. */
-void workers_post(void (*fn)(void *), void *arg);
-/* Until the posted job is done. */
-void workers_wait(void);
+/* Start fn(0..n-1, arg) on the helper; the caller may do other work, then join. */
+void workers_begin(WorkFn fn, int n, void *arg);
+/* Pull the chunks still left, then wait for the ones in flight. */
+void workers_join(void);
 
 #endif

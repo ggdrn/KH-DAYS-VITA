@@ -179,12 +179,12 @@ void MI_SendGXCommandAsync(uint32_t ch, const void *src, uint32_t size, MIDmaCal
 {
     (void)ch;
     send_gx(src, size);
-    if (cb) {
-        if (size)
-            complete(cb, arg);
-        else
-            cb(arg);
-    }
+    /* The transfer is over: its callback runs now. Its one user, NNS_G3dGeSendDL, raises a
+     * busy flag for it to clear (G3dGe_ClearSendDLBusy); deferred, the flag stayed up while
+     * NNS spun on it (`while (busy) {}`, never a switch point) and queued geometry commands
+     * in its RAM buffer behind direct register writes. 0.0.33 froze there. */
+    if (cb)
+        cb(arg);
 }
 
 void MI_SendGXCommandAsyncFast(uint32_t ch, const void *src, uint32_t size, MIDmaCallback cb,

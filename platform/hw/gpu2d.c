@@ -153,21 +153,39 @@ static void bg_text(const Engine *e, int bg, int line, uint16_t *out)
     while (x < W) {
         const int sx = (x + hofs) & (w - 1);
         const uint16_t se = rd16(v, row + (uint32_t)(sx >> 8) * 0x800u + ((sx >> 3) & 31) * 2u, m);
-        const int tile = se & 0x3ff, pal = se >> 12;
+        const int tile = se & 0x3ff, pal = se >> 12, hflip = se & 0x400;
         const int ty = (se & 0x800) ? 7 - (y & 7) : (y & 7);
         int px = sx & 7;
-        for (; px < 8 && x < W; px++, x++) {
-            const int tx = (se & 0x400) ? 7 - px : px;
-            int idx;
-            if (bpp8) {
-                idx = v[(cb + tile * 64u + ty * 8u + tx) & m];
+        /* the tile's row of 8 texels at once; an empty row (common) is skipped whole */
+        if (bpp8) {
+            uint32_t lo, hi;
+            const uint32_t a = (cb + tile * 64u + ty * 8u) & m;
+            const uint16_t *pp = ext ? ext + pal * 256 : e->bg_pal;
+            memcpy(&lo, v + a, 4);
+            memcpy(&hi, v + ((a + 4) & m), 4);
+            if (!(lo | hi)) {
+                x += 8 - px;
+                continue;
+            }
+            for (; px < 8 && x < W; px++, x++) {
+                const int tx = hflip ? 7 - px : px;
+                const int idx = ((tx < 4 ? lo >> (tx * 8) : hi >> ((tx - 4) * 8))) & 0xff;
                 if (idx)
-                    out[x] = (ext ? ext[pal * 256 + idx] : e->bg_pal[idx]) | OPAQUE;
-            } else {
-                const uint8_t b = v[(cb + tile * 32u + ty * 4u + (tx >> 1)) & m];
-                idx = (tx & 1) ? b >> 4 : b & 15;
+                    out[x] = pp[idx] | OPAQUE;
+            }
+        } else {
+            uint32_t bits;
+            const uint16_t *pp = e->bg_pal + pal * 16;
+            memcpy(&bits, v + ((cb + tile * 32u + ty * 4u) & m), 4);
+            if (!bits) {
+                x += 8 - px;
+                continue;
+            }
+            for (; px < 8 && x < W; px++, x++) {
+                const int tx = hflip ? 7 - px : px;
+                const int idx = (bits >> (tx * 4)) & 15;
                 if (idx)
-                    out[x] = e->bg_pal[pal * 16 + idx] | OPAQUE;
+                    out[x] = pp[idx] | OPAQUE;
             }
         }
     }
@@ -461,9 +479,15 @@ static void init_rgba(void)
     }
 }
 
+/* arithmetic rather than s_rgba: the 128 KiB table does not stay in the A9's 32 KiB L1, and
+ * this vectorises (NEON) in the row loops */
 static inline uint32_t to_rgba(uint16_t c)
 {
-    return s_rgba[c & 0x7fff];
+    uint32_t r = c & 31, g = (c >> 5) & 31, b = (c >> 10) & 31;
+    r = r << 3 | r >> 2;
+    g = g << 3 | g >> 2;
+    b = b << 3 | b >> 2;
+    return 0xff000000u | b << 16 | g << 8 | r;
 }
 
 static int in_span(int v, int lo, int hi)

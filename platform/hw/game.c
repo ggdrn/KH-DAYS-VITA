@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <psp2/kernel/cpu.h>
+#include <psp2/display.h>
 
 static int s_gpu3d;          /* the GPU 3D renderer is up */
 static uint64_t s_render_total, s_window_start; /* 2D time and wall clock since the last report */
@@ -99,19 +100,46 @@ static void boot_state(void)
 
 static uint32_t s_render_us; /* the last frame's 2D rendering time, both engines */
 
-typedef struct {
-    uint32_t *a, *b; /* the engines' screens */
-    int y0, y1, a3d;
-} Band;
+/* Where the display loop is, for the stall monitor: it runs on its own, so a display loop
+ * stuck in a call (GPU, worker, a lock) still gets reported. */
+static volatile const char *s_stage = "start";
+static volatile uint32_t s_beats;
 
-/* lines per band: the upper band also carries the 3D submission */
-#define BAND_SPLIT 88
-
-static void render_band(void *arg)
+static int stall_monitor(SceSize args, void *argp)
 {
-    Band *band = arg;
-    band->a3d = kh_gpu2d_render_lines(KH_ENGINE_A, band->a, band->y0, band->y1);
-    kh_gpu2d_render_lines(KH_ENGINE_B, band->b, band->y0, band->y1);
+    uint32_t last = 0, still = 0;
+    (void)args;
+    (void)argp;
+    for (;;) {
+        sceKernelDelayThread(1000000);
+        if (s_beats != last) {
+            last = s_beats;
+            still = 0;
+        } else if (++still == 3) {
+            LOG("monitor: the display loop has been in '%s' for 3 s", (const char *)s_stage);
+            log_flush();
+        }
+    }
+    return 0;
+}
+
+/* The 2D frame as chunks of lines, both engines, shared by the display thread and the
+ * helper core (platform/core/workers.c). */
+#define BANDS 8
+#define BAND_LINES (192 / BANDS)
+
+typedef struct {
+    uint32_t *fb[2]; /* engine A's screen, engine B's */
+    int a3d[BANDS];
+} Frame2d;
+
+static void render_chunk(int chunk, void *arg)
+{
+    Frame2d *f = arg;
+    const int engine = chunk & 1, band = chunk >> 1;
+    int r = kh_gpu2d_render_lines(engine, f->fb[engine], band * BAND_LINES, (band + 1) * BAND_LINES);
+    if (engine == KH_ENGINE_A)
+        f->a3d[band] = r;
 }
 
 static void present(void)
@@ -120,24 +148,28 @@ static void present(void)
     int a_on_top = (KH_IO16(0x04000304) >> 15) & 1;
     uint64_t t0 = sceKernelGetProcessTimeWide();
     unsigned tex3d = 0;
-    int a3d;
-    Band low = { a_on_top ? s_top : s_bottom, a_on_top ? s_bottom : s_top, BAND_SPLIT, 192, 0 };
+    int a3d = 0, i;
+    static Frame2d f2d;
 
-    /* the 2D engines in two bands: the lower one on the helper core while this one draws the
-     * upper band and sends the 3D frame to the GPU */
-    workers_post(render_band, &low);
-    a3d = kh_gpu2d_render_lines(KH_ENGINE_A, low.a, 0, BAND_SPLIT);
-    kh_gpu2d_render_lines(KH_ENGINE_B, low.b, 0, BAND_SPLIT);
-    if (a3d && s_gpu3d)
+    /* the helper core starts on the 2D chunks while this thread sends the 3D frame to the
+     * GPU (engine A's 3D layer is on: DISPCNT bits 3 and 8), then both share what is left */
+    f2d.fb[KH_ENGINE_A] = a_on_top ? s_top : s_bottom;
+    f2d.fb[KH_ENGINE_B] = a_on_top ? s_bottom : s_top;
+    s_stage = "2d";
+    workers_begin(render_chunk, BANDS * 2, &f2d);
+    s_stage = "3d";
+    if ((KH_IO32(0x04000000) & 0x108) == 0x108 && s_gpu3d)
         tex3d = kh_gpu3d_render(kh_gx3d_acquire());
-    workers_wait();
+    s_stage = "2d join";
+    workers_join();
+    for (i = 0; i < BANDS; i++)
+        a3d |= f2d.a3d[i];
     s_render_us = (uint32_t)(sceKernelGetProcessTimeWide() - t0);
     s_render_total += s_render_us;
     if (s_render_us > s_render_max)
         s_render_max = s_render_us;
-    a3d |= low.a3d;
-    if (a3d && s_gpu3d && !tex3d)
-        tex3d = kh_gpu3d_render(kh_gx3d_acquire());
+    if (!a3d)
+        tex3d = 0;
     video_set_3d(tex3d ? (a_on_top ? 0 : 1) : -1, tex3d, KH_IO16(0x0400006c));
     if (a3d && !tex3d) {
         /* no 3D to lay in: the 3D pixels show what is under them */
@@ -146,7 +178,33 @@ static void present(void)
         for (i = 0; i < 256 * 192; i++)
             fb[i] |= 0xff000000u;
     }
+    s_stage = "present";
     video_present(s_top, s_bottom);
+    s_stage = "loop";
+    s_beats++;
+}
+
+static void sample_input(void);
+
+/* VBlank at the Vita's own 60 Hz, whatever the rendering costs: the game counts time in
+ * VBlanks, so tying them to the display loop slowed the whole game down with every frame
+ * that took longer than 16.7 ms to draw. */
+static volatile uint32_t s_vblanks;
+
+static int vblank_thread(SceSize args, void *argp)
+{
+    (void)args;
+    (void)argp;
+    for (;;) {
+        sceDisplayWaitVblankStart();
+        sample_input();
+        kh_hw_vblank_start_us = sceKernelGetProcessTimeWide();
+        (*(volatile uint32_t *)KH_SHARED(HW_VBLANK_COUNT_BUF))++;
+        if (KH_IO16(0x04000004) & 0x08) /* DISPSTAT: VBlank IRQ enabled */
+            kh_irq_raise(KH_IRQ_VBLANK);
+        s_vblanks++;
+    }
+    return 0;
 }
 
 static void sample_input(void)
@@ -231,18 +289,23 @@ void kh_game_run(void)
         return;
     }
     sceKernelStartThread(th, 0, NULL);
+    th = sceKernelCreateThread("kh_vblank", vblank_thread, 0x10000100 - 30, 0x4000, 0,
+                               SCE_KERNEL_CPU_MASK_USER_2, NULL);
+    if (th >= 0)
+        sceKernelStartThread(th, 0, NULL);
+    th = sceKernelCreateThread("kh_monitor", stall_monitor, 0x10000100 - 20, 0x4000, 0,
+                               SCE_KERNEL_CPU_MASK_USER_2, NULL);
+    if (th >= 0)
+        sceKernelStartThread(th, 0, NULL);
 
     for (;;) {
         char status[96];
         uint32_t progress;
 
-        sample_input();
+        s_stage = "input";
         watch_registers(frame);
+        s_stage = "save";
         kh_backup_tick();
-        kh_hw_vblank_start_us = sceKernelGetProcessTimeWide();
-        (*(volatile uint32_t *)KH_SHARED(HW_VBLANK_COUNT_BUF))++;
-        if (KH_IO16(0x04000004) & 0x08) /* DISPSTAT: VBlank IRQ enabled */
-            kh_irq_raise(KH_IRQ_VBLANK);
 
         snprintf(status, sizeof(status),
                  "f%u irq%u pre%u sw%u IE%08x IME%d DISP%08x",
@@ -279,11 +342,14 @@ void kh_game_run(void)
             KhGx3dStats gs;
             {
                 uint64_t now = sceKernelGetProcessTimeWide();
-                LOG("game: %s 2d avg %uus max %uus, %u.%u fps", status,
+                static uint32_t vb_last;
+                LOG("game: %s 2d avg %uus max %uus, %u vblanks, %u.%u fps", status,
                     (unsigned)(s_render_total / 600), (unsigned)s_render_max,
+                    (unsigned)(s_vblanks - vb_last),
                     (unsigned)(6000000000ull / (now - s_window_start)) / 10,
                     (unsigned)(6000000000ull / (now - s_window_start)) % 10);
                 s_window_start = now;
+                vb_last = s_vblanks;
                 s_render_total = 0;
                 s_render_max = 0;
             }

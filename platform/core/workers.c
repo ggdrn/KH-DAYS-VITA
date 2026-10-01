@@ -5,9 +5,24 @@
 #include <psp2/kernel/threadmgr.h>
 
 static SceUID s_go = -1, s_done = -1;
-static void (*volatile s_fn)(void *);
-static void *volatile s_arg;
-static int s_pending;
+static WorkFn s_fn;
+static void *s_arg;
+static int s_n;
+static volatile int s_next, s_finished;
+static int s_active;
+
+/* chunks until none is left; the one finishing the last chunk signals the joiner */
+static void pull(void)
+{
+    for (;;) {
+        int c = __atomic_fetch_add(&s_next, 1, __ATOMIC_ACQ_REL);
+        if (c >= s_n)
+            return;
+        s_fn(c, s_arg);
+        if (__atomic_add_fetch(&s_finished, 1, __ATOMIC_ACQ_REL) == s_n)
+            sceKernelSignalSema(s_done, 1);
+    }
+}
 
 static int worker(SceSize args, void *argp)
 {
@@ -15,8 +30,7 @@ static int worker(SceSize args, void *argp)
     (void)argp;
     for (;;) {
         sceKernelWaitSema(s_go, 1, NULL);
-        s_fn(s_arg);
-        sceKernelSignalSema(s_done, 1);
+        pull();
     }
     return 0;
 }
@@ -36,22 +50,29 @@ void workers_init(void)
     LOG("workers: helper thread on core 2");
 }
 
-void workers_post(void (*fn)(void *), void *arg)
+void workers_begin(WorkFn fn, int n, void *arg)
 {
-    if (s_go < 0) {
-        fn(arg);
-        return;
-    }
     s_fn = fn;
     s_arg = arg;
-    s_pending = 1;
-    sceKernelSignalSema(s_go, 1);
+    s_n = n;
+    s_finished = 0;
+    __atomic_store_n(&s_next, 0, __ATOMIC_RELEASE);
+    s_active = n > 0;
+    if (s_go >= 0 && n > 0)
+        sceKernelSignalSema(s_go, 1);
 }
 
-void workers_wait(void)
+void workers_join(void)
 {
-    if (s_pending) {
-        sceKernelWaitSema(s_done, 1, NULL);
-        s_pending = 0;
+    if (!s_active)
+        return;
+    s_active = 0;
+    if (s_go < 0) {
+        pull();
+        return;
     }
+    pull();
+    sceKernelWaitSema(s_done, 1, NULL);
+    /* the helper may still be between its last failed pull and its wait: harmless, the next
+     * begin resets the counters before signalling it */
 }
