@@ -10505,7 +10505,7 @@ index 99aa137aa..05f8bf9fb 100644
      int nInterruptCharge;            /* 0x04b4 */
      u8 pad04b8[0xcd4];
 diff --git a/src/overlays/field/ov022_battle/Ov022_UpdateCommandInput.c b/src/overlays/field/ov022_battle/Ov022_UpdateCommandInput.c
-index c52f88764..f6e6688b0 100644
+index c52f88764..ba5b156c0 100644
 --- a/src/overlays/field/ov022_battle/Ov022_UpdateCommandInput.c
 +++ b/src/overlays/field/ov022_battle/Ov022_UpdateCommandInput.c
 @@ -1,3 +1,4 @@
@@ -10531,6 +10531,36 @@ index c52f88764..f6e6688b0 100644
      u8 pad46c[0x64];
      signed char nCommandKind;    /* 0x4d0 */
      u8 pad4d1[1];
+@@ -58,6 +59,9 @@ struct ScreenCfg {
+ extern u8 data_0204c240;
+ extern struct ScreenCfg data_0204c254;
+ extern u16 gPadHeld;
++#ifdef PLATFORM_VITA
++extern int kh_vita_command_nav(void);
++#endif
+ extern u16 gPadPressed;
+ 
+ extern char *Ov022_GetGlobalPlusE0(void);
+@@ -269,6 +273,19 @@ void Ov022_UpdateCommandInput(struct Actor *pActor)
+                 bCommandChosen = 1;
+             }
+         } else {
++#ifdef PLATFORM_VITA
++            /* the Vita's d-pad moves the command deck's cursor (the left stick is the DS
++             * d-pad here); kh_vita_command_nav also tells the input layer the deck is up */
++            if (Ov002_Hud_IsPanelOpen() == 0) {
++                switch (kh_vita_command_nav()) {
++                case 1: Ov002_PanelCursorNext(); break;
++                case 2: Ov002_PanelCursorPrev(); break;
++                case 3: Ov002_PanelCursorStepLeft(); break;
++                case 4: Ov002_PanelCursorStepRight(); break;
++                default: break;
++                }
++            }
++#endif
+             bNoRepeat = 1;
+             if (Ov002_IsMissionClearFinished(bNoRepeat) != 0) {
+                 bNoRepeat = 0;
 diff --git a/src/overlays/field/ov022_battle/Ov022_UpdateRumble.c b/src/overlays/field/ov022_battle/Ov022_UpdateRumble.c
 index 37fa6b3a8..0feeab2ee 100644
 --- a/src/overlays/field/ov022_battle/Ov022_UpdateRumble.c
@@ -11892,7 +11922,7 @@ index 09328f6ad..b5d206002 100644
      int nOwner;                         /* +0x30 */
  } Ov002PoolEntry;
 diff --git a/src/overlays/scenes/ov002_field/Ov002_Camera_UpdateFollow.c b/src/overlays/scenes/ov002_field/Ov002_Camera_UpdateFollow.c
-index a34a3af7b..33a61a41c 100644
+index a34a3af7b..af4dfc178 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_Camera_UpdateFollow.c
 +++ b/src/overlays/scenes/ov002_field/Ov002_Camera_UpdateFollow.c
 @@ -1,3 +1,4 @@
@@ -11909,6 +11939,39 @@ index a34a3af7b..33a61a41c 100644
    unsigned char unknown08[4];
    int kind;
    unsigned char unknown10[0x10];
+@@ -97,6 +98,10 @@ extern void Ov002_TickScriptedCamera(void);
+ extern void Ov002_ResetCamera(void);
+ extern unsigned char data_0204be04;
+ extern unsigned short gPadHeld;
++#ifdef PLATFORM_VITA
++extern unsigned int kh_vita_camera_bits(void);
++extern void kh_vita_camera_state(int manual, unsigned int bits);
++#endif
+ extern unsigned short gPadPressed;
+ extern unsigned char data_0204c240;
+ extern const short data_0203d210[];
+@@ -564,6 +569,11 @@ LAB_arm9_ov002__0204d9ac:
+   }
+   else {
+     piVar7[0xe] = uVar16 & 0xffffffef;
++#ifdef PLATFORM_VITA
++    /* the Vita's right stick turns the camera: the same request bits the Type B L/R and
++     * the look view set (4/8 yaw, 1/2 pitch), pulsed in proportion to the stick */
++    uVar20 |= kh_vita_camera_bits();
++#endif
+   }
+   iVar11 = func_ov022_020886d0(idx);
+   if (iVar11 != 0) {
+@@ -607,6 +617,9 @@ LAB_arm9_ov002__0204d9ac:
+     piVar7[1] = data_0203d210[((int)(uint)*(ushort *)((int)piVar7 + 0xa2) >> 4) * 2 + 1];
+   }
+   if ((piVar7[0xe] & 0x200U) == 0) {
++#ifdef PLATFORM_VITA
++    kh_vita_camera_state((piVar7[0xe] & 2U) != 0, uVar20);
++#endif
+     if ((piVar7[0xe] & 2U) != 0) {
+       iVar11 = Ov022_GetGlobalPlusE0();
+       if (((((uVar20 & 4) != 0) && ((piVar7[0xf] & 0x10U) == 0)) ||
 diff --git a/src/overlays/scenes/ov002_field/Ov002_ClosePanelScreen.c b/src/overlays/scenes/ov002_field/Ov002_ClosePanelScreen.c
 index a7a3aab9b..c8a556432 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_ClosePanelScreen.c
