@@ -66,9 +66,34 @@ static void report(KuKernelExceptionContext *c)
     }
 }
 
+/* A call through a NULL pointer: on the DS address 0 is the ITCM mirror, where code sits, so
+ * the game's own slips of that kind (Ov025_TickTagTrackerNodes's uninitialised `swap`) run
+ * something harmless and come back. Here the jump is made to return at once, as an empty
+ * function would; each call site is logged once. */
+static int null_call(KuKernelExceptionContext *c)
+{
+    static uint32_t s_seen[16];
+    uint32_t i;
+    if (c->exceptionType != 1 || c->pc >= 0x1000 || c->lr < 0x80000000u)
+        return 0;
+    for (i = 0; i < 16 && s_seen[i] && s_seen[i] != c->lr; i++)
+        ;
+    if (i < 16 && !s_seen[i]) {
+        s_seen[i] = c->lr;
+        LOG("fault: call to %08x from lr=%08x (main=%08x) returned as a no-op", (unsigned)c->pc,
+            (unsigned)c->lr, (unsigned)(uintptr_t)main);
+    }
+    c->r0 = 0;
+    c->SPSR = (c->SPSR & ~0x20u) | ((c->lr & 1) << 5); /* back in the caller's ARM/Thumb state */
+    c->pc = c->lr & ~1u;
+    return 1;
+}
+
 #define HANDLER(i)                                                                 \
     static void handler##i(KuKernelExceptionContext *c)                            \
     {                                                                              \
+        if (null_call(c))                                                          \
+            return;                                                                \
         report(c);                                                                 \
         if (s_prev[i])                                                             \
             s_prev[i](c);                                                          \

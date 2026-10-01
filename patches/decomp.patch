@@ -14525,6 +14525,39 @@ index 9ea959583..81e09909d 100644
      }
  
      Ov000_RefreshMenuLayout();
+diff --git a/src/overlays/scenes/ov000_title/Ov000_TickTagTrackerNodes.c b/src/overlays/scenes/ov000_title/Ov000_TickTagTrackerNodes.c
+index 4a5ad90a1..c8e1dc58c 100644
+--- a/src/overlays/scenes/ov000_title/Ov000_TickTagTrackerNodes.c
++++ b/src/overlays/scenes/ov000_title/Ov000_TickTagTrackerNodes.c
+@@ -47,7 +47,13 @@ struct NodeFlags { unsigned char armed : 1, visible : 1; };
+ void Ov000_TickTagTrackerNodes(int param_1) {
+     int saved = -1;
+     int prev = 0x7fffffff;
++#ifdef PLATFORM_VITA
++    /* the ROM reads swap uninitialised; a nonzero value with no +0x44 setter calls address 0
++     * (the DS's ITCM mirror, NULL here): see Ov025_TickTagTrackerNodes */
++    int swap = 0;
++#else
+     int swap;
++#endif
+     int i;
+     int e;
+     unsigned long long now = OS_GetTick();
+@@ -81,12 +87,12 @@ void Ov000_TickTagTrackerNodes(int param_1) {
+             saved = get();
+             swap = (*(int *)(param_1 + 0x44) != 0 && *(int *)(e + 0x28) != prev);
+         }
+-        if (swap != 0) {
++        if (swap != 0 && *(void (**)(int))(param_1 + 0x44) != 0) {
+             (*(void (**)(int))(param_1 + 0x44))(*(int *)(e + 0x28));
+         }
+         (*(void (**)(int))(param_1 + 0x3c))(
+             *(int *)(*(int *)(e + 0x2c) + *(volatile unsigned short *)(e + 4) * 4));
+-        if (swap != 0) {
++        if (swap != 0 && *(void (**)(int))(param_1 + 0x44) != 0) {
+             (*(void (**)(int))(param_1 + 0x44))(saved);
+         }
+         *(unsigned long long *)(e + 0x14) =
 diff --git a/src/overlays/scenes/ov000_title/Ov000_Title_CreateLogoObjects.c b/src/overlays/scenes/ov000_title/Ov000_Title_CreateLogoObjects.c
 index 5ad79ac55..8819efbc3 100644
 --- a/src/overlays/scenes/ov000_title/Ov000_Title_CreateLogoObjects.c
@@ -16054,6 +16087,39 @@ index 245adba49..68540ed70 100644
      Ov002GaugeSlot aSlots[4];           /* +0x6c */
      Ov002CountPair aCounts[4];          /* +0xcc */
      u8 pad00dc[0x18];
+diff --git a/src/overlays/scenes/ov002_field/Ov002_TickTagTrackerNodes.c b/src/overlays/scenes/ov002_field/Ov002_TickTagTrackerNodes.c
+index 64f66ff17..b812a3a8b 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_TickTagTrackerNodes.c
++++ b/src/overlays/scenes/ov002_field/Ov002_TickTagTrackerNodes.c
+@@ -43,7 +43,13 @@ struct NodeFlags { unsigned char armed : 1, visible : 1; };
+ void Ov002_TickTagTrackerNodes(int param_1) {
+     int saved = -1;
+     int prev = 0x7fffffff;
++#ifdef PLATFORM_VITA
++    /* the ROM reads swap uninitialised; a nonzero value with no +0x44 setter calls address 0
++     * (the DS's ITCM mirror, NULL here): see Ov025_TickTagTrackerNodes */
++    int swap = 0;
++#else
+     int swap;
++#endif
+     int i;
+     int e;
+     unsigned long long now = OS_GetTick();
+@@ -77,12 +83,12 @@ void Ov002_TickTagTrackerNodes(int param_1) {
+             saved = get();
+             swap = (*(int *)(param_1 + 0x44) != 0 && *(int *)(e + 0x28) != prev);
+         }
+-        if (swap != 0) {
++        if (swap != 0 && *(void (**)(int))(param_1 + 0x44) != 0) {
+             (*(void (**)(int))(param_1 + 0x44))(*(int *)(e + 0x28));
+         }
+         (*(void (**)(int))(param_1 + 0x3c))(
+             *(int *)(*(int *)(e + 0x2c) + *(volatile unsigned short *)(e + 4) * 4));
+-        if (swap != 0) {
++        if (swap != 0 && *(void (**)(int))(param_1 + 0x44) != 0) {
+             (*(void (**)(int))(param_1 + 0x44))(saved);
+         }
+         *(unsigned long long *)(e + 0x14) =
 diff --git a/src/overlays/scenes/ov002_field/Ov002_TriggerOnceOnFlag.c b/src/overlays/scenes/ov002_field/Ov002_TriggerOnceOnFlag.c
 index 47c3f47ea..5faa9ec43 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_TriggerOnceOnFlag.c
@@ -16854,6 +16920,39 @@ index 4d32ed03b..d74cb3d41 100644
      func_02023ad0(**(int **)&data_ov005_0205b808);
      func_02023ad0((*(int **)&data_ov005_0205b808)[1]);
      MI_CpuFill8(&data_0204c32c, 0, 0xac);
+diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_TickTagTrackerNodes.c b/src/overlays/scenes/ov005_mission_result/Ov005_TickTagTrackerNodes.c
+index cccbaf827..e7187e833 100644
+--- a/src/overlays/scenes/ov005_mission_result/Ov005_TickTagTrackerNodes.c
++++ b/src/overlays/scenes/ov005_mission_result/Ov005_TickTagTrackerNodes.c
+@@ -44,7 +44,13 @@ struct NodeFlags { unsigned char armed : 1, visible : 1; };
+ void Ov005_TickTagTrackerNodes(int param_1) {
+     int saved = -1;
+     int prev = 0x7fffffff;
++#ifdef PLATFORM_VITA
++    /* the ROM reads swap uninitialised; a nonzero value with no +0x44 setter calls address 0
++     * (the DS's ITCM mirror, NULL here): see Ov025_TickTagTrackerNodes */
++    int swap = 0;
++#else
+     int swap;
++#endif
+     int i;
+     int e;
+     unsigned long long now = OS_GetTick();
+@@ -78,12 +84,12 @@ void Ov005_TickTagTrackerNodes(int param_1) {
+             saved = get();
+             swap = (*(int *)(param_1 + 0x44) != 0 && *(int *)(e + 0x28) != prev);
+         }
+-        if (swap != 0) {
++        if (swap != 0 && *(void (**)(int))(param_1 + 0x44) != 0) {
+             (*(void (**)(int))(param_1 + 0x44))(*(int *)(e + 0x28));
+         }
+         (*(void (**)(int))(param_1 + 0x3c))(
+             *(int *)(*(int *)(e + 0x2c) + *(volatile unsigned short *)(e + 4) * 4));
+-        if (swap != 0) {
++        if (swap != 0 && *(void (**)(int))(param_1 + 0x44) != 0) {
+             (*(void (**)(int))(param_1 + 0x44))(saved);
+         }
+         *(unsigned long long *)(e + 0x14) =
 diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_UpdateCompletionMilestones.c b/src/overlays/scenes/ov005_mission_result/Ov005_UpdateCompletionMilestones.c
 index 11b15fb55..79b002e36 100644
 --- a/src/overlays/scenes/ov005_mission_result/Ov005_UpdateCompletionMilestones.c
@@ -17173,6 +17272,39 @@ index 8909f7db4..9dfc482fa 100644
      short v;
      switch (state) {
      case 0:
+diff --git a/src/overlays/scenes/ov006_mission_mode_select/Ov006_TickTagTrackerNodes.c b/src/overlays/scenes/ov006_mission_mode_select/Ov006_TickTagTrackerNodes.c
+index 77fc0c7a5..f7496098e 100644
+--- a/src/overlays/scenes/ov006_mission_mode_select/Ov006_TickTagTrackerNodes.c
++++ b/src/overlays/scenes/ov006_mission_mode_select/Ov006_TickTagTrackerNodes.c
+@@ -43,7 +43,13 @@ struct NodeFlags { unsigned char armed : 1, visible : 1; };
+ void Ov006_TickTagTrackerNodes(int param_1) {
+     int saved = -1;
+     int prev = 0x7fffffff;
++#ifdef PLATFORM_VITA
++    /* the ROM reads swap uninitialised; a nonzero value with no +0x44 setter calls address 0
++     * (the DS's ITCM mirror, NULL here): see Ov025_TickTagTrackerNodes */
++    int swap = 0;
++#else
+     int swap;
++#endif
+     int i;
+     int e;
+     unsigned long long now = OS_GetTick();
+@@ -77,12 +83,12 @@ void Ov006_TickTagTrackerNodes(int param_1) {
+             saved = get();
+             swap = (*(int *)(param_1 + 0x44) != 0 && *(int *)(e + 0x28) != prev);
+         }
+-        if (swap != 0) {
++        if (swap != 0 && *(void (**)(int))(param_1 + 0x44) != 0) {
+             (*(void (**)(int))(param_1 + 0x44))(*(int *)(e + 0x28));
+         }
+         (*(void (**)(int))(param_1 + 0x3c))(
+             *(int *)(*(int *)(e + 0x2c) + *(volatile unsigned short *)(e + 4) * 4));
+-        if (swap != 0) {
++        if (swap != 0 && *(void (**)(int))(param_1 + 0x44) != 0) {
+             (*(void (**)(int))(param_1 + 0x44))(saved);
+         }
+         *(unsigned long long *)(e + 0x14) =
 diff --git a/src/overlays/scenes/ov006_mission_mode_select/Ov006_UpdateCharacterSelectTweens.c b/src/overlays/scenes/ov006_mission_mode_select/Ov006_UpdateCharacterSelectTweens.c
 index e653b29c8..79b2dd0cc 100644
 --- a/src/overlays/scenes/ov006_mission_mode_select/Ov006_UpdateCharacterSelectTweens.c
@@ -18272,6 +18404,39 @@ index 670c57b96..4bca0ea92 100644
  
  void Ov008_TickPageScroll(Ov008PageCtx *ctx)
  {
+diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_TickTagTrackerNodes.c b/src/overlays/scenes/ov008_camp_menu/Ov008_TickTagTrackerNodes.c
+index 48a66ee86..45f91da9e 100644
+--- a/src/overlays/scenes/ov008_camp_menu/Ov008_TickTagTrackerNodes.c
++++ b/src/overlays/scenes/ov008_camp_menu/Ov008_TickTagTrackerNodes.c
+@@ -46,7 +46,13 @@ struct NodeFlags { unsigned char armed : 1, visible : 1; };
+ void Ov008_TickTagTrackerNodes(int param_1) {
+     int saved = -1;
+     int prev = 0x7fffffff;
++#ifdef PLATFORM_VITA
++    /* the ROM reads swap uninitialised; a nonzero value with no +0x44 setter calls address 0
++     * (the DS's ITCM mirror, NULL here): see Ov025_TickTagTrackerNodes */
++    int swap = 0;
++#else
+     int swap;
++#endif
+     int i;
+     int e;
+     unsigned long long now = OS_GetTick();
+@@ -80,12 +86,12 @@ void Ov008_TickTagTrackerNodes(int param_1) {
+             saved = get();
+             swap = (*(int *)(param_1 + 0x44) != 0 && *(int *)(e + 0x28) != prev);
+         }
+-        if (swap != 0) {
++        if (swap != 0 && *(void (**)(int))(param_1 + 0x44) != 0) {
+             (*(void (**)(int))(param_1 + 0x44))(*(int *)(e + 0x28));
+         }
+         (*(void (**)(int))(param_1 + 0x3c))(
+             *(int *)(*(int *)(e + 0x2c) + *(volatile unsigned short *)(e + 4) * 4));
+-        if (swap != 0) {
++        if (swap != 0 && *(void (**)(int))(param_1 + 0x44) != 0) {
+             (*(void (**)(int))(param_1 + 0x44))(saved);
+         }
+         *(unsigned long long *)(e + 0x14) =
 diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_UpdateBg3ScrollFromPage.c b/src/overlays/scenes/ov008_camp_menu/Ov008_UpdateBg3ScrollFromPage.c
 index e31fae4ac..33d02a549 100644
 --- a/src/overlays/scenes/ov008_camp_menu/Ov008_UpdateBg3ScrollFromPage.c
@@ -18572,6 +18737,39 @@ index eae404faa..f7bc850b4 100644
  
  void Ov009_TickSaveConfirmState(Ov009SaveContext *ctx)
  {
+diff --git a/src/overlays/scenes/ov009_camp_save/Ov009_TickTagTrackerNodes.c b/src/overlays/scenes/ov009_camp_save/Ov009_TickTagTrackerNodes.c
+index 0019ba04a..d95ca1e45 100644
+--- a/src/overlays/scenes/ov009_camp_save/Ov009_TickTagTrackerNodes.c
++++ b/src/overlays/scenes/ov009_camp_save/Ov009_TickTagTrackerNodes.c
+@@ -45,7 +45,13 @@ struct NodeFlags { unsigned char armed : 1, visible : 1; };
+ void Ov009_TickTagTrackerNodes(int param_1) {
+     int saved = -1;
+     int prev = 0x7fffffff;
++#ifdef PLATFORM_VITA
++    /* the ROM reads swap uninitialised; a nonzero value with no +0x44 setter calls address 0
++     * (the DS's ITCM mirror, NULL here): see Ov025_TickTagTrackerNodes */
++    int swap = 0;
++#else
+     int swap;
++#endif
+     int i;
+     int e;
+     unsigned long long now = OS_GetTick();
+@@ -79,12 +85,12 @@ void Ov009_TickTagTrackerNodes(int param_1) {
+             saved = get();
+             swap = (*(int *)(param_1 + 0x44) != 0 && *(int *)(e + 0x28) != prev);
+         }
+-        if (swap != 0) {
++        if (swap != 0 && *(void (**)(int))(param_1 + 0x44) != 0) {
+             (*(void (**)(int))(param_1 + 0x44))(*(int *)(e + 0x28));
+         }
+         (*(void (**)(int))(param_1 + 0x3c))(
+             *(int *)(*(int *)(e + 0x2c) + *(volatile unsigned short *)(e + 4) * 4));
+-        if (swap != 0) {
++        if (swap != 0 && *(void (**)(int))(param_1 + 0x44) != 0) {
+             (*(void (**)(int))(param_1 + 0x44))(saved);
+         }
+         *(unsigned long long *)(e + 0x14) =
 diff --git a/src/overlays/scenes/ov009_camp_save/Ov009_UpdateCompletionMilestones.c b/src/overlays/scenes/ov009_camp_save/Ov009_UpdateCompletionMilestones.c
 index ddebd93ec..dbfb962df 100644
 --- a/src/overlays/scenes/ov009_camp_save/Ov009_UpdateCompletionMilestones.c
@@ -19944,6 +20142,40 @@ index a01510864..ce4a51bde 100644
  
  void Ov025_TickPageScroll(Ov008PageCtx *ctx)
  {
+diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_TickTagTrackerNodes.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_TickTagTrackerNodes.c
+index 5ec395f04..b2adc68fe 100644
+--- a/src/overlays/screens/ov025_camp_menu_2/Ov025_TickTagTrackerNodes.c
++++ b/src/overlays/screens/ov025_camp_menu_2/Ov025_TickTagTrackerNodes.c
+@@ -49,7 +49,14 @@ struct NodeFlags { unsigned char armed : 1, visible : 1; };
+ void Ov025_TickTagTrackerNodes(int param_1) {
+     int saved = -1;
+     int prev = 0x7fffffff;
++#ifdef PLATFORM_VITA
++    /* The ROM reads `swap` uninitialised (see above). With no +0x44 setter a nonzero value
++     * calls address 0, the DS's ITCM mirror; on the Vita that is a jump to NULL (the
++     * tutorials list froze). 0 is what the measured paths pass: nothing is called. */
++    int swap = 0;
++#else
+     int swap;
++#endif
+     int i;
+     int e;
+     unsigned long long now = OS_GetTick();
+@@ -83,12 +90,12 @@ void Ov025_TickTagTrackerNodes(int param_1) {
+             saved = get();
+             swap = (*(int *)(param_1 + 0x44) != 0 && *(int *)(e + 0x28) != prev);
+         }
+-        if (swap != 0) {
++        if (swap != 0 && *(void (**)(int))(param_1 + 0x44) != 0) {
+             (*(void (**)(int))(param_1 + 0x44))(*(int *)(e + 0x28));
+         }
+         (*(void (**)(int))(param_1 + 0x3c))(
+             *(int *)(*(int *)(e + 0x2c) + *(volatile unsigned short *)(e + 4) * 4));
+-        if (swap != 0) {
++        if (swap != 0 && *(void (**)(int))(param_1 + 0x44) != 0) {
+             (*(void (**)(int))(param_1 + 0x44))(saved);
+         }
+         *(unsigned long long *)(e + 0x14) =
 diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_Tutorial_SetupDisplay.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_Tutorial_SetupDisplay.c
 index 6f0a0d125..1bae681c6 100644
 --- a/src/overlays/screens/ov025_camp_menu_2/Ov025_Tutorial_SetupDisplay.c
@@ -20095,6 +20327,39 @@ index 8b36295b1..100caa751 100644
  /* Ov026_Shop_LayoutPage -- Ov008_SetupShopPage: build the shop panel for the
   * current tab (+0xc250).  The tab's tier page (0208500c: widget ids, tag
   * ids, list id and column) is shown, then eight row cells are created on
+diff --git a/src/overlays/screens/ov026_shop/Ov026_TickTagTrackerNodes.c b/src/overlays/screens/ov026_shop/Ov026_TickTagTrackerNodes.c
+index 49949a8c9..4c66d96e4 100644
+--- a/src/overlays/screens/ov026_shop/Ov026_TickTagTrackerNodes.c
++++ b/src/overlays/screens/ov026_shop/Ov026_TickTagTrackerNodes.c
+@@ -43,7 +43,13 @@ struct NodeFlags { unsigned char armed : 1, visible : 1; };
+ void Ov026_TickTagTrackerNodes(int param_1) {
+     int saved = -1;
+     int prev = 0x7fffffff;
++#ifdef PLATFORM_VITA
++    /* the ROM reads swap uninitialised; a nonzero value with no +0x44 setter calls address 0
++     * (the DS's ITCM mirror, NULL here): see Ov025_TickTagTrackerNodes */
++    int swap = 0;
++#else
+     int swap;
++#endif
+     int i;
+     int e;
+     unsigned long long now = OS_GetTick();
+@@ -77,12 +83,12 @@ void Ov026_TickTagTrackerNodes(int param_1) {
+             saved = get();
+             swap = (*(int *)(param_1 + 0x44) != 0 && *(int *)(e + 0x28) != prev);
+         }
+-        if (swap != 0) {
++        if (swap != 0 && *(void (**)(int))(param_1 + 0x44) != 0) {
+             (*(void (**)(int))(param_1 + 0x44))(*(int *)(e + 0x28));
+         }
+         (*(void (**)(int))(param_1 + 0x3c))(
+             *(int *)(*(int *)(e + 0x2c) + *(volatile unsigned short *)(e + 4) * 4));
+-        if (swap != 0) {
++        if (swap != 0 && *(void (**)(int))(param_1 + 0x44) != 0) {
+             (*(void (**)(int))(param_1 + 0x44))(saved);
+         }
+         *(unsigned long long *)(e + 0x14) =
 diff --git a/src/overlays/screens/ov026_shop/data/ov026_tables_020910b0.c b/src/overlays/screens/ov026_shop/data/ov026_tables_020910b0.c
 index 206445bc6..852f35d25 100644
 --- a/src/overlays/screens/ov026_shop/data/ov026_tables_020910b0.c
