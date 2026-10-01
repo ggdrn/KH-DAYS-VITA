@@ -8785,6 +8785,39 @@ index da05123c8..22ba89d07 100644
  
  extern int FX_Div(int x, int y);
  
+diff --git a/src/engine/G3dRes_DefaultSetup.c b/src/engine/G3dRes_DefaultSetup.c
+index e1767903c..acd42f566 100644
+--- a/src/engine/G3dRes_DefaultSetup.c
++++ b/src/engine/G3dRes_DefaultSetup.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"
+ /* G3dRes_DefaultSetup -- the game's NNS_G3dResDefaultSetup, MAIN. Model and texture files get their
+  * texture/4x4/palette VRAM from the GFD allocator hooks (NNS_GfdAllocTexVram & co.) -- unless the
+  * loader's texture flag (data_020427f0, InstallHandlerPairByFlag) is off -- and are uploaded with the game's
+@@ -104,6 +105,9 @@ BOOL G3dRes_DefaultSetup(void *pResData)
+                 }
+ 
+                 if (!sucTex || !sucTex4x4 || !sucPltt) {
++                    KH_TRACE("g3d: file %p left without textures (tex %x/%d 4x4 %x/%d pltt %x/%d)",
++                             pResData, (unsigned)szTex, sucTex, (unsigned)szTex4x4, sucTex4x4,
++                             (unsigned)szPltt, sucPltt);
+                     NNS_GfdFreePlttVram(keyPltt);
+                     NNS_GfdFreeTexVram(keyTex4x4);
+                     NNS_GfdFreeTexVram(keyTex);
+@@ -120,7 +124,13 @@ BOOL G3dRes_DefaultSetup(void *pResData)
+                 void *mdlSet = NNS_G3dGetMdlSet(pResData);
+ 
+                 if (tex) {
++#ifdef PLATFORM_VITA
++                    if (!NNS_G3dBindMdlSet(mdlSet, tex))
++                        KH_TRACE("g3d: model file %p: not every material bound to its texture",
++                                 pResData);
++#else
+                     NNS_G3dBindMdlSet(mdlSet, tex);
++#endif
+                 }
+             }
+         }
 diff --git a/src/engine/Game_EnterPauseScene.c b/src/engine/Game_EnterPauseScene.c
 index b88497285..4e41c6527 100644
 --- a/src/engine/Game_EnterPauseScene.c
