@@ -37,7 +37,7 @@ Phases follow the generic "port a decompiled game to the Vita" plan. ✅ done ·
     (copies, matrices, MATH_QSort, streaming LZ, SHA-1, CP context, interrupt state, MobiClip
     blit); `platform/nitro/dsprotect.c`: DS Protect answers "genuine"
 - ✅ Hardware addresses translated; a scan of the linked ELF finds no DS address left
-- 🔶 Console: boots to `NitroMain` (0.0.8); 0.0.9 past the GBA-slot probe and into the first SDK thread; 0.0.10 pins the shared-bss statics (OSi_CurrentThreadPtr was NULL); 0.0.11 = 0.0.10 on decomp ea39ead5e; 0.0.12 defines those names in assembly (--defsym block+off was absolute, not relocated); 0.0.13 gives 64-bit struct members the DS 4-byte alignment (OSThread.state was at +0x68); 0.0.15 completes async card reads without IME (main loads ov001 before interrupts are on); 0.0.17 keeps the I bit per thread across switches and reaches the frame loop (IME on, both screens configured); 0.0.18 renders 2D ~5x faster; 0.0.19 wakes OS_WaitIrq sleepers on the right queue (the frame loop hung on its first VBlank); 0.0.20 unwraps REG_G3X_GXSTAT_GE_MASK (G3X_ResetMtxStack spun forever) and loads the title overlay (ov000); 0.0.21 answers its CARD_IdentifyBackup (the save works); 0.0.22 unpacks archive handles (pointers packed into 24 bits); 0.0.24 tells file names from handles on the Vita (bit 31 is set on every Vita pointer) and reads the boot text; 0.0.25 completes card reads with the DS timing (task path at once, DMA path later) and loads the font; 0.0.26 keeps the DS data layout (GCC reordered and realigned objects), shows the boot text, writes the save and loads the title pack; 0.0.27 gives IRQ-mode code its own I bit
+- 🔶 Console: boots to `NitroMain` (0.0.8); 0.0.9 past the GBA-slot probe and into the first SDK thread; 0.0.10 pins the shared-bss statics (OSi_CurrentThreadPtr was NULL); 0.0.11 = 0.0.10 on decomp ea39ead5e; 0.0.12 defines those names in assembly (--defsym block+off was absolute, not relocated); 0.0.13 gives 64-bit struct members the DS 4-byte alignment (OSThread.state was at +0x68); 0.0.15 completes async card reads without IME (main loads ov001 before interrupts are on); 0.0.17 keeps the I bit per thread across switches and reaches the frame loop (IME on, both screens configured); 0.0.18 renders 2D ~5x faster; 0.0.19 wakes OS_WaitIrq sleepers on the right queue (the frame loop hung on its first VBlank); 0.0.20 unwraps REG_G3X_GXSTAT_GE_MASK (G3X_ResetMtxStack spun forever) and loads the title overlay (ov000); 0.0.21 answers its CARD_IdentifyBackup (the save works); 0.0.22 unpacks archive handles (pointers packed into 24 bits); 0.0.24 tells file names from handles on the Vita (bit 31 is set on every Vita pointer) and reads the boot text; 0.0.25 completes card reads with the DS timing (task path at once, DMA path later) and loads the font; 0.0.26 keeps the DS data layout (GCC reordered and realigned objects), shows the boot text, writes the save and loads the title pack; 0.0.27 gives IRQ-mode code its own I bit and reaches the title and New Game; 0.0.28 plays MobiClip with the portable decoder
 
 ## 6. Platform layer 🔶
 - ✅ main/system: clocks, data dir, log + previous log, ROM open/verify (cached SHA-1), msg dialog
@@ -66,7 +66,10 @@ Phases follow the generic "port a decompiled game to the Vita" plan. ✅ done ·
   register changes, the large bitmap of mode 6, the 3D layer on BG0
 - ⬜ 3D: geometry engine + vitaGL rasterisation + texture cache
 - ⬜ Sound: native ARM7 SND (sequence player, channels, ADPCM/PSG, mixer, 48 kHz out)
-- ⬜ MobiClip videos (the decoder is C in ov024: needs only frame output + audio)
+- 🔶 MobiClip videos: the frame decoder is the decomp's portable C++ model
+  (`libs/mobiclip/video/portable`, ARM9 state layout asserted in `abi_check.c`), checked on the
+  host on the user's dump (`tools/mobiclip_test/run.sh`: 802.mods, 1400 frames). ⬜ audio (IMA
+  ADPCM, with the rest of the sound)
 - 🔶 Save (`platform/nitro/backup.c`): the ARM7's backup service over PXI (identify, read,
   program, verify, erase) on `days.sav`, raw chip image compatible with emulator saves;
   written a second after the last change, atomically. ⬜ flush on suspend
@@ -91,9 +94,8 @@ Phases follow the generic "port a decompiled game to the Vita" plan. ✅ done ·
 ## 11. Distribution
 - ✅ Repository holds no game data, no decomp sources (patch only), no Sony modules
 - ✅ ROM read from `ux0:data/khdays/` at runtime, SHA-1 checked
-- ⬜ Audit step that fails the build if ROM bytes end up in the ELF. Known today: MobiClip's
-  hand-written ARM kept as data (`ov024/data/mobiclip_*.s`) is linked in; replace it with the
-  decomp's portable decoder (`libs/mobiclip/video/portable`) before any release
+- ✅ MobiClip's ROM machine code (`ov024/data/mobiclip_*.s`) is no longer linked
+- ⬜ Audit step that fails the build if ROM bytes end up in the ELF
 
 ## 12. Organisation ✅
 - ✅ `setup.sh` / `export_patch.sh` / `DECOMP_COMMIT`, README, ARCHITECTURE

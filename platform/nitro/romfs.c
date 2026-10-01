@@ -138,3 +138,17 @@ const char *kh_romfs_describe(uint32_t off, char *buf, int size)
     }
     return buf;
 }
+
+int kh_romfs_find(const char *path, uint32_t *offset, uint32_t *size)
+{
+    uint32_t i;
+    for (i = 0; i < s_count; i++) {
+        const Span *sp = &s_spans[i];
+        if (s_names[sp->id] && !strcmp(s_names[sp->id], path)) {
+            *offset = sp->start;
+            *size = sp->end - sp->start;
+            return 1;
+        }
+    }
+    return 0;
+}

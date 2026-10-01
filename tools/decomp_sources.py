@@ -38,6 +38,14 @@ REPLACED = {
     "libs/msl/c/calls/strncmp.c",
     "libs/msl/c/calls/strtol.c",
     "libs/msl/c/calls/__strtoul.c",
+    # ov024's MobiClip payloads: ROM machine code kept as data, which ran in place on the DS.
+    # The frame decoder is the portable C++ model (libs/mobiclip/video/portable, through
+    # Ov024_MobiClip_GetDecoderCodeCached); the deblocking filter and FastAudio never run in this
+    # game (platform/nitro/mobiclip.c stands in). Leaving them out also keeps their ROM bytes out
+    # of the eboot.
+    "src/overlays/system/ov024_mobiclip/data/mobiclip_payload.s",
+    "src/overlays/system/ov024_mobiclip/data/mobiclip_deblock.s",
+    "src/overlays/system/ov024_mobiclip/data/mobiclip_fastaudio.s",
 }
 
 # Library functions (one file each, named after the function) that platform/nitro defines
@@ -72,9 +80,7 @@ def game_sources(decomp: Path):
                     continue
                 if kind == "s" and "ov028_dsprotect" in rel:
                     continue
-                # the portable MobiClip decoder is a host model of the payload, not DS code
-                if "/portable/" in rel:
-                    continue
+                # the portable MobiClip decoder is built: it replaces the payload on the Vita
                 if rel in REPLACED:
                     continue
                 if rel.startswith("libs/") and p.stem in REPLACED_FUNCS:

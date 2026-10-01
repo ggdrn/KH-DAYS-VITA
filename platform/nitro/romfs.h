@@ -11,4 +11,7 @@ void kh_romfs_init(void);
  * (overlays), "rom XXXXXXXX" outside every file. Returns buf. */
 const char *kh_romfs_describe(uint32_t off, char *buf, int size);
 
+/* The ROM offset and size of the file at `path` ("/mv/802.mods"); 0 when there is none. */
+int kh_romfs_find(const char *path, uint32_t *offset, uint32_t *size);
+
 #endif

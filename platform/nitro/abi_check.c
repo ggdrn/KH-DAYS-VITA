@@ -8,6 +8,7 @@
 #include "nitro/types.h"
 #include "nitro/cp.h"
 #include "nitro/hw.h"
+#include "../../build/decomp/libs/mobiclip/video/portable/mobiclip_frame_core.h"
 #include "nitro/os.h"
 
 #include <stddef.h>
@@ -23,3 +24,15 @@ _Static_assert(sizeof(OSThread) == 0xc0, "OSThread");
  * because its value is the GBA slot's base, and the geometry engine read as busy forever
  * (0.0.19 hung in G3X_ResetMtxStack on the first frame). */
 _Static_assert(REG_G3X_GXSTAT_GE_MASK == 0x08000000, "REG_G3X_GXSTAT_GE_MASK");
+
+/* The portable MobiClip decoder works on the state ov024 keeps for the ARM payload it replaces:
+ * the ARM9's layout (the same asserts as the decomp's tools/tests/mobiclip_frame_core_test.cpp). */
+_Static_assert(sizeof(MobiClipDecoderState) == 0x454, "MobiClipDecoderState");
+_Static_assert(offsetof(MobiClipDecoderState, apLuma) == 0x0c, "apLuma");
+_Static_assert(offsetof(MobiClipDecoderState, apChroma) == 0x24, "apChroma");
+_Static_assert(offsetof(MobiClipDecoderState, apCoefficientTables) == 0x3c, "apCoefficientTables");
+_Static_assert(offsetof(MobiClipDecoderState, bFormatVariant) == 0x48, "bFormatVariant");
+_Static_assert(offsetof(MobiClipDecoderState, aQuantScan8x8) == 0x74, "aQuantScan8x8");
+_Static_assert(offsetof(MobiClipDecoderState, aQuantScan4x4) == 0x174, "aQuantScan4x4");
+_Static_assert(offsetof(MobiClipDecoderState, nQuantizer) == 0x3b4, "nQuantizer");
+_Static_assert(offsetof(MobiClipDecoderState, aMotion) == 0x3c4, "aMotion");

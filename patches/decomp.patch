@@ -16831,6 +16831,29 @@ index a5fb8213e..58058be1f 100644
      }
      return G2S_GetBG3ScrPtr();
  }
+diff --git a/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_GetDecoderCodeCached.c b/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_GetDecoderCodeCached.c
+index c16afc22d..df813fc6b 100644
+--- a/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_GetDecoderCodeCached.c
++++ b/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_GetDecoderCodeCached.c
+@@ -8,9 +8,18 @@ extern void MIi_CpuCopyFast(const void *src, void *dest, unsigned int size);
+ extern int data_ov024_0209bb30[];
+ extern unsigned char data_ov024_0208c8c4[];
+ 
++#ifdef PLATFORM_VITA
++#include "../../../../libs/mobiclip/video/portable/mobiclip_frame_core.h"
++#endif
++
+ void *Ov024_MobiClip_GetDecoderCodeCached(void) {
+     void *p;
+ 
++#ifdef PLATFORM_VITA
++    /* the payload is ROM machine code for the DS; its portable model takes the same state */
++    return (void *)MobiClip_DecodeFrameCore;
++#endif
++
+     if (data_ov024_0209bb30[2] == 0) {
+         if ((unsigned int)data_ov024_0209bb30[5] >= 0x659c) {
+             p = (void *)data_ov024_0209bb30[6];
 diff --git a/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_LoadSpriteGrid.c b/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_LoadSpriteGrid.c
 index df475a3e7..2d47f042b 100644
 --- a/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_LoadSpriteGrid.c
