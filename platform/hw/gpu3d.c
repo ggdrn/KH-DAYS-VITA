@@ -382,6 +382,17 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
                 continue;
             }
             ps->tex = (textures_on && fmt) ? tex_get(p->teximage, p->pltt) : NULL;
+            if (fmt) {
+                s_stats.tex_wanted++;
+                if (!ps->tex)
+                    s_stats.tex_none++;
+            }
+            if (ps->tex) {
+                const KhGxVertex *a = &f->vtx[p->v[0]], *b = &f->vtx[p->v[1]], *c = &f->vtx[p->v[2]];
+                s_stats.texgen[p->teximage >> 30]++;
+                if (a->s == b->s && a->s == c->s && a->t == b->t && a->t == c->t)
+                    s_stats.flat_st++;
+            }
             ps->blend = p->translucent && blending_on;
             ps->depth_write = !p->translucent || (p->attr & (1u << 11));
             ps->depth_equal = (p->attr >> 14) & 1;

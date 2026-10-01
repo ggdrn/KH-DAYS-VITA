@@ -20,6 +20,9 @@ typedef struct {
     uint32_t slots;       /* kh_tex_slots_mapped at the last frame */
     uint32_t modes[4];    /* polygons drawn per mode: modulation, decal, toon/highlight, shadow */
     uint32_t disp3dcnt;   /* of the last frame */
+    uint32_t texgen[4];   /* textured polygons per texture-coordinate generation mode */
+    uint32_t flat_st;     /* textured polygons whose vertices all have the same s,t */
+    uint32_t tex_wanted, tex_none; /* polygons with a texture format; of them drawn without */
 } KhGpu3dStats;
 void kh_gpu3d_take_stats(KhGpu3dStats *out);
 

@@ -435,6 +435,11 @@ void kh_game_run(void)
                     LOG("gpu3d: polygons by mode %u/%u/%u/%u (modulate decal toon shadow), "
                         "DISP3DCNT %04x", (unsigned)rs.modes[0], (unsigned)rs.modes[1],
                         (unsigned)rs.modes[2], (unsigned)rs.modes[3], (unsigned)rs.disp3dcnt);
+                    LOG("gpu3d: textured polygons by texgen %u/%u/%u/%u (none texcoord normal "
+                        "vertex), %u with one s,t at every vertex; %u of %u wanting a texture drawn "
+                        "without", (unsigned)rs.texgen[0],
+                        (unsigned)rs.texgen[1], (unsigned)rs.texgen[2], (unsigned)rs.texgen[3],
+                        (unsigned)rs.flat_st, (unsigned)rs.tex_none, (unsigned)rs.tex_wanted);
                 }
             }
             if (gs.commands)
