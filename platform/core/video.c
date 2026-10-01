@@ -177,6 +177,11 @@ static void compute_layout(void)
     }
 }
 
+int video_inset_screen(void)
+{
+    return s_inset;
+}
+
 void video_swap_screens(void)
 {
     video_set_layout(video_layout() == LAYOUT_TOP_MAIN ? LAYOUT_BOTTOM_MAIN : LAYOUT_TOP_MAIN);

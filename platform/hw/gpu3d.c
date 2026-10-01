@@ -12,6 +12,7 @@
 #include "hw/gpu3d.h"
 
 #include "hw/textures.h"
+#include "hw/vram.h"
 #include "log.h"
 #include "video.h"
 
@@ -73,12 +74,13 @@ static KhGpu3dStats s_stats;
 
 typedef struct {
     uint32_t key_img, key_pltt; /* key_img 0: empty */
-    uint32_t hash, checked, used;
+    uint32_t hash, gen, used; /* gen: the texture-VRAM generation hash was taken at */
     GLuint tex;
     float sx, sy;
 } TexEntry;
 
 static TexEntry s_tex[TEX_SLOTS];
+static uint32_t s_tex_gen; /* kh_vram_tex_generation() for this frame */
 static int s_tex_live;
 static uint32_t *s_decode;
 static size_t s_decode_size;
@@ -165,14 +167,15 @@ static TexEntry *tex_get(uint32_t teximage, uint32_t pltt)
         e->key_img = ki;
         e->key_pltt = kp;
         glGenTextures(1, &e->tex);
-        e->checked = s_frame - 1;
+        e->gen = s_tex_gen - 1;
         e->hash = 0;
         s_tex_live++;
     }
     e->used = s_frame;
-    if (e->checked != s_frame) {
+    if (e->gen != s_tex_gen) {
+        /* only after a bank A-G was remapped can the bytes have changed */
         uint32_t hv = kh_tex_hash(teximage, kp);
-        e->checked = s_frame;
+        e->gen = s_tex_gen;
         if (hv != e->hash || !e->sx) {
             e->hash = hv;
             tex_upload(e, teximage, kp);
@@ -242,6 +245,9 @@ typedef struct {
 } DrawState;
 
 static uint16_t s_idx[KH_GX_MAX_POLYGONS * 6];
+static DrawState s_pstate[KH_GX_MAX_POLYGONS]; /* per polygon, in frame order */
+static uint32_t s_pkey[KH_GX_MAX_POLYGONS];
+static uint16_t s_popaque[KH_GX_MAX_POLYGONS];
 
 static void apply_state(const DrawState *st)
 {
@@ -313,6 +319,7 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
     if ((s_frame & 63) == 0 || s_tex_live >= TEX_MAX_LIVE)
         tex_evict_old();
     kh_tex_map_slots();
+    s_tex_gen = kh_vram_tex_generation();
 
     glBindFramebuffer(GL_FRAMEBUFFER, s_fbo);
     glViewport(0, 0, s_w, s_h);
@@ -352,32 +359,97 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
     glVertexAttribPointer(A_TEX, 2, GL_FLOAT, GL_FALSE, sizeof(KhGxVertex), (void *)16);
     glVertexAttribPointer(A_COL, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(KhGxVertex), (void *)24);
 
-    for (i = 0; i < f->npoly; i++) {
-        const KhGxPolygon *p = &f->poly[f->order[i]];
-        const int alpha = (p->attr >> 16) & 31;
-        const int fmt = kh_tex_format(p->teximage);
-        st.mode = (p->attr >> 4) & 3;
-        if (st.mode == 3 || alpha == 0) {
-            s_stats.skipped++; /* shadow polygons, wireframe: not yet */
-            continue;
+    /* opaque polygons first, grouped by GL state (the z-buffer makes their order free; it
+     * cuts the draw calls several times), then the translucent ones in the frame's order */
+    {
+        int nop = 0, k;
+        for (i = 0; i < f->npoly; i++) {
+            const KhGxPolygon *p = &f->poly[f->order[i]];
+            const int alpha = (p->attr >> 16) & 31;
+            const int fmt = kh_tex_format(p->teximage);
+            DrawState *ps = &s_pstate[i];
+            ps->mode = (p->attr >> 4) & 3;
+            if (ps->mode == 3 || alpha == 0) {
+                s_stats.skipped++; /* shadow polygons, wireframe: not yet */
+                s_pkey[i] = 0xffffffffu;
+                continue;
+            }
+            ps->tex = (textures_on && fmt) ? tex_get(p->teximage, p->pltt) : NULL;
+            ps->blend = p->translucent && blending_on;
+            ps->depth_write = !p->translucent || (p->attr & (1u << 11));
+            ps->depth_equal = (p->attr >> 14) & 1;
+            if (p->translucent) {
+                s_pkey[i] = 0xfffffffeu; /* keeps its place, after the opaque ones */
+            } else {
+                s_pkey[i] = (ps->tex ? (uint32_t)(ps->tex - s_tex) + 1 : 0) << 4 |
+                            (uint32_t)ps->mode << 1 | (uint32_t)ps->depth_equal;
+                s_popaque[nop++] = (uint16_t)i;
+            }
         }
-        st.tex = (textures_on && fmt) ? tex_get(p->teximage, p->pltt) : NULL;
-        st.blend = p->translucent && blending_on;
-        st.depth_write = !p->translucent || (p->attr & (1u << 11));
-        st.depth_equal = (p->attr >> 14) & 1;
-        if (have && memcmp(&st, &cur, sizeof(st))) {
-            flush(&cur, first, nidx - first);
-            first = nidx;
+        /* group the opaque list by key, groups in order of first appearance and polygons
+         * in frame order inside each: O(n), a hash of the keys to group numbers */
+        {
+            static uint32_t gkey[512];
+            static uint16_t gcount[512], gstart[512];
+            static uint16_t gof[KH_GX_MAX_POLYGONS];
+            static uint16_t sorted[KH_GX_MAX_POLYGONS];
+            static int16_t slot[1024];
+            int ng = 0, overflow = 0;
+            memset(slot, 0xff, sizeof(slot));
+            for (k = 0; k < nop && !overflow; k++) {
+                const uint32_t key = s_pkey[s_popaque[k]];
+                uint32_t h = (key * 0x9e3779b1u) >> 22;
+                while (slot[h] >= 0 && gkey[slot[h]] != key)
+                    h = (h + 1) & 1023;
+                if (slot[h] < 0) {
+                    if (ng == 512) {
+                        overflow = 1; /* that many states: leave the frame order */
+                        break;
+                    }
+                    slot[h] = (int16_t)ng;
+                    gkey[ng] = key;
+                    gcount[ng++] = 0;
+                }
+                gof[k] = (uint16_t)slot[h];
+                gcount[slot[h]]++;
+            }
+            if (!overflow) {
+                int g, at = 0;
+                for (g = 0; g < ng; g++) {
+                    gstart[g] = (uint16_t)at;
+                    at += gcount[g];
+                }
+                for (k = 0; k < nop; k++)
+                    sorted[gstart[gof[k]]++] = s_popaque[k];
+                memcpy(s_popaque, sorted, (size_t)nop * sizeof(s_popaque[0]));
+            }
         }
-        cur = st;
-        have = 1;
-        s_idx[nidx++] = p->v[0];
-        s_idx[nidx++] = p->v[1];
-        s_idx[nidx++] = p->v[2];
-        if (p->count == 4) {
+        for (k = 0; k < f->npoly + nop; k++) {
+            int idx;
+            const KhGxPolygon *p;
+            if (k < nop) {
+                idx = s_popaque[k];
+            } else {
+                idx = k - nop;
+                if (s_pkey[idx] != 0xfffffffeu)
+                    continue; /* opaque (done) or skipped */
+            }
+            p = &f->poly[f->order[idx]];
+            st = s_pstate[idx];
+            if (have && memcmp(&st, &cur, sizeof(st))) {
+                flush(&cur, first, nidx - first);
+                first = nidx;
+            }
+            cur = st;
+            have = 1;
             s_idx[nidx++] = p->v[0];
+            s_idx[nidx++] = p->v[1];
             s_idx[nidx++] = p->v[2];
-            s_idx[nidx++] = p->v[3];
+            if (p->count == 4) {
+                s_idx[nidx++] = p->v[0];
+                s_idx[nidx++] = p->v[2];
+                s_idx[nidx++] = p->v[3];
+            }
         }
     }
     if (have)

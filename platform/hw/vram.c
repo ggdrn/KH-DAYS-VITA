@@ -118,6 +118,10 @@ uint8_t kh_vram_bank_cnt(int bank)
     return s_applied[bank];
 }
 
+/* bumped whenever a bank that can hold textures or texture palettes (A-G) is remapped: the
+ * game only writes them while they are in LCDC, so between two bumps they do not change */
+static volatile uint32_t s_tex_gen;
+
 void kh_vram_sync(void)
 {
     uint8_t now[KH_VRAM_BANKS];
@@ -144,7 +148,14 @@ void kh_vram_sync(void)
         if (view)
             memcpy(view, kh_vram_bank_home(b), s_banks[b].size);
         s_applied[b] = now[b];
+        if (b <= 6)
+            s_tex_gen++;
     }
+}
+
+uint32_t kh_vram_tex_generation(void)
+{
+    return s_tex_gen;
 }
 
 void kh_vram_sync_cleanup(int *unused)

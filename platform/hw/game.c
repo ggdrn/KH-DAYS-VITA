@@ -131,12 +131,16 @@ static int stall_monitor(SceSize args, void *argp)
 typedef struct {
     uint32_t *fb[2]; /* engine A's screen, engine B's */
     int a3d[BANDS];
+    int eng[2], neng; /* the engines drawn this frame */
 } Frame2d;
+
+/* per-stage display times since the last report, for the 10 s line */
+static uint64_t s_t3d_total, s_join_total, s_present_total;
 
 static void render_chunk(int chunk, void *arg)
 {
     Frame2d *f = arg;
-    const int engine = chunk & 1, band = chunk >> 1;
+    const int engine = f->eng[chunk % f->neng], band = chunk / f->neng;
     int r = kh_gpu2d_render_lines(engine, f->fb[engine], band * BAND_LINES, (band + 1) * BAND_LINES);
     if (engine == KH_ENGINE_A)
         f->a3d[band] = r;
@@ -155,13 +159,33 @@ static void present(void)
      * GPU (engine A's 3D layer is on: DISPCNT bits 3 and 8), then both share what is left */
     f2d.fb[KH_ENGINE_A] = a_on_top ? s_top : s_bottom;
     f2d.fb[KH_ENGINE_B] = a_on_top ? s_bottom : s_top;
+    {
+        /* the small screen (layout inset) is redrawn every other frame: 30 Hz is plenty at
+         * that size, and it is a third of the 2D work saved */
+        static uint32_t parity;
+        const int inset = video_inset_screen(); /* 0 top, 1 bottom, -1 none */
+        const int inset_engine = inset < 0 ? -1 : ((inset == 0) == a_on_top ? KH_ENGINE_A : KH_ENGINE_B);
+        f2d.neng = 0;
+        for (i = 0; i < 2; i++)
+            if (i != inset_engine || (parity & 1))
+                f2d.eng[f2d.neng++] = i;
+        parity++;
+    }
     s_stage = "2d";
-    workers_begin(render_chunk, BANDS * 2, &f2d);
+    workers_begin(render_chunk, BANDS * f2d.neng, &f2d);
     s_stage = "3d";
-    if ((KH_IO32(0x04000000) & 0x108) == 0x108 && s_gpu3d)
-        tex3d = kh_gpu3d_render(kh_gx3d_acquire());
+    {
+        uint64_t t = sceKernelGetProcessTimeWide();
+        if ((KH_IO32(0x04000000) & 0x108) == 0x108 && s_gpu3d)
+            tex3d = kh_gpu3d_render(kh_gx3d_acquire());
+        s_t3d_total += sceKernelGetProcessTimeWide() - t;
+    }
     s_stage = "2d join";
-    workers_join();
+    {
+        uint64_t t = sceKernelGetProcessTimeWide();
+        workers_join();
+        s_join_total += sceKernelGetProcessTimeWide() - t;
+    }
     for (i = 0; i < BANDS; i++)
         a3d |= f2d.a3d[i];
     s_render_us = (uint32_t)(sceKernelGetProcessTimeWide() - t0);
@@ -179,7 +203,11 @@ static void present(void)
             fb[i] |= 0xff000000u;
     }
     s_stage = "present";
-    video_present(s_top, s_bottom);
+    {
+        uint64_t t = sceKernelGetProcessTimeWide();
+        video_present(s_top, s_bottom);
+        s_present_total += sceKernelGetProcessTimeWide() - t;
+    }
     s_stage = "loop";
     s_beats++;
 }
@@ -350,6 +378,10 @@ void kh_game_run(void)
                     (unsigned)(s_vblanks - vb_last),
                     (unsigned)(6000000000ull / (now - s_window_start)) / 10,
                     (unsigned)(6000000000ull / (now - s_window_start)) % 10);
+                LOG("display: per frame 3d submit %uus, 2d after it %uus, present %uus",
+                    (unsigned)(s_t3d_total / 600), (unsigned)(s_join_total / 600),
+                    (unsigned)(s_present_total / 600));
+                s_t3d_total = s_join_total = s_present_total = 0;
                 s_window_start = now;
                 vb_last = s_vblanks;
                 s_render_total = 0;

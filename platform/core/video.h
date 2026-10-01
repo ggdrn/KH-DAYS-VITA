@@ -27,6 +27,8 @@ ScreenLayout video_layout(void);
 ScreenRect video_bottom_rect(void);
 /* Display pixel (960x544) -> DS touch-screen pixel; 0 when it is not on the touch screen. */
 int video_map_touch(int px, int py, int *x, int *y);
+/* The screen drawn small (0 top, 1 bottom), -1 when both are full size. */
+int video_inset_screen(void);
 /* Swap which screen is the large one (top-main <-> bottom-main). */
 void video_swap_screens(void);
 /* A 480x272 RGBA layer drawn over everything, scaled to the full display (NULL: none). */
