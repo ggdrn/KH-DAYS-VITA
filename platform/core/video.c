@@ -50,9 +50,11 @@ static const char s_compose_fs[] =
 unsigned video_build_program(const char *vs_src, const char *fs_src, const char *const *attribs,
                              int nattribs)
 {
-    GLuint vs = glCreateShader(GL_VERTEX_SHADER), fs = glCreateShader(GL_FRAGMENT_SHADER), prog;
+    /* the CG types: vitaGL takes GL_VERTEX_SHADER/GL_FRAGMENT_SHADER source as GLSL and runs
+     * it through its translator (0.0.31 crashed in glLinkProgram on that) */
+    GLuint vs = glCreateShader(GL_CG_VERTEX_SHADER_EXT), fs = glCreateShader(GL_CG_FRAGMENT_SHADER_EXT), prog;
     GLint ok = 0, len;
-    char msg[512];
+    char msg[512] = "";
     int i;
 
     glShaderSource(vs, 1, &vs_src, NULL);
