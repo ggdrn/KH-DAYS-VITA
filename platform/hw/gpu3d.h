@@ -22,6 +22,7 @@ typedef struct {
     uint32_t disp3dcnt;   /* of the last frame */
     uint32_t texgen[4];   /* textured polygons per texture-coordinate generation mode */
     uint32_t flat_st;     /* textured polygons whose vertices all have the same s,t */
+    uint32_t depth_equal; /* polygons drawn with the depth-equal test */
     uint32_t tex_wanted, tex_none; /* polygons with a texture format; of them drawn without */
 } KhGpu3dStats;
 void kh_gpu3d_take_stats(KhGpu3dStats *out);

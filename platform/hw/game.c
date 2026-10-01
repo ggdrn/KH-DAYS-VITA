@@ -437,9 +437,10 @@ void kh_game_run(void)
                         (unsigned)rs.modes[2], (unsigned)rs.modes[3], (unsigned)rs.disp3dcnt);
                     LOG("gpu3d: textured polygons by texgen %u/%u/%u/%u (none texcoord normal "
                         "vertex), %u with one s,t at every vertex; %u of %u wanting a texture drawn "
-                        "without", (unsigned)rs.texgen[0],
+                        "without; %u depth-equal", (unsigned)rs.texgen[0],
                         (unsigned)rs.texgen[1], (unsigned)rs.texgen[2], (unsigned)rs.texgen[3],
-                        (unsigned)rs.flat_st, (unsigned)rs.tex_none, (unsigned)rs.tex_wanted);
+                        (unsigned)rs.flat_st, (unsigned)rs.tex_none, (unsigned)rs.tex_wanted,
+                        (unsigned)rs.depth_equal);
                 }
             }
             if (gs.commands)

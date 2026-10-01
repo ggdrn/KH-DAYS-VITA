@@ -396,6 +396,7 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
             ps->blend = p->translucent && blending_on;
             ps->depth_write = !p->translucent || (p->attr & (1u << 11));
             ps->depth_equal = (p->attr >> 14) & 1;
+            s_stats.depth_equal += ps->depth_equal;
             if (p->translucent || ps->depth_equal) {
                 /* keeps its place, after the grouped opaque ones. Depth-equal polygons are
                  * second passes over geometry drawn before them (a field's textures over its
