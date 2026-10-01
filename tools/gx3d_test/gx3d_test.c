@@ -10,6 +10,7 @@
 #include <stdio.h>
 
 uint8_t kh_ds_io[KH_IO_SIZE];
+volatile int kh_gpu3d_debug; /* hw/gpu3d.c on the Vita */
 
 /* banks A-G as the texture code sees them: A texture slot 1, B slot 0, E palette */
 static uint8_t s_bank[7][0x20000];

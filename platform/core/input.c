@@ -177,6 +177,12 @@ void input_poll(InputState *out)
         out->dump_3d = (s_prev_buttons & SCE_CTRL_TRIANGLE) == 0;
         held &= ~(DS_KEY_L | DS_KEY_R | DS_KEY_X);
     }
+    /* L+R+Circle cycles the 3D debug modes (hw/gpu3d.h); swallowed. */
+    if ((pad.buttons & (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_CIRCLE)) ==
+        (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_CIRCLE)) {
+        out->debug_cycle = (s_prev_buttons & SCE_CTRL_CIRCLE) == 0;
+        held &= ~(DS_KEY_L | DS_KEY_R | DS_KEY_A);
+    }
     s_prev_buttons = pad.buttons;
 
     out->held = held;

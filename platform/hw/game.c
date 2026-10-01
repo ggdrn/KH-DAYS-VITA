@@ -102,6 +102,7 @@ static void boot_state(void)
 static uint32_t s_render_us; /* the last frame's 2D rendering time, both engines */
 static volatile uint32_t s_vblanks; /* VBlanks raised so far (vblank_thread) */
 static uint32_t s_2d_skipped;      /* displayed frames that reused the last 2D image */
+static volatile uint32_t s_debug_shown = 0x80000000u; /* VBlank of the last debug mode change */
 
 /* Where the display loop is, for the stall monitor: it runs on its own, so a display loop
  * stuck in a call (GPU, worker, a lock) still gets reported. */
@@ -273,6 +274,14 @@ static void sample_input(void)
         video_set_layout(video_layout() + 1);
     if (in.swap_screens)
         video_swap_screens();
+    if (in.debug_cycle) {
+        static const char *const names[KH_GPU3D_DEBUG_MODES] = {
+            "normal", "opaque polygons in frame order", "textures re-hashed every frame",
+            "texture-coordinate generation off" };
+        kh_gpu3d_debug = (kh_gpu3d_debug + 1) % KH_GPU3D_DEBUG_MODES;
+        s_debug_shown = s_vblanks;
+        LOG("debug: 3D mode %d (%s)", kh_gpu3d_debug, names[kh_gpu3d_debug]);
+    }
     if (in.dump_3d)
         kh_gpu3d_request_dump();
     if (in.toggle_console)
@@ -374,7 +383,13 @@ void kh_game_run(void)
                  (unsigned)frame, (unsigned)kh_cpu_irqs_delivered, (unsigned)kh_cpu_preempted,
                  (unsigned)kh_cpu_switches, (unsigned)KH_IO32(0x04000210),
                  KH_IO16(0x04000208) & 1, (unsigned)KH_IO32(0x04000000));
-        video_set_overlay(s_console ? console_render(status) : NULL);
+        if (s_vblanks - s_debug_shown < 180) {
+            /* a debug mode change: the console for 3 s, its top line naming the mode */
+            snprintf(status, sizeof(status), "3D DEBUG MODE %d", kh_gpu3d_debug);
+            video_set_overlay(console_render(status));
+        } else {
+            video_set_overlay(s_console ? console_render(status) : NULL);
+        }
         present(); /* waits for the Vita's VBlank */
 
         /* watchdog: the game side has done nothing observable for 5 s. Interrupts do not

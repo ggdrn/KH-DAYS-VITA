@@ -13,6 +13,12 @@ int kh_gpu3d_init(int scale);
  * orientation: row 0 is the bottom of the screen), 0 when there is nothing to show. */
 unsigned kh_gpu3d_render(const KhGxFrame *frame);
 
+/* Diagnosis switches, cycled with L+R+Circle: 0 normal, 1 opaque polygons in the frame's
+ * order (no grouping by state), 2 every texture re-hashed every frame, 3 texture-coordinate
+ * generation ignored (raw TEXCOORD values). */
+extern volatile int kh_gpu3d_debug;
+#define KH_GPU3D_DEBUG_MODES 4
+
 /* Write the next rendered frame's textures (TGA) and polygons (text) to
  * ux0:data/khdays/dump/, for diagnosis. Any thread. */
 void kh_gpu3d_request_dump(void);

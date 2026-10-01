@@ -69,6 +69,7 @@ static GLint u_tex_scale, u_mode, u_textured, u_alpha_ref, u_tex, u_toon;
 static uint32_t s_frame;
 static uint32_t s_last_serial;
 static KhGpu3dStats s_stats;
+volatile int kh_gpu3d_debug;
 
 /* ---- texture cache --------------------------------------------------------------------- */
 
@@ -180,7 +181,8 @@ static TexEntry *tex_get(uint32_t teximage, uint32_t pltt)
     e->used = s_frame;
     /* the VRAM generation says when bytes can have changed; besides, every entry is checked
      * again every 32 frames in turn, in case some path writes texture VRAM unseen */
-    if (e->gen != s_tex_gen || ((uint32_t)(e - s_tex) & 31) == (s_frame & 31)) {
+    if (e->gen != s_tex_gen || ((uint32_t)(e - s_tex) & 31) == (s_frame & 31) ||
+        kh_gpu3d_debug == 2) {
         /* only after a bank A-G was remapped can the bytes have changed */
         uint32_t hv = kh_tex_hash(teximage, kp);
         e->gen = s_tex_gen;
@@ -487,7 +489,7 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
             ps->depth_write = !p->translucent || (p->attr & (1u << 11));
             ps->depth_equal = (p->attr >> 14) & 1;
             s_stats.depth_equal += ps->depth_equal;
-            if (p->translucent || ps->depth_equal) {
+            if (p->translucent || ps->depth_equal || kh_gpu3d_debug == 1) {
                 /* keeps its place, after the grouped opaque ones. Depth-equal polygons are
                  * second passes over geometry drawn before them (a field's textures over its
                  * lit base): grouped, they could come first and be covered (Tram Common's

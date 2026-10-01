@@ -28,6 +28,7 @@ typedef struct {
     int touch_x, touch_y; /* DS pixels, 0..255 / 0..191 */
     int swap_layout;      /* port hotkey: cycle the screen layout (edge-triggered) */
     int toggle_console;   /* port hotkey: show/hide the on-screen console (edge-triggered) */
+    int debug_cycle;      /* port hotkey: next 3D debug mode (edge-triggered) */
     int dump_3d;          /* port hotkey: dump the 3D frame for diagnosis (edge-triggered) */
     int swap_screens;     /* a touch on the small screen: swap the large and small screen */
 } InputState;

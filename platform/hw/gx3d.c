@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "hw/gx3d.h"
+#include "hw/gpu3d.h"
 #include "hw/io.h"
 #include "log.h"
 
@@ -304,7 +305,7 @@ static void cmd_normal(uint32_t p)
     s_normal[1] = (int16_t)n[1];
     s_normal[2] = (int16_t)n[2];
 
-    if ((s_teximage >> 30) == 2) {
+    if ((s_teximage >> 30) == 2 && kh_gpu3d_debug != 3) {
         /* texture coordinates from the normal (environment mapping) */
         s_st[0] = (int32_t)(((int64_t)n[0] * s_tex[0] + (int64_t)n[1] * s_tex[4] +
                              (int64_t)n[2] * s_tex[8]) >> 21) + s_raw_st[0];
@@ -358,7 +359,7 @@ static void cmd_texcoord(uint32_t p)
 {
     s_raw_st[0] = (int16_t)(p & 0xffff);
     s_raw_st[1] = (int16_t)(p >> 16);
-    if ((s_teximage >> 30) == 1) {
+    if ((s_teximage >> 30) == 1 && kh_gpu3d_debug != 3) {
         int32_t s = s_raw_st[0], t = s_raw_st[1];
         s_st[0] = (int32_t)(((int64_t)s * s_tex[0] + (int64_t)t * s_tex[4] + s_tex[8] + s_tex[12]) >> 12);
         s_st[1] = (int32_t)(((int64_t)s * s_tex[1] + (int64_t)t * s_tex[5] + s_tex[9] + s_tex[13]) >> 12);
@@ -451,7 +452,7 @@ static void emit_vertex(void)
         s_stats.overflows++;
         return;
     }
-    if ((s_teximage >> 30) == 3) {
+    if ((s_teximage >> 30) == 3 && kh_gpu3d_debug != 3) {
         /* texture coordinates from the vertex position */
         s_st[0] = (int32_t)(((int64_t)s_vtx[0] * s_tex[0] + (int64_t)s_vtx[1] * s_tex[4] +
                              (int64_t)s_vtx[2] * s_tex[8]) >> 24) + s_raw_st[0];
