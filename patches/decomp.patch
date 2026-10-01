@@ -7571,7 +7571,7 @@ index 030d5f375..7fa807eee 100644
      {
          return (s32)(v >> 12 );
 diff --git a/libs/nns/g3d/calls/NNS_G3dGetCurrentMtx.c b/libs/nns/g3d/calls/NNS_G3dGetCurrentMtx.c
-index e04975e75..c289c1ec9 100644
+index e04975e75..f09d38143 100644
 --- a/libs/nns/g3d/calls/NNS_G3dGetCurrentMtx.c
 +++ b/libs/nns/g3d/calls/NNS_G3dGetCurrentMtx.c
 @@ -1,3 +1,4 @@
@@ -7598,22 +7598,22 @@ index e04975e75..c289c1ec9 100644
  static inline void G3_MtxMode (GXMtxMode mode)
  {
 -    (*( REGType32v *) (0x04000000 + 0x440)) = ((u32) ((mode) << 0)) ;
-+    (*( REGType32v *) (KH_HW(0x04000000) + 0x440)) = ((u32) ((mode) << 0)) ;
++    KH_GX_CMD((*( REGType32v *) (KH_HW(0x04000000) + 0x440)), ((u32) ((mode) << 0)));
  }
  static inline void G3_PushMtx ()
  {
 -    (*( REGType32v *) (0x04000000 + 0x444)) = 0;
-+    (*( REGType32v *) (KH_HW(0x04000000) + 0x444)) = 0;
++    KH_GX_CMD((*( REGType32v *) (KH_HW(0x04000000) + 0x444)), 0);
  }
  static inline void G3_PopMtx (int num)
  {
 -    (*( REGType32v *) (0x04000000 + 0x448)) = ((u32) (num)) ;
-+    (*( REGType32v *) (KH_HW(0x04000000) + 0x448)) = ((u32) (num)) ;
++    KH_GX_CMD((*( REGType32v *) (KH_HW(0x04000000) + 0x448)), ((u32) (num)));
  }
  static inline void G3_Identity ()
  {
 -    (*( REGType32v *) (0x04000000 + 0x454)) = 0;
-+    (*( REGType32v *) (KH_HW(0x04000000) + 0x454)) = 0;
++    KH_GX_CMD((*( REGType32v *) (KH_HW(0x04000000) + 0x454)), 0);
  }
 +#ifndef PLATFORM_VITA /* GCC: extern then static inline is an error */
  extern void MTX_Copy44To43(const MtxFx44 * pSrc, MtxFx43 * pDst);

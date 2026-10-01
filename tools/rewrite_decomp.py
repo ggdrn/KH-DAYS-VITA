@@ -416,7 +416,9 @@ def pass_align64(tree):
 
 GX_LVALUE = re.compile(
     r"(?P<lv>\breg_G3_\w+|\breg_G3X_GXFIFO\b|\*\s*\(\s*[\w ]+\*\s*\)\s*KH_HW\(\s*0x0*4000[45][0-9a-fA-F]{2}\s*\)"
-    r"|\*\s*\(\s*REGType32v\s*\*\s*\)\s*\(\s*REG_\w+_ADDR\b[^;=]*\))"
+    r"|\*\s*\(\s*REGType32v\s*\*\s*\)\s*\(\s*REG_\w+_ADDR\b[^;=]*\)"
+    # the I/O base plus an offset (NNS_G3dGetCurrentMtx's own G3_MtxMode, G3_PushMtx, ...)
+    r"|\(\s*\*\s*\(\s*[\w ]+\*\s*\)\s*\(\s*KH_HW\(\s*0x0*4000000\s*\)\s*\+\s*0x[45][0-9a-fA-F]{2}\s*\)\s*\))"
     r"\s*=(?!=)\s*(?P<v>[^;{}]+);")
 GX_MARK = "KH_GX_CMD("
 _GX_ADDR = r"KH_HW\(\s*0x0*4000[45][0-9a-fA-F]{2}\s*\)"
