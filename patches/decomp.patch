@@ -673,6 +673,22 @@ index ce02e47fa..33224b331 100644
  #define MB_TYPE_MULTIBOOT       2
  
  typedef struct CARDiCommandArg {
+diff --git a/libs/nitro/fs/calls/FS_OpenFile.c b/libs/nitro/fs/calls/FS_OpenFile.c
+index 2a39240f9..bb785c4dc 100644
+--- a/libs/nitro/fs/calls/FS_OpenFile.c
++++ b/libs/nitro/fs/calls/FS_OpenFile.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_TRACE */
+ /* Resolves the path and opens the file it names.
+  *
+  * The id pair is a two-word STRUCT passed by value: that is what makes the ROM load both
+@@ -20,5 +21,6 @@ int FS_OpenFile(void *file, const char *path) {
+         return 1;
+     }
+ no:
++    KH_TRACE("FS_OpenFile: cannot open \"%s\"", path);
+     return 0;
+ }
 diff --git a/libs/nitro/fx/auto/FX_DivAsync.c b/libs/nitro/fx/auto/FX_DivAsync.c
 index 5b0bd2dd3..22d481397 100644
 --- a/libs/nitro/fx/auto/FX_DivAsync.c

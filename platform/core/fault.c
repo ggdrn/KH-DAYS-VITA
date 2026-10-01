@@ -46,6 +46,24 @@ static void report(KuKernelExceptionContext *c)
                  (unsigned)c->r6, (unsigned)c->r7, (unsigned)c->r8, (unsigned)c->r9,
                  (unsigned)c->r10, (unsigned)c->r11, (unsigned)c->r12, (unsigned)c->SPSR);
     log_write_raw(buf, n);
+    /* the top of the stack: the return addresses in it give the callers (symbolize.py picks
+     * the words that point into the code) */
+    {
+        const uint32_t *sp = (const uint32_t *)(uintptr_t)(c->sp & ~3u);
+        const uintptr_t top = (uintptr_t)ti.stack + (uintptr_t)ti.stackSize;
+        int words = 128, i, j;
+        if ((uintptr_t)sp < (uintptr_t)ti.stack || (uintptr_t)sp >= top)
+            words = 0; /* sp is not in this thread's stack: do not touch it */
+        else if ((top - (uintptr_t)sp) / 4 < (uintptr_t)words)
+            words = (int)((top - (uintptr_t)sp) / 4);
+        for (i = 0; i + 8 <= words; i += 8) {
+            n = snprintf(buf, sizeof(buf), "  stack+%03x:", i * 4);
+            for (j = 0; j < 8; j++)
+                n += snprintf(buf + n, sizeof(buf) - n, " %08x", (unsigned)sp[i + j]);
+            buf[n++] = '\n';
+            log_write_raw(buf, n);
+        }
+    }
 }
 
 #define HANDLER(i)                                                                 \

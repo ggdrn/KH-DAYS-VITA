@@ -76,10 +76,20 @@ def main():
             a = v - bias
             if lo <= a < hi and k not in ("main", "far", "fsr", "spsr"):
                 wanted[k] = a & ~1
-        names = addr2line(elf, sorted(set(wanted.values())))
+        # words on the stack that point into the code: probably return addresses, outermost
+        # last (a call is the instruction before the address, hence the -2)
+        stack = [int(v, 16) - bias for v in re.findall(r"\b([0-9a-f]{8})\b",
+                 "\n".join(l for l in blk.splitlines() if "stack+" in l))]
+        stack = [a for a in stack if lo <= a < hi]
+        names = addr2line(elf, sorted(set(wanted.values()) | {a - 2 for a in stack}))
         for k in ("pc", "lr") + tuple(sorted(set(wanted) - {"pc", "lr"})):
             if k in wanted:
                 print(f"    {k:4s} {wanted[k]:08x}  {names[wanted[k]]}")
+        seen = set()
+        for a in stack:
+            if a not in seen:
+                seen.add(a)
+                print(f"    stack {a:08x}  {names[a - 2]}")
         print()
 
     # thread entries ("entry X") and the watchdog's stacks of parked threads ("at X"): the log
