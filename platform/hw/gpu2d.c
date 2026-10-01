@@ -363,6 +363,82 @@ static uint16_t obj_texel(const Engine *e, uint16_t a0, uint16_t a2, int w, int 
 
 /* Draws the sprites of `line`; returns 1 if any sprite pixel was drawn, plus 2 if one of them
  * blends by itself (semi-transparent or bitmap), plus 4 if any OBJ window pixel was set. */
+/* One sprite pixel into the line: window, priority against what is there, alpha. */
+static inline int obj_put(ObjLine *o, int x, uint16_t c, int mode, int prio, uint16_t a2)
+{
+    if (mode == 2) {
+        o->win[x] = 1;
+        return 4;
+    }
+    if ((o->col[x] & OPAQUE) && prio >= o->prio[x])
+        return 0; /* a sprite earlier in OAM, or with a lower priority value, wins */
+    if (mode == 3) {
+        const int alpha = a2 >> 12;
+        if (!alpha)
+            return 0;
+        o->alpha[x] = (uint8_t)(alpha + 1);
+    } else {
+        o->alpha[x] = mode == 1 ? 0x80 : 0;
+    }
+    o->col[x] = c | OPAQUE;
+    o->prio[x] = (uint8_t)prio;
+    return o->alpha[x] ? 3 : 1;
+}
+
+/* A plain (not affine, not bitmap) sprite's line, a tile row of 8 texels at a time; empty
+ * rows are skipped whole. */
+static int obj_line_tiles(const Engine *e, ObjLine *o, uint16_t a0, uint16_t a1, uint16_t a2,
+                          int w, int h, int dy, int x0)
+{
+    const uint8_t *v = e->obj_vram;
+    const uint32_t m = e->obj_mask;
+    const int tile = a2 & 0x3ff, bpp8 = a0 & 0x2000, mode = (a0 >> 10) & 3;
+    const int prio = (a2 >> 10) & 3, hflip = a1 & 0x1000;
+    const int ty = (a1 & 0x2000) ? h - 1 - dy : dy;
+    const uint16_t *pal;
+    int col, got = 0;
+
+    if (bpp8)
+        pal = ((e->dispcnt & (1u << 31)) && e->obj_ext) ? e->obj_ext + (a2 >> 12) * 256 : e->obj_pal;
+    else
+        pal = e->obj_pal + (a2 >> 12) * 16;
+    for (col = 0; col < w / 8; col++) {
+        /* screen x of this tile column's leftmost pixel */
+        const int xs = x0 + (hflip ? w - 8 - col * 8 : col * 8);
+        uint32_t addr, lo, hi = 0;
+        int px;
+        if (xs >= W || xs + 8 <= 0)
+            continue;
+        if (e->dispcnt & 0x10) /* 1D mapping */
+            addr = tile * (32u << ((e->dispcnt >> 20) & 3)) +
+                   ((uint32_t)(ty >> 3) * (w >> 3) + col) * (bpp8 ? 64u : 32u);
+        else /* 2D: a 32x32 grid of 32-byte tiles */
+            addr = tile * 32u + ((uint32_t)(ty >> 3) * 32u + col * (bpp8 ? 2u : 1u)) * 32u;
+        if (bpp8) {
+            addr += (ty & 7) * 8u;
+            memcpy(&lo, v + (addr & m), 4);
+            memcpy(&hi, v + ((addr + 4) & m), 4);
+        } else {
+            memcpy(&lo, v + ((addr + (ty & 7) * 4u) & m), 4);
+        }
+        if (!(lo | hi))
+            continue;
+        for (px = 0; px < 8; px++) {
+            const int t = hflip ? 7 - px : px, x = xs + px;
+            int idx;
+            if (x < 0 || x >= W)
+                continue;
+            if (bpp8)
+                idx = (t < 4 ? lo >> (t * 8) : hi >> ((t - 4) * 8)) & 0xff;
+            else
+                idx = (lo >> (t * 4)) & 15;
+            if (idx)
+                got |= obj_put(o, x, pal[idx], mode, prio, a2);
+        }
+    }
+    return got;
+}
+
 static int render_obj(const Engine *e, int line, ObjLine *o)
 {
     int i, got = 0;
@@ -389,6 +465,10 @@ static int render_obj(const Engine *e, int line, ObjLine *o)
         x0 = a1 & 0x1ff;
         if (x0 >= 256)
             x0 -= 512;
+        if (!affine && mode != 3) {
+            got |= obj_line_tiles(e, o, a0, a1, a2, w, h, dy, x0);
+            continue;
+        }
         if (affine) {
             const int g = ((a1 >> 9) & 31) * 16;
             pa = (int16_t)e->oam[g + 3], pb = (int16_t)e->oam[g + 7];
@@ -413,26 +493,8 @@ static int render_obj(const Engine *e, int line, ObjLine *o)
                 ty = (a1 & 0x2000) ? h - 1 - dy : dy;
             }
             c = obj_texel(e, a0, a2, w, tx, ty);
-            if (!c)
-                continue;
-            if (mode == 2) {
-                o->win[x] = 1;
-                got |= 4;
-                continue;
-            }
-            if ((o->col[x] & OPAQUE) && prio >= o->prio[x])
-                continue; /* a sprite earlier in OAM, or with a lower priority value, wins */
-            if (mode == 3) {
-                const int alpha = a2 >> 12;
-                if (!alpha)
-                    continue;
-                o->alpha[x] = (uint8_t)(alpha + 1);
-            } else {
-                o->alpha[x] = mode == 1 ? 0x80 : 0;
-            }
-            o->col[x] = c | OPAQUE;
-            o->prio[x] = (uint8_t)prio;
-            got |= o->alpha[x] ? 3 : 1;
+            if (c)
+                got |= obj_put(o, x, c & 0x7fff, mode, prio, a2);
         }
     }
     return got;

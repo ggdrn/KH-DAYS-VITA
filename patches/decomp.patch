@@ -10434,7 +10434,7 @@ index 489f7c75e..0d011b961 100644
  
  extern void func_02023ad0(int handle);
 diff --git a/src/overlays/field/ov022_battle/Ov022_FillSelectorStates.c b/src/overlays/field/ov022_battle/Ov022_FillSelectorStates.c
-index 65ada4864..52499d6a0 100644
+index 65ada4864..7cfc42953 100644
 --- a/src/overlays/field/ov022_battle/Ov022_FillSelectorStates.c
 +++ b/src/overlays/field/ov022_battle/Ov022_FillSelectorStates.c
 @@ -1,3 +1,4 @@
@@ -10451,6 +10451,15 @@ index 65ada4864..52499d6a0 100644
      char padding008[0xa];
      unsigned short selectedLimit;
      char padding014[2];
+@@ -71,6 +72,8 @@ void Ov022_FillSelectorStates(int *input)
+     int index = 0;
+     int count = data_02042a1d;
+ 
++    KH_TRACE("ov022: %d party members (kinds %d %d %d)", count, gPartyMembers[0].special,
++             gPartyMembers[1].special, gPartyMembers[2].special);
+     if (count > 0 && count > 0) {
+         int *inputCursor = input;
+         unsigned char *stateCursor = (unsigned char *)root;
 diff --git a/src/overlays/field/ov022_battle/Ov022_GetStreamTimestamp.c b/src/overlays/field/ov022_battle/Ov022_GetStreamTimestamp.c
 index 084acdd90..5b1a2e8ce 100644
 --- a/src/overlays/field/ov022_battle/Ov022_GetStreamTimestamp.c
@@ -13255,6 +13264,24 @@ index b715680d7..330e3ccc9 100644
          pNext = Ov002_PanelIdleState;
      }
  
+diff --git a/src/overlays/scenes/ov002_field/Ov002_ScriptAddMissionMember.c b/src/overlays/scenes/ov002_field/Ov002_ScriptAddMissionMember.c
+index 950c281bc..935887ba0 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_ScriptAddMissionMember.c
++++ b/src/overlays/scenes/ov002_field/Ov002_ScriptAddMissionMember.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"
+ #include "nitro/types.h"
+ #include "nitro/fx_types.h"
+ #include "game/engine.h"
+@@ -43,6 +44,8 @@ void Ov002_ScriptAddMissionMember(int nMemberKind, int nBehaviorId, int nLevelBi
+     Ov002SessionBlock *pSession = (Ov002SessionBlock *)(data_ov002_0207fa00 + 0x8bcc);
+     int nIndex = data_02042a1d;
+     Ov002MissionMemberHead *pHead;
++    KH_TRACE("ov002: add mission member kind %d behavior %d at %d (flags %02x)", nMemberKind,
++             nBehaviorId, nIndex, data_0204c240);
+     if (!(data_0204c240 & 4)) {
+         data_02042a1d++;
+         data_02042a1c++;
 diff --git a/src/overlays/scenes/ov002_field/Ov002_SetBgOfs_main0014.c b/src/overlays/scenes/ov002_field/Ov002_SetBgOfs_main0014.c
 index 5e68640d2..755e33435 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_SetBgOfs_main0014.c
@@ -18382,6 +18409,28 @@ index e0e5d07f9..78cd66ad6 100644
 +    SetMasterBrightnessSub(GXx_GetMasterBrightness_(KH_HW(0x0400106c)));
      return (void *)&Ov024_MobiClip_PlaybackIdleState;
  }
+diff --git a/src/overlays/system/ov029/Ov029_AcquireOverlaySlot.c b/src/overlays/system/ov029/Ov029_AcquireOverlaySlot.c
+index 3752020b6..44a616304 100644
+--- a/src/overlays/system/ov029/Ov029_AcquireOverlaySlot.c
++++ b/src/overlays/system/ov029/Ov029_AcquireOverlaySlot.c
+@@ -36,6 +36,7 @@
+  */
+ 
+ #include "game/engine.h"
++#include "nitro/kh_hw.h"
+ 
+ typedef void (*OverlayInitFn)(void);
+ 
+@@ -71,6 +72,9 @@ int Ov029_AcquireOverlaySlot(int proc, int group)
+         slot--; cand--; k--;
+     } while (k >= 0);
+ 
++    KH_TRACE("ov029: slot for proc %d group %d: slot %d, overlay %d (slots %d %d %d %d)", proc,
++             group, k, loaded, data_ov029_020b3200[0], data_ov029_020b3200[1],
++             data_ov029_020b3200[2], data_ov029_020b3200[3]);
+     LoadOverlaySync(0, loaded);
+     data_ov029_020b2f70[group].initFns[k]();
+     return loaded;
 diff --git a/src/overlays/system/ov105_wireless/Ov105_ClearSharedRequestBit.c b/src/overlays/system/ov105_wireless/Ov105_ClearSharedRequestBit.c
 index df9817e95..e188981e1 100644
 --- a/src/overlays/system/ov105_wireless/Ov105_ClearSharedRequestBit.c
