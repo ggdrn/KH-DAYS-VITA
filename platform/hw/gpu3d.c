@@ -396,8 +396,12 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
             ps->blend = p->translucent && blending_on;
             ps->depth_write = !p->translucent || (p->attr & (1u << 11));
             ps->depth_equal = (p->attr >> 14) & 1;
-            if (p->translucent) {
-                s_pkey[i] = 0xfffffffeu; /* keeps its place, after the opaque ones */
+            if (p->translucent || ps->depth_equal) {
+                /* keeps its place, after the grouped opaque ones. Depth-equal polygons are
+                 * second passes over geometry drawn before them (a field's textures over its
+                 * lit base): grouped, they could come first and be covered (Tram Common's
+                 * walls showed their lighting alone from 0.0.39 to 0.0.45) */
+                s_pkey[i] = 0xfffffffeu;
             } else {
                 s_pkey[i] = (ps->tex ? (uint32_t)(ps->tex - s_tex) + 1 : 0) << 4 |
                             (uint32_t)ps->mode << 1 | (uint32_t)ps->depth_equal;
