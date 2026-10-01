@@ -3,6 +3,7 @@
 #include "video.h"
 
 #include <psp2/ctrl.h>
+#include <psp2/kernel/processmgr.h>
 #include <psp2/touch.h>
 #include <string.h>
 
@@ -22,11 +23,16 @@ static const struct {
 };
 
 static uint32_t s_prev_buttons;
+static uint64_t s_back_since; /* when the rear touchpad was first touched, 0 when untouched */
+static int s_back_fired;      /* the current hold already swapped the screens */
+
+#define BACK_HOLD_US 1000000
 
 void input_init(void)
 {
     sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
     sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
+    sceTouchSetSamplingState(SCE_TOUCH_PORT_BACK, SCE_TOUCH_SAMPLING_STATE_START);
 }
 
 void input_poll(InputState *out)
@@ -70,12 +76,26 @@ void input_poll(InputState *out)
     sceTouchPeek(SCE_TOUCH_PORT_FRONT, &touch, 1);
     if (touch.reportNum > 0) {
         /* front panel reports 1920x1088 */
-        ScreenRect r = video_bottom_rect();
-        int px = touch.report[0].x / 2, py = touch.report[0].y / 2;
-        if (px >= r.x && px < r.x + r.w && py >= r.y && py < r.y + r.h) {
+        int x, y;
+        if (video_map_touch(touch.report[0].x / 2, touch.report[0].y / 2, &x, &y)) {
             out->touching = 1;
-            out->touch_x = (px - r.x) * DS_SCREEN_W / r.w;
-            out->touch_y = (py - r.y) * DS_SCREEN_H / r.h;
+            out->touch_x = x;
+            out->touch_y = y;
         }
+    }
+
+    /* rear touchpad held for a second: swap the screens, once per hold */
+    sceTouchPeek(SCE_TOUCH_PORT_BACK, &touch, 1);
+    if (touch.reportNum > 0) {
+        uint64_t now = sceKernelGetProcessTimeWide();
+        if (!s_back_since)
+            s_back_since = now;
+        if (!s_back_fired && now - s_back_since >= BACK_HOLD_US) {
+            out->swap_screens = 1;
+            s_back_fired = 1;
+        }
+    } else {
+        s_back_since = 0;
+        s_back_fired = 0;
     }
 }

@@ -213,6 +213,8 @@ static void sample_input(void)
     input_poll(&in);
     if (in.swap_layout)
         video_set_layout(video_layout() + 1);
+    if (in.swap_screens)
+        video_swap_screens();
     if (in.toggle_console)
         s_console = !s_console;
     KH_IO16(0x04000130) = in.keyinput;

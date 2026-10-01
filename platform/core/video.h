@@ -10,9 +10,9 @@
 #define DS_SCREEN_H 192
 
 typedef enum {
-    LAYOUT_SIDE_BY_SIDE = 0, /* both screens, 480x360 each */
-    LAYOUT_TOP_FOCUS,        /* top screen large, touch screen small on the right */
-    LAYOUT_BOTTOM_FOCUS,     /* the reverse */
+    LAYOUT_TOP_MAIN = 0,  /* top screen over the whole display (16:9), touch screen small */
+    LAYOUT_BOTTOM_MAIN,   /* touch screen large (4:3), top screen small */
+    LAYOUT_SIDE_BY_SIDE,  /* both screens, 480x360 each */
     LAYOUT_COUNT
 } ScreenLayout;
 
@@ -23,8 +23,12 @@ typedef struct {
 void video_init(void);
 void video_set_layout(ScreenLayout layout);
 ScreenLayout video_layout(void);
-/* Where the bottom (touch) screen currently is on the display, for mapping touch input. */
+/* Where the bottom (touch) screen currently is on the display. */
 ScreenRect video_bottom_rect(void);
+/* Display pixel (960x544) -> DS touch-screen pixel; 0 when it is not on the touch screen. */
+int video_map_touch(int px, int py, int *x, int *y);
+/* Swap which screen is the large one (top-main <-> bottom-main). */
+void video_swap_screens(void);
 /* A 480x272 RGBA layer drawn over everything, scaled to the full display (NULL: none). */
 #define VIDEO_OVERLAY_W 480
 #define VIDEO_OVERLAY_H 272

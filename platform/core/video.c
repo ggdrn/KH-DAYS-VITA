@@ -1,5 +1,6 @@
 #include "video.h"
 
+#include "config.h"
 #include "log.h"
 
 #include <vitaGL.h>
@@ -9,8 +10,10 @@
 
 static GLuint s_tex[2], s_overlay_tex;
 static const uint32_t *s_overlay;
-static ScreenLayout s_layout = LAYOUT_SIDE_BY_SIDE;
+static ScreenLayout s_layout = LAYOUT_TOP_MAIN;
 static ScreenRect s_rect[2];
+static int s_inset = -1; /* the screen drawn small over the other one, -1 for none */
+static volatile int s_pending = -1; /* a layout asked for from another thread (input) */
 static GLuint s_compose, s_compose_vbo;
 static GLint u_c2d, u_c3d, u_bright;
 static int s_3d_screen = -1;
@@ -144,22 +147,55 @@ static void draw_composed(int screen)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 }
 
+/* The small screen: 4:3, inset_width wide (config.ini), in the top-right corner. */
+static ScreenRect inset_rect(void)
+{
+    const int w = kh_config.inset_width, h = w * 3 / 4, margin = 4;
+    return (ScreenRect){ DISPLAY_W - w - margin, margin, w, h };
+}
+
 static void compute_layout(void)
 {
     switch (s_layout) {
-    case LAYOUT_TOP_FOCUS:
-        s_rect[0] = (ScreenRect){ 0, 0, 725, 544 };
-        s_rect[1] = (ScreenRect){ 725, 368, 235, 176 };
+    case LAYOUT_TOP_MAIN:
+        /* the top screen over the whole display (16:9), the touch screen small */
+        s_rect[0] = (ScreenRect){ 0, 0, DISPLAY_W, DISPLAY_H };
+        s_rect[1] = inset_rect();
+        s_inset = 1;
         break;
-    case LAYOUT_BOTTOM_FOCUS:
-        s_rect[0] = (ScreenRect){ 725, 0, 235, 176 };
-        s_rect[1] = (ScreenRect){ 0, 0, 725, 544 };
+    case LAYOUT_BOTTOM_MAIN:
+        /* the touch screen large in its own 4:3, the top screen small */
+        s_rect[1] = (ScreenRect){ (DISPLAY_W - 725) / 2, 0, 725, 544 };
+        s_rect[0] = inset_rect();
+        s_inset = 0;
         break;
     default:
         s_rect[0] = (ScreenRect){ 0, 92, 480, 360 };
         s_rect[1] = (ScreenRect){ 480, 92, 480, 360 };
+        s_inset = -1;
         break;
     }
+}
+
+void video_swap_screens(void)
+{
+    video_set_layout(video_layout() == LAYOUT_TOP_MAIN ? LAYOUT_BOTTOM_MAIN : LAYOUT_TOP_MAIN);
+}
+
+int video_map_touch(int px, int py, int *x, int *y)
+{
+    const ScreenRect *r = &s_rect[1];
+    if (s_inset == 0) {
+        /* the top screen lies over the touch screen there */
+        const ScreenRect *t = &s_rect[0];
+        if (px >= t->x && px < t->x + t->w && py >= t->y && py < t->y + t->h)
+            return 0;
+    }
+    if (px < r->x || px >= r->x + r->w || py < r->y || py >= r->y + r->h)
+        return 0;
+    *x = (px - r->x) * DS_SCREEN_W / r->w;
+    *y = (py - r->y) * DS_SCREEN_H / r->h;
+    return 1;
 }
 
 void video_init(void)
@@ -170,7 +206,9 @@ void video_init(void)
     vglInitExtended(0, DISPLAY_W, DISPLAY_H, 16 * 1024 * 1024, SCE_GXM_MULTISAMPLE_NONE);
 
     glGenTextures(2, s_tex);
-    for (i = 0; i < 2; i++) {
+    for (int k = 0; k < 2; k++) {
+        /* the large screen first, the inset over it */
+        i = s_inset == 0 ? 1 - k : k;
         glBindTexture(GL_TEXTURE_2D, s_tex[i]);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, DS_SCREEN_W, DS_SCREEN_H, 0, GL_RGBA,
                      GL_UNSIGNED_BYTE, NULL);
@@ -193,20 +231,22 @@ void video_init(void)
     glDisable(GL_DEPTH_TEST);
     glEnable(GL_TEXTURE_2D);
 
+    s_layout = (ScreenLayout)(kh_config.layout % LAYOUT_COUNT);
     compute_layout();
     compose_init();
     LOG("video: vitaGL up, layout %d", s_layout);
 }
 
+/* applied by video_present, on the thread that draws */
 void video_set_layout(ScreenLayout layout)
 {
-    s_layout = layout % LAYOUT_COUNT;
-    compute_layout();
+    s_pending = (int)(layout % LAYOUT_COUNT);
 }
 
 ScreenLayout video_layout(void)
 {
-    return s_layout;
+    int p = s_pending;
+    return p >= 0 ? (ScreenLayout)p : s_layout;
 }
 
 void video_set_overlay(const uint32_t *pixels)
@@ -237,6 +277,11 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
     const uint32_t *src[2] = { top, bottom };
     int i;
 
+    if (s_pending >= 0) {
+        s_layout = (ScreenLayout)s_pending;
+        s_pending = -1;
+        compute_layout();
+    }
     glViewport(0, 0, DISPLAY_W, DISPLAY_H);
     glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
