@@ -1,11 +1,15 @@
 /* The cartridge: CARDi_ReadRom, the single path every ROM read of the NitroSDK goes through
  * (FS's ROM archive calls it asynchronously, with a completion callback).
  *
- * The data comes from the user's dump (rom_read). An asynchronous read completes later, so
- * the FS state machine sees "started" before "done" as it expects. On the DS the CARD task
- * thread calls the callback when it finishes the transfer, whether interrupts are on or not:
- * main() loads ov001 before anything sets IME. So the completion is a task deferral
- * (kh_cpu_defer_task), not an interrupt one. */
+ * The data comes from the user's dump (rom_read). When the callback runs follows the DS, whose
+ * CARDi_ReadRom takes one of two paths (CARDi_TryReadCardDma):
+ *   - card DMA, for a transfer whose source and length are whole 512-byte pages and whose
+ *     destination is cache-line aligned: it ends later, so the caller goes on first. Here a
+ *     task deferral (kh_cpu_defer_task: main() loads ov001 before anything sets IME).
+ *   - otherwise the CARD task thread, the highest-priority thread, which wakes, transfers and
+ *     calls back before the caller resumes. Here the callback runs before returning. Game code
+ *     counts on it: the archive loaders leave a final 0-byte read pending and close the same
+ *     FSFile right away (0.0.24 hung in FS_CloseFile behind that read). */
 #include "log.h"
 #include "nitro/cpu.h"
 #include "rom.h"
@@ -47,10 +51,10 @@ void CARDi_ReadRom(uint32_t dma, const void *src, void *dst, uint32_t len, CARDC
         LOG("card: short read at %08x: %d of %u", off, n, len);
     if (!cb)
         return;
-    if (async)
-        kh_cpu_defer_task(complete, (void *)cb, arg, NULL);
+    if (async && dma <= 3 && !((uintptr_t)dst & 31) && len > 0 && !((off | len) & 0x1ff))
+        kh_cpu_defer_task(complete, (void *)cb, arg, NULL); /* the card DMA path */
     else
-        cb(arg);
+        cb(arg); /* the CARD task thread's path, or a synchronous read */
 }
 
 /* The chip ID the card answers READ_ID with. The SDK compares it with the one the boot left in
