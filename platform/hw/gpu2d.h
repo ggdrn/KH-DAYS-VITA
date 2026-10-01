@@ -10,7 +10,19 @@
 
 enum { KH_ENGINE_A = 0, KH_ENGINE_B = 1 };
 
-/* Render one engine's whole frame into fb (256x192, RGBA8888 in memory order R, G, B, A). */
-void kh_gpu2d_render(int engine, uint32_t *fb);
+/* The alpha byte of an output pixel: 255 for a finished 2D pixel. With the 3D layer on
+ * (engine A, DISPCNT bit 3), a pixel whose frontmost layer is 3D holds the colour under it and
+ * one of these codes, the low 5 bits being EVY for the brightness effects. */
+enum {
+    KH_GPU2D_2D = 0xff,
+    KH_GPU2D_3D = 0x00,
+    KH_GPU2D_3D_BRIGHTEN = 0x40,
+    KH_GPU2D_3D_DARKEN = 0x80,
+};
+
+/* Render one engine's whole frame into fb (256x192, RGBA8888 in memory order R, G, B, A).
+ * Returns 1 when the frame has 3D pixels to composite (codes above); master brightness is then
+ * left to the composition. */
+int kh_gpu2d_render(int engine, uint32_t *fb);
 
 #endif

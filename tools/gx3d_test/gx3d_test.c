@@ -4,11 +4,18 @@
  *     tools/gx3d_test/run.sh */
 #include "hw/gx3d.h"
 #include "hw/io.h"
+#include "hw/textures.h"
 
 #include <math.h>
 #include <stdio.h>
 
 uint8_t kh_ds_io[KH_IO_SIZE];
+
+/* banks A-G as the texture code sees them: A texture slot 1, B slot 0, E palette */
+static uint8_t s_bank[7][0x20000];
+static uint8_t s_cnt[9] = { 0x80 | 3 | 1 << 3, 0x80 | 3, 0, 0, 0x80 | 3, 0, 0 };
+uint8_t *kh_vram_bank_home(int bank) { return s_bank[bank]; }
+uint8_t kh_vram_bank_cnt(int bank) { return s_cnt[bank]; }
 
 static int s_fail;
 #define CHECK(c, ...) do { if (!(c)) { s_fail++; printf("FAIL %s:%d: ", __FILE__, __LINE__); \
@@ -133,6 +140,32 @@ int main(void)
     port(0x50, 1); /* manual sort, empty frame */
     f = kh_gx3d_acquire();
     CHECK(f && f->npoly == 0 && f->swap == 1, "6: empty manual-sort frame");
+
+    /* 7: textures. 16-colour 8x8 at 0x100 (slot 0 = bank B), colour 0 transparent */
+    {
+        static uint32_t out[64 * 64];
+        uint16_t *pal = (uint16_t *)s_bank[4];
+        uint32_t ti, h1;
+        pal[8 + 1] = 0x001f;           /* palette base 1 (16 bytes): entry 1 red */
+        pal[8 + 2] = 0x7c00;           /* entry 2 blue */
+        s_bank[1][0x100] = 0x21;       /* texels 0,1 = 1,2 */
+        kh_tex_map_slots();
+        ti = (0x100 / 8) | 3u << 26 | 1u << 29; /* 8x8, 16-colour, colour 0 clear */
+        kh_tex_decode(ti, 1, out);
+        CHECK(out[0] == 0xff0000ffu && out[1] == 0xffff0000u && out[2] == 0, "7: 16-colour %08x %08x %08x",
+              (unsigned)out[0], (unsigned)out[1], (unsigned)out[2]);
+        h1 = kh_tex_hash(ti, 1);
+        pal[8 + 2] = 0x03e0;
+        CHECK(kh_tex_hash(ti, 1) != h1, "7: hash follows the palette");
+        /* 4x4: 8x8 texels at slot 0 offset 0 (4 blocks), infos in slot 1 (bank A) at 0;
+         * block 0 mode 1 with palette offset 0 -> colours red, green, their mean, clear */
+        pal[0] = 0x001f; pal[1] = 0x03e0;
+        s_bank[1][0] = 0xe4;           /* row 0: texels 0,1,2,3 */
+        s_bank[0][0] = 0x00; s_bank[0][1] = 0x40; /* info: offset 0, mode 1 */
+        kh_tex_decode(5u << 26, 0, out);
+        CHECK(out[0] == 0xff0000ffu && out[1] == 0xff00ff00u && out[2] == 0xff007f7fu && out[3] == 0,
+              "7: 4x4 %08x %08x %08x %08x", (unsigned)out[0], (unsigned)out[1], (unsigned)out[2], (unsigned)out[3]);
+    }
 
     printf(s_fail ? "gx3d_test: %d failures\n" : "gx3d_test: ok\n", s_fail);
     return s_fail != 0;

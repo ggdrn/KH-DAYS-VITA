@@ -11,6 +11,136 @@ static GLuint s_tex[2], s_overlay_tex;
 static const uint32_t *s_overlay;
 static ScreenLayout s_layout = LAYOUT_SIDE_BY_SIDE;
 static ScreenRect s_rect[2];
+static GLuint s_compose, s_compose_vbo;
+static GLint u_c2d, u_c3d, u_bright;
+static int s_3d_screen = -1;
+static GLuint s_3d_tex;
+static uint16_t s_3d_bright;
+
+/* engine A's 2D pixels (alpha = gpu2d.h code) with the 3D layer laid in, then master
+ * brightness; positions in NDC, uv with 0 at the top of the screen */
+static const char s_compose_vs[] =
+    "void main(float2 aPos, float2 aUv, out float4 vPos : POSITION, out float2 vUv : TEXCOORD0)\n"
+    "{\n"
+    "    vPos = float4(aPos, 0.0, 1.0);\n"
+    "    vUv = aUv;\n"
+    "}\n";
+static const char s_compose_fs[] =
+    "float4 main(float2 vUv : TEXCOORD0, uniform sampler2D u2d, uniform sampler2D u3d,\n"
+    "            uniform float2 uBright) : COLOR\n"
+    "{\n"
+    "    float4 b = tex2D(u2d, vUv);\n"
+    "    float3 c = b.rgb;\n"
+    "    if (b.a < 0.99) {\n"
+    "        float code = floor(b.a * 255.0 + 0.5);\n"
+    "        float4 t = tex2D(u3d, float2(vUv.x, 1.0 - vUv.y));\n"
+    "        c = t.rgb + b.rgb * (1.0 - t.a);\n"
+    "        if (code >= 128.0)\n"
+    "            c = c - c * ((code - 128.0) / 16.0);\n"
+    "        else if (code >= 64.0)\n"
+    "            c = c + (1.0 - c) * ((code - 64.0) / 16.0);\n"
+    "    }\n"
+    "    if (uBright.x > 0.5 && uBright.x < 1.5)\n"
+    "        c = c + (1.0 - c) * uBright.y;\n"
+    "    else if (uBright.x > 1.5)\n"
+    "        c = c - c * uBright.y;\n"
+    "    return float4(c, 1.0);\n"
+    "}\n";
+
+unsigned video_build_program(const char *vs_src, const char *fs_src, const char *const *attribs,
+                             int nattribs)
+{
+    GLuint vs = glCreateShader(GL_VERTEX_SHADER), fs = glCreateShader(GL_FRAGMENT_SHADER), prog;
+    GLint ok = 0, len;
+    char msg[512];
+    int i;
+
+    glShaderSource(vs, 1, &vs_src, NULL);
+    glCompileShader(vs);
+    glGetShaderiv(vs, GL_COMPILE_STATUS, &ok);
+    if (!ok) {
+        glGetShaderInfoLog(vs, sizeof(msg), &len, msg);
+        LOG("video: vertex shader: %s", msg);
+        return 0;
+    }
+    glShaderSource(fs, 1, &fs_src, NULL);
+    glCompileShader(fs);
+    glGetShaderiv(fs, GL_COMPILE_STATUS, &ok);
+    if (!ok) {
+        glGetShaderInfoLog(fs, sizeof(msg), &len, msg);
+        LOG("video: fragment shader: %s", msg);
+        return 0;
+    }
+    prog = glCreateProgram();
+    glAttachShader(prog, vs);
+    glAttachShader(prog, fs);
+    for (i = 0; i < nattribs; i++)
+        glBindAttribLocation(prog, (GLuint)i, attribs[i]);
+    glLinkProgram(prog);
+    glGetProgramiv(prog, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        LOG("video: program link failed");
+        return 0;
+    }
+    return prog;
+}
+
+static void compose_init(void)
+{
+    static const char *const attribs[] = { "aPos", "aUv" };
+    s_compose = video_build_program(s_compose_vs, s_compose_fs, attribs, 2);
+    if (!s_compose) {
+        LOG("video: composition shader did not build: the 3D layer will not show");
+        return;
+    }
+    u_c2d = glGetUniformLocation(s_compose, "u2d");
+    u_c3d = glGetUniformLocation(s_compose, "u3d");
+    u_bright = glGetUniformLocation(s_compose, "uBright");
+    glGenBuffers(1, &s_compose_vbo);
+}
+
+void video_set_3d(int screen, unsigned tex, uint16_t master_bright)
+{
+    s_3d_screen = (s_compose && tex) ? screen : -1;
+    s_3d_tex = tex;
+    s_3d_bright = master_bright;
+}
+
+static void draw_composed(int screen)
+{
+    const ScreenRect *r = &s_rect[screen];
+    const float x0 = r->x / (DISPLAY_W / 2.0f) - 1.0f, x1 = (r->x + r->w) / (DISPLAY_W / 2.0f) - 1.0f;
+    const float y0 = 1.0f - r->y / (DISPLAY_H / 2.0f), y1 = 1.0f - (r->y + r->h) / (DISPLAY_H / 2.0f);
+    const float v[] = { x0, y0, 0, 0, x1, y0, 1, 0, x0, y1, 0, 1, x1, y1, 1, 1 };
+    const int mode = (s_3d_bright >> 14) & 3;
+    int f = s_3d_bright & 31;
+
+    if (f > 16)
+        f = 16;
+    glUseProgram(s_compose);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, s_3d_tex);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, s_tex[screen]);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glUniform1i(u_c2d, 0);
+    glUniform1i(u_c3d, 1);
+    glUniform2f(u_bright, (mode == 1 || mode == 2) ? (float)mode : 0.0f, (float)f / 16.0f);
+    glBindBuffer(GL_ARRAY_BUFFER, s_compose_vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(v), v, GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, (void *)0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, (void *)8);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glDisableVertexAttribArray(0);
+    glDisableVertexAttribArray(1);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glUseProgram(0);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+}
 
 static void compute_layout(void)
 {
@@ -62,6 +192,7 @@ void video_init(void)
     glEnable(GL_TEXTURE_2D);
 
     compute_layout();
+    compose_init();
     LOG("video: vitaGL up, layout %d", s_layout);
 }
 
@@ -104,6 +235,7 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
     const uint32_t *src[2] = { top, bottom };
     int i;
 
+    glViewport(0, 0, DISPLAY_W, DISPLAY_H);
     glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
     for (i = 0; i < 2; i++) {
@@ -111,7 +243,10 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
         if (src[i])
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, DS_SCREEN_W, DS_SCREEN_H, GL_RGBA,
                             GL_UNSIGNED_BYTE, src[i]);
-        draw_quad(&s_rect[i]);
+        if (i == s_3d_screen)
+            draw_composed(i);
+        else
+            draw_quad(&s_rect[i]);
     }
     if (s_overlay) {
         static const ScreenRect full = { 0, 0, DISPLAY_W, DISPLAY_H };

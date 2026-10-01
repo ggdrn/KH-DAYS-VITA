@@ -19,7 +19,7 @@ typedef struct {
     float x, y, z, w;
     float s, t;       /* texture coordinates in texels */
     uint8_t r, g, b;  /* 0-63, the rasterizer's 6-bit vertex colour */
-    uint8_t pad;
+    uint8_t a;        /* the polygon's alpha (POLYGON_ATTR 16-20), 0-31 */
 } KhGxVertex;
 
 typedef struct {

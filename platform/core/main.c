@@ -8,6 +8,7 @@
 #include "msgdialog.h"
 #include "paths.h"
 #include "rom.h"
+#include "config.h"
 #include "video.h"
 
 #include <psp2/apputil.h>
@@ -157,6 +158,7 @@ int main(void)
         (unsigned)(mem.size_cdram >> 10), (unsigned)(mem.size_phycont >> 10));
     fault_init();
     mark("fault");
+    config_load();
 
     video_init();
     mark("video");

@@ -6,11 +6,13 @@
  * What the boot ROM and the ARM7 leave in memory before the ARM9 starts is set up here: the
  * cartridge header in the shared area and the ARM7's PXI handlers. */
 #include "hw/gpu2d.h"
+#include "hw/gpu3d.h"
 #include "hw/gx3d.h"
 #include "hw/io.h"
 #include "hw/memmap.h"
 #include "hw/overlays.h"
 #include "hw/shared_area.h"
+#include "config.h"
 #include "console.h"
 #include "input.h"
 #include "log.h"
@@ -28,6 +30,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <psp2/kernel/cpu.h>
+
+static int s_gpu3d;          /* the GPU 3D renderer is up */
 
 extern void NitroMain(void);
 
@@ -65,6 +69,7 @@ static void boot_state(void)
 {
     kh_romfs_init();
     kh_gx3d_init();
+    s_gpu3d = kh_gpu3d_init(kh_config.render_scale);
     kh_hw_reset();
     memcpy(KH_SHARED(HW_ROM_HEADER_BUF), rom_header(), HW_ROM_HEADER_SIZE);
     memcpy(KH_SHARED(HW_CARD_ROM_HEADER), rom_header(), HW_ROM_HEADER_SIZE);
@@ -94,9 +99,21 @@ static void present(void)
     /* POWCNT1 bit 15: engine A on the top screen */
     int a_on_top = (KH_IO16(0x04000304) >> 15) & 1;
     uint64_t t0 = sceKernelGetProcessTimeWide();
-    kh_gpu2d_render(KH_ENGINE_A, a_on_top ? s_top : s_bottom);
+    unsigned tex3d = 0;
+    int a3d;
+    a3d = kh_gpu2d_render(KH_ENGINE_A, a_on_top ? s_top : s_bottom);
     kh_gpu2d_render(KH_ENGINE_B, a_on_top ? s_bottom : s_top);
     s_render_us = (uint32_t)(sceKernelGetProcessTimeWide() - t0);
+    if (a3d && s_gpu3d)
+        tex3d = kh_gpu3d_render(kh_gx3d_acquire());
+    video_set_3d(tex3d ? (a_on_top ? 0 : 1) : -1, tex3d, KH_IO16(0x0400006c));
+    if (a3d && !tex3d) {
+        /* no 3D to lay in: the 3D pixels show what is under them */
+        uint32_t *fb = a_on_top ? s_top : s_bottom;
+        int i;
+        for (i = 0; i < 256 * 192; i++)
+            fb[i] |= 0xff000000u;
+    }
     video_present(s_top, s_bottom);
 }
 
@@ -230,6 +247,15 @@ void kh_game_run(void)
             KhGx3dStats gs;
             LOG("game: %s 2d %uus", status, (unsigned)s_render_us);
             kh_gx3d_take_stats(&gs);
+            {
+                KhGpu3dStats rs;
+                kh_gpu3d_take_stats(&rs);
+                if (rs.batches || rs.textures_decoded)
+                    LOG("gpu3d: 10 s: %u us drawing, %u batches, %u textures decoded (%u live), "
+                        "%u polys skipped", (unsigned)rs.render_us, (unsigned)rs.batches,
+                        (unsigned)rs.textures_decoded, (unsigned)rs.textures_live,
+                        (unsigned)rs.skipped);
+            }
             if (gs.commands)
                 LOG("gx3d: 10 s: %u swaps, %u cmds, %u polys (%u culled), %u verts, %u unknown, "
                     "%u over RAM", (unsigned)gs.frames, (unsigned)gs.commands, (unsigned)gs.polygons,

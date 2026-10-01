@@ -6251,7 +6251,7 @@ index d2349d2db..20ca03da3 100644
          data_027e0074->idx = 0;
      }
 diff --git a/libs/nitro/nns/calls/NNSi_G3dFuncSbcNODEMIX.c b/libs/nitro/nns/calls/NNSi_G3dFuncSbcNODEMIX.c
-index 783f6102b..e414a38a8 100644
+index 783f6102b..c62098dc3 100644
 --- a/libs/nitro/nns/calls/NNSi_G3dFuncSbcNODEMIX.c
 +++ b/libs/nitro/nns/calls/NNSi_G3dFuncSbcNODEMIX.c
 @@ -1,3 +1,4 @@
@@ -6268,15 +6268,61 @@ index 783f6102b..e414a38a8 100644
      model = state->pRenderObj->pResMdl;
      command = (const NNSG3dSbcNodeMix *)state->pSbc;
      count = command->numEntries;
-@@ -109,7 +110,7 @@ void NNSi_G3dFuncSbcNODEMIX(NNSG3dRenderState *state, u32 option)
+@@ -95,10 +96,10 @@ void NNSi_G3dFuncSbcNODEMIX(NNSG3dRenderState *state, u32 option)
+ 
+     MIi_CpuClearFast(0, &accum, sizeof(accum));
+     GXi_FlushCommandList();
+-    registers->mode = 0;
+-    registers->store = 1;
+-    registers->identity = 0;
+-    registers->mode = 2;
++    KH_GX_CMD(registers->mode, 0);
++    KH_GX_CMD(registers->store, 1);
++    KH_GX_CMD(registers->identity, 0);
++    KH_GX_CMD(registers->mode, 2);
+     for (i = 0; i < count; ++i) {
+         u32 cached;
+         s32 cacheOffset;
+@@ -109,10 +110,10 @@ void NNSi_G3dFuncSbcNODEMIX(NNSG3dRenderState *state, u32 option)
          cache =
              (NNSG3dNodeMixCacheEntry *)((u8 *)data_020489d4 + cacheOffset);
          if (!cached) {
 -            volatile u32 *restoreRegister = (volatile u32 *)0x04000450;
 +            volatile u32 *restoreRegister = (volatile u32 *)KH_HW(0x04000450);
              state->nodeMixCacheValid[nodeId >> 5] |= 1U << (nodeId & 31);
-             *restoreRegister = entry->matrixIndex;
-             registers->mode = 1;
+-            *restoreRegister = entry->matrixIndex;
+-            registers->mode = 1;
++            KH_GX_CMD(*restoreRegister, entry->matrixIndex);
++            KH_GX_CMD(registers->mode, 1);
+             G3_MultMtx43(&inverse[nodeId].invPosition);
+         }
+         if (i != 0) {
+@@ -121,7 +122,7 @@ void NNSi_G3dFuncSbcNODEMIX(NNSG3dRenderState *state, u32 option)
+         if (!cached) {
+             while (G3X_GetClipMtx(&cache->clip) != 0) {
+             }
+-            registers->mode = 2;
++            KH_GX_CMD(registers->mode, 2);
+             G3_MultMtx33(&inverse[nodeId].invVector);
+         }
+         weight = (fx32)(entry->weight << 4);
+@@ -136,11 +137,11 @@ void NNSi_G3dFuncSbcNODEMIX(NNSG3dRenderState *state, u32 option)
+     AddVector(&accum.vector, previousVector, weight);
+     /* Mode 2 sets vectors; the following mode-1 load replaces all position words. */
+     G3_LoadMtx43((const MtxFx43 *)&accum.vector);
+-    registers->mode = 1;
++    KH_GX_CMD(registers->mode, 1);
+     G3_LoadMtx43(&accum.position);
+-    registers->mode = 0;
+-    registers->restore = 1;
+-    registers->mode = 2;
+-    registers->store = state->pSbc[1];
++    KH_GX_CMD(registers->mode, 0);
++    KH_GX_CMD(registers->restore, 1);
++    KH_GX_CMD(registers->mode, 2);
++    KH_GX_CMD(registers->store, state->pSbc[1]);
+     state->pSbc += (state->pSbc[2] + 1) * 3;
+ }
 diff --git a/libs/nitro/nns/calls/NNSi_G3dGeBufferCommand1.c b/libs/nitro/nns/calls/NNSi_G3dGeBufferCommand1.c
 index 0a60d2f11..991be4f4a 100644
 --- a/libs/nitro/nns/calls/NNSi_G3dGeBufferCommand1.c
@@ -9506,7 +9552,7 @@ index 937fb230a..7470a129b 100644
  
  void UnloadActorOverlay(void) {
 diff --git a/src/engine/main.c b/src/engine/main.c
-index 8e6f54324..d2e9e01c1 100644
+index 8e6f54324..428c80075 100644
 --- a/src/engine/main.c
 +++ b/src/engine/main.c
 @@ -1,3 +1,4 @@
@@ -9575,6 +9621,15 @@ index 8e6f54324..d2e9e01c1 100644
  
      /* --- 4. FRAME LOOP (0x02000cac) --- */
      for (;;) {
+@@ -178,7 +192,7 @@ int main(void) {
+         /* present (unless mode 1 already did its own swap) */
+         if (gPauseMode != 1) {
+             GXi_FlushCommandList();
+-            REG_0540 = 1;
++            KH_GX_CMD(REG_0540, 1);
+             data_0204c215 = 1;
+         }
+ 
 diff --git a/src/engine/remapIndexIfHwFlagSet.c b/src/engine/remapIndexIfHwFlagSet.c
 index f69c118cd..aa6082ff8 100644
 --- a/src/engine/remapIndexIfHwFlagSet.c
@@ -17245,7 +17300,7 @@ index 7c2c435f8..fc93bd52c 100644
  
  extern BOOL FS_LoadOverlay(MIProcessor target, FSOverlayID id);
 diff --git a/src/overlays/system/ov001_boot/Ov001_SetupDisplayRegs.c b/src/overlays/system/ov001_boot/Ov001_SetupDisplayRegs.c
-index 20cdee838..efe3f7cd0 100644
+index 20cdee838..a42de742d 100644
 --- a/src/overlays/system/ov001_boot/Ov001_SetupDisplayRegs.c
 +++ b/src/overlays/system/ov001_boot/Ov001_SetupDisplayRegs.c
 @@ -1,3 +1,4 @@
@@ -17276,6 +17331,19 @@ index 20cdee838..efe3f7cd0 100644
  
      NNS_G3dInit();
      G3X_InitMtxStack();
+@@ -39,10 +40,10 @@ void Ov001_SetupDisplayRegs(void) {
+     *reg_disp3dcnt = (unsigned short)(*reg_disp3dcnt & ~0x3002);
+     *reg_disp3dcnt = (unsigned short)((*reg_disp3dcnt & ~0x3000) | 0x10);
+     *reg_bldcnt = 0;
+-    *reg_swap_buffers = 2;
++    KH_GX_CMD(*reg_swap_buffers, 2);
+     *reg_disp3dcnt = (unsigned short)(*reg_disp3dcnt & 0xcffb);
+     *reg_disp3dcnt = (unsigned short)((*reg_disp3dcnt & ~0x3000) | 8);
+-    *reg_viewport = 0xbfff0000;
++    KH_GX_CMD(*reg_viewport, 0xbfff0000);
+ 
+     Ov001_SetupSubScreenBanks();
+     DispCnt_ApplyPendingMode();
 diff --git a/src/overlays/system/ov001_boot/Ov001_SetupSubScreenBanks.c b/src/overlays/system/ov001_boot/Ov001_SetupSubScreenBanks.c
 index aa6a4bf59..8dc5a9b6b 100644
 --- a/src/overlays/system/ov001_boot/Ov001_SetupSubScreenBanks.c

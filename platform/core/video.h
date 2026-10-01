@@ -30,6 +30,15 @@ ScreenRect video_bottom_rect(void);
 #define VIDEO_OVERLAY_H 272
 void video_set_overlay(const uint32_t *pixels);
 
+/* For the next video_present: screen (0 top, 1 bottom, -1 none) carries engine A's 3D layer
+ * (alpha codes from hw/gpu2d.h) to lay in from the GL texture tex, then the engine's master
+ * brightness (its 0x0400006c value) applied after. */
+void video_set_3d(int screen, unsigned tex, uint16_t master_bright);
+
+/* A CG shader program with attribs[i] at location i; 0 (logged) on failure. */
+unsigned video_build_program(const char *vs, const char *fs, const char *const *attribs,
+                             int nattribs);
+
 /* top/bottom: 256x192 RGBA8888 pixels. */
 void video_present(const uint32_t *top, const uint32_t *bottom);
 

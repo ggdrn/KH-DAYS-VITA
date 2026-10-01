@@ -6,8 +6,11 @@
  * Each scanline is built as separate layers (BG0-BG3, OBJ), then composed per pixel by
  * priority, cut by the windows, and put through the colour effect and master brightness, as
  * GBATEK describes the hardware. Registers are read once per frame: mid-frame (HBlank)
- * changes and mosaic are not reproduced yet. Engine A's BG0 as the 3D layer is transparent
- * until the 3D engine exists. */
+ * changes and mosaic are not reproduced yet.
+ *
+ * Engine A's BG0 as the 3D layer is drawn on the GPU (hw/gpu3d.c); here it is a layer opaque
+ * everywhere. A pixel whose frontmost layer is the 3D one comes out as the colour under the 3D
+ * layer, with alpha carrying a code instead of 255 (gpu2d.h), for the GPU composition. */
 #include "hw/gpu2d.h"
 
 #include "hw/io.h"
@@ -33,6 +36,7 @@ typedef struct {
     const uint16_t *bg_ext[4]; /* extended palette slots (8 KiB each), NULL when unmapped */
     const uint16_t *obj_ext;
     uint32_t dispcnt;
+    int has3d;
 } Engine;
 
 typedef struct {
@@ -106,6 +110,7 @@ static void engine_setup(Engine *e, int engine)
             e->obj_ext = (const uint16_t *)kh_vram_bank_home(8);
     }
     e->dispcnt = io32(e, 0x00);
+    e->has3d = e->is_a && (e->dispcnt & 0x108) == 0x108 && (e->dispcnt & 7) != 7;
 }
 
 /* ---- backgrounds ---------------------------------------------------------------------- */
@@ -277,8 +282,12 @@ static int render_bg(const Engine *e, int bg, int line, uint16_t *out)
     const int kind = s_bg_kind[e->dispcnt & 7][bg];
     if (!(e->dispcnt & (0x100u << bg)) || kind < 0)
         return 0;
-    if (bg == 0 && e->is_a && (e->dispcnt & 0x08))
-        return 0; /* the 3D layer */
+    if (bg == 0 && e->has3d) {
+        int x;
+        for (x = 0; x < W; x++)
+            out[x] = OPAQUE; /* the 3D layer: opaque here, its pixels are on the GPU */
+        return 1;
+    }
     memset(out, 0, W * sizeof(*out));
     switch (kind) {
     case 0: bg_text(e, bg, line, out); break;
@@ -491,7 +500,7 @@ static int window_line(const Engine *e, int line, const ObjLine *o, uint8_t *ctl
 /* One line into out as BGR555. The layers shown are put in drawing order once per line
  * (priority, then BG number); per pixel only those are looked at, and the window and colour
  * effect work is done only when they are on. */
-static void compose_line(const Engine *e, int line, uint16_t *out)
+static void compose_line(const Engine *e, int line, uint16_t *out, uint8_t *code)
 {
     static uint16_t bgl[4][W];
     static ObjLine obj;
@@ -522,18 +531,30 @@ static void compose_line(const Engine *e, int line, uint16_t *out)
     if (!windows && !effect && !(objs & 2)) {
         /* the common case: the frontmost opaque pixel, nothing else */
         for (x = 0; x < W; x++) {
-            uint16_t c = backdrop;
-            int p = 4;
+            uint16_t c = backdrop, below = backdrop;
+            int p = 4, pb = 4, is3d = 0;
             for (i = 0; i < nb; i++) {
                 const uint16_t v = bgl[order[i]][x];
-                if (v & OPAQUE) {
-                    c = v & 0x7fff, p = prio[i];
-                    break;
+                if (!(v & OPAQUE))
+                    continue;
+                if (!is3d && order[i] == 0 && e->has3d) {
+                    is3d = 1, p = prio[i];
+                    continue;
                 }
+                if (is3d)
+                    below = v & 0x7fff, pb = prio[i];
+                else
+                    c = v & 0x7fff, p = prio[i];
+                break;
             }
-            if ((objs & 1) && (obj.col[x] & OPAQUE) && obj.prio[x] <= p)
-                c = obj.col[x] & 0x7fff;
-            out[x] = c;
+            if ((objs & 1) && (obj.col[x] & OPAQUE)) {
+                if (obj.prio[x] <= p)
+                    c = obj.col[x] & 0x7fff, is3d = 0;
+                else if (is3d && obj.prio[x] <= pb)
+                    below = obj.col[x] & 0x7fff;
+            }
+            out[x] = is3d ? below : c;
+            code[x] = is3d ? KH_GPU2D_3D : KH_GPU2D_2D;
         }
         return;
     }
@@ -558,6 +579,17 @@ static void compose_line(const Engine *e, int line, uint16_t *out)
         }
         if (obj_left && n < 2)
             c[n] = obj.col[x] & 0x7fff, id[n] = L_OBJ, n++;
+        code[x] = KH_GPU2D_2D;
+        if (id[0] == 0 && e->has3d) {
+            /* the 3D layer in front: the GPU blends it over c[1] */
+            out[x] = c[1];
+            code[x] = KH_GPU2D_3D;
+            if ((ctl[x] & 0x20) && (bldcnt & 1) && (effect == 2 || effect == 3))
+                code[x] = (uint8_t)((effect == 2 ? KH_GPU2D_3D_BRIGHTEN : KH_GPU2D_3D_DARKEN) | evy);
+            continue;
+        }
+        if (id[1] == 0 && e->has3d)
+            id[1] = L_BD; /* 3D under a blended layer: not blended (its colour is on the GPU) */
         out_c = c[0];
         if (id[0] == L_OBJ && obj.alpha[x] && (bldcnt & (0x100 << id[1]))) {
             /* semi-transparent and bitmap sprites blend with what is under them */
@@ -600,7 +632,7 @@ static void master_brightness(const Engine *e, uint32_t *fb)
     }
 }
 
-void kh_gpu2d_render(int engine, uint32_t *fb)
+int kh_gpu2d_render(int engine, uint32_t *fb)
 {
     Engine e;
     int mode, line, x;
@@ -610,7 +642,7 @@ void kh_gpu2d_render(int engine, uint32_t *fb)
     mode = (e.dispcnt >> 16) & (e.is_a ? 3 : 1);
     if (mode == 0 || (e.dispcnt & 0x80)) { /* display off, or forced blank: white */
         memset(fb, 0xff, W * H * sizeof(*fb));
-        return;
+        return 0;
     }
     if (mode == 2) { /* engine A shows a VRAM bank (A-D) as a 256x192 direct-colour bitmap */
         const uint8_t *bank = kh_vram_bank_home((e.dispcnt >> 18) & 3);
@@ -624,11 +656,20 @@ void kh_gpu2d_render(int engine, uint32_t *fb)
     } else {
         for (line = 0; line < H; line++) {
             uint16_t row[W];
+            uint8_t code[W];
             uint32_t *dst = fb + line * W;
-            compose_line(&e, line, row);
-            for (x = 0; x < W; x++)
-                dst[x] = to_rgba(row[x]);
+            compose_line(&e, line, row, code);
+            if (e.has3d) {
+                for (x = 0; x < W; x++)
+                    dst[x] = (to_rgba(row[x]) & 0xffffffu) | (uint32_t)code[x] << 24;
+            } else {
+                for (x = 0; x < W; x++)
+                    dst[x] = to_rgba(row[x]);
+            }
         }
+        if (e.has3d)
+            return 1; /* master brightness then comes after the composition, on the GPU */
     }
     master_brightness(&e, fb);
+    return 0;
 }

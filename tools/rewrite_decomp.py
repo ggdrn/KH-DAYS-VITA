@@ -419,6 +419,16 @@ GX_LVALUE = re.compile(
     r"|\*\s*\(\s*REGType32v\s*\*\s*\)\s*\(\s*REG_\w+_ADDR\b[^;=]*\))"
     r"\s*=(?!=)\s*(?P<v>[^;{}]+);")
 GX_MARK = "KH_GX_CMD("
+_GX_ADDR = r"KH_HW\(\s*0x0*4000[45][0-9a-fA-F]{2}\s*\)"
+GX_ALIAS_MACRO = re.compile(r"^\s*#\s*define\s+(?!reg_G3)(\w+)\s+\(\s*\*\s*\(\s*volatile[\w ]*\*\s*\)\s*"
+                            + _GX_ADDR + r"\s*\)", re.M)
+GX_ALIAS_PTR = re.compile(r"\bvolatile\s+[\w ]+\*\s*(\w+)\s*=\s*\(\s*volatile[\w ]*\*\s*\)\s*"
+                          + _GX_ADDR + r"\s*;")
+
+
+def text_line_is_comment(text, pos):
+    bol = text.rfind("\n", 0, pos) + 1
+    return text[bol:pos].lstrip().startswith(("/*", "*", "//", "#"))
 
 
 def pass_gxcmd(tree):
@@ -432,6 +442,22 @@ def pass_gxcmd(tree):
         text = path.read_text(encoding="utf-8", errors="surrogateescape")
         if "reg_G3" not in text and "KH_HW(0x0400" not in text and "KH_HW(0x400" not in text:
             continue
+        original = text
+        # Names that stand for a geometry port in this file: macros defined as one, and pointer
+        # variables initialised with one (main.c's REG_0540, Ov001_SetupDisplayRegs'
+        # *reg_swap_buffers, NODEMIX's registers->mode).
+        extra = []
+        for m in GX_ALIAS_MACRO.finditer(text):
+            extra.append(r"\b" + m.group(1) + r"\b")
+        for m in GX_ALIAS_PTR.finditer(text):
+            n = m.group(1)
+            extra += [r"\*\s*" + n + r"\b(?!\s*\[)", r"\b" + n + r"\s*->\s*\w+", r"\b" + n + r"\s*\[[^\]]+\]"]
+        if extra:
+            # statements only (the start of a line), never the pointer's own declaration
+            alias = re.compile(r"^(?P<ind>[ \t]*)(?P<lv>" + "|".join(extra) +
+                               r")\s*=(?!=)\s*(?P<v>[^;{}]+);", re.M)
+            text = alias.sub(lambda m: f"{m.group('ind')}KH_GX_CMD({m.group('lv')}, {m.group('v').strip()});",
+                             text)
         # Whole text, not line by line: a value may span lines (G3_PolygonAttr).
         def sub(m):
             bol = text.rfind("\n", 0, m.start()) + 1
@@ -439,7 +465,7 @@ def pass_gxcmd(tree):
                 return m.group(0)
             return f"KH_GX_CMD({m.group('lv')}, {m.group('v').strip()});"
         new = GX_LVALUE.sub(sub, text)
-        dirty = new != text
+        dirty = new != original
         if dirty:
             text = new
             if HW_INCLUDE not in text:

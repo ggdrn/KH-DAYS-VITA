@@ -474,7 +474,7 @@ static void emit_vertex(void)
     out->r = c5to6(s_color[0]);
     out->g = c5to6(s_color[1]);
     out->b = c5to6(s_color[2]);
-    out->pad = 0;
+    out->a = (uint8_t)((s_attr >> 16) & 31);
     s_stats.vertices++;
 
     s_prim_vtx[s_prim_n++] = idx;
