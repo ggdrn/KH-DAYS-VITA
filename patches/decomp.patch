@@ -6422,7 +6422,7 @@ index 6830d75a6..12791b305 100644
  
  extern void GX_SendFifoWords(u32 op, const void *args, u32 numWords);
 diff --git a/libs/nitro/nns/calls/func_02010f7c.c b/libs/nitro/nns/calls/func_02010f7c.c
-index 347c41637..6fea22c5f 100644
+index 347c41637..6fd2ae0f6 100644
 --- a/libs/nitro/nns/calls/func_02010f7c.c
 +++ b/libs/nitro/nns/calls/func_02010f7c.c
 @@ -1,3 +1,4 @@
@@ -6430,14 +6430,8 @@ index 347c41637..6fea22c5f 100644
  
  
  #include "nitro/types.h"
-@@ -152,8 +153,30 @@ NNSGfdTexKey func_02010f7c(u32 szByte, BOOL is4x4comp, u32 opt)
-     }
- 
+@@ -154,6 +155,24 @@ NNSGfdTexKey func_02010f7c(u32 szByte, BOOL is4x4comp, u32 opt)
      if (result) {
-+#ifdef PLATFORM_VITA
-+        KH_TRACE("gfd: texture VRAM %x bytes (4x4 %d) at %x", (unsigned)szByte, is4x4comp,
-+                 (unsigned)addr);
-+#endif
          return NNS_GfdMakeTexKey(addr, szByte, is4x4comp);
      } else {
 +#ifdef PLATFORM_VITA
@@ -7270,6 +7264,24 @@ index 50b5b62c2..9e155e135 100644
  
  extern OSIntrMode OS_DisableInterrupts(void);
  extern OSIntrMode OS_RestoreInterrupts(OSIntrMode state);
+diff --git a/libs/nitro/snd/calls/SND_RegisterSeq.c b/libs/nitro/snd/calls/SND_RegisterSeq.c
+index 92fe9a9ce..4806b1d1f 100644
+--- a/libs/nitro/snd/calls/SND_RegisterSeq.c
++++ b/libs/nitro/snd/calls/SND_RegisterSeq.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_IS_PACKED */
+ #include "game/engine.h"
+ 
+ extern void *ResCache_FindSlot(int a, int b);
+@@ -32,7 +33,7 @@ void *SND_RegisterSeq(int a, int b) {
+     }
+     p->w8 = v;
+     p->wc = Archive_LoadFile(a, b);
+-    if (a & 0x80000000) {
++    if (KH_IS_PACKED(a)) {
+         p->w10 = a;
+     } else {
+         strcpy(&p->w10, a);
 diff --git a/libs/nitro/spi/auto/PM_GetLCDPower.c b/libs/nitro/spi/auto/PM_GetLCDPower.c
 index a6be77d6f..0dae91ed3 100644
 --- a/libs/nitro/spi/auto/PM_GetLCDPower.c
@@ -8792,7 +8804,7 @@ index da05123c8..22ba89d07 100644
  extern int FX_Div(int x, int y);
  
 diff --git a/src/engine/G3dRes_DefaultSetup.c b/src/engine/G3dRes_DefaultSetup.c
-index e1767903c..858674a52 100644
+index e1767903c..acd42f566 100644
 --- a/src/engine/G3dRes_DefaultSetup.c
 +++ b/src/engine/G3dRes_DefaultSetup.c
 @@ -1,3 +1,4 @@
@@ -8800,17 +8812,7 @@ index e1767903c..858674a52 100644
  /* G3dRes_DefaultSetup -- the game's NNS_G3dResDefaultSetup, MAIN. Model and texture files get their
   * texture/4x4/palette VRAM from the GFD allocator hooks (NNS_GfdAllocTexVram & co.) -- unless the
   * loader's texture flag (data_020427f0, InstallHandlerPairByFlag) is off -- and are uploaded with the game's
-@@ -71,6 +72,9 @@ BOOL G3dRes_DefaultSetup(void *pResData)
-             NNSG3dPlttKey keyPltt;
- 
-             tex = NNS_G3dGetTex(pResData);
-+            KH_TRACE("g3d: setup of %s file %p (textures %s)",
-+                     *(u32 *)&binFile[0] == NNS_G3D_SIGNATURE_NSBMD ? "model" : "texture",
-+                     pResData, tex ? "yes" : "no");
-             if (tex) {
-                 szTex = NNS_G3dTexGetRequiredSize(tex);
-                 szTex4x4 = NNS_G3dTex4x4GetRequiredSize(tex);
-@@ -104,6 +108,9 @@ BOOL G3dRes_DefaultSetup(void *pResData)
+@@ -104,6 +105,9 @@ BOOL G3dRes_DefaultSetup(void *pResData)
                  }
  
                  if (!sucTex || !sucTex4x4 || !sucPltt) {
@@ -8820,7 +8822,7 @@ index e1767903c..858674a52 100644
                      NNS_GfdFreePlttVram(keyPltt);
                      NNS_GfdFreeTexVram(keyTex4x4);
                      NNS_GfdFreeTexVram(keyTex);
-@@ -120,7 +127,13 @@ BOOL G3dRes_DefaultSetup(void *pResData)
+@@ -120,7 +124,13 @@ BOOL G3dRes_DefaultSetup(void *pResData)
                  void *mdlSet = NNS_G3dGetMdlSet(pResData);
  
                  if (tex) {
@@ -9402,6 +9404,24 @@ index 312f4eca6..bc2093736 100644
  } RngState;
  
  extern RngState data_0204c168;
+diff --git a/src/engine/ResCache_Acquire.c b/src/engine/ResCache_Acquire.c
+index 8a11d2240..9badb3ce3 100644
+--- a/src/engine/ResCache_Acquire.c
++++ b/src/engine/ResCache_Acquire.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_IS_PACKED */
+ /* Returns the cached slot for the file (adding a reference), or starts loading it into a new slot;
+  * returns 1 when it was already cached. */
+ 
+@@ -36,7 +37,7 @@ int ResCache_Acquire(int a, Slot_0201f468 **out, int c) {
+     }
+     p->w8 = v;
+     p->wc = Loader_RequestFile(a, c);
+-    if (a & 0x80000000) {
++    if (KH_IS_PACKED(a)) {
+         p->w10 = a;
+     } else {
+         strcpy(&p->w10, a);
 diff --git a/src/engine/ResCache_FindSlot.c b/src/engine/ResCache_FindSlot.c
 index cb9151f21..28d90bb9e 100644
 --- a/src/engine/ResCache_FindSlot.c
@@ -14825,6 +14845,24 @@ index caffac2ec..379f7e9a5 100644
      int bActive;                        /* +0x10 */
      int nPhase;                         /* +0x14 */
  } Ov002GaugeSlot;
+diff --git a/src/overlays/scenes/ov002_field/Ov002_AppendEntry.c b/src/overlays/scenes/ov002_field/Ov002_AppendEntry.c
+index 91b08c5a6..4dcb2b928 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_AppendEntry.c
++++ b/src/overlays/scenes/ov002_field/Ov002_AppendEntry.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_IS_PACKED */
+ extern void *NNSi_FndAllocFromDefaultExpHeap(int size);
+ extern void MI_CpuFill8(void *p, int v, int n);
+ extern int STD_GetStringLength(char *s);
+@@ -20,7 +21,7 @@ void Ov002_AppendEntry(int key, int arg1, int arg2) {
+ 
+     node = (int *)NNSi_FndAllocFromDefaultExpHeap(0x20);
+     MI_CpuFill8(node, 0, 0x20);
+-    if ((key & 0x80000000) != 0) {
++    if (KH_IS_PACKED(key)) {
+         node[1] = key;
+     } else {
+         copy = (char *)NNSi_FndAllocFromDefaultExpHeap(STD_GetStringLength((char *)key) + 1);
 diff --git a/src/overlays/scenes/ov002_field/Ov002_ArmCountdown.c b/src/overlays/scenes/ov002_field/Ov002_ArmCountdown.c
 index 4e9d0e653..6e9b274a4 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_ArmCountdown.c
@@ -14935,6 +14973,24 @@ index a34a3af7b..d36113706 100644
      if ((piVar7[0xe] & 2U) != 0) {
        iVar11 = Ov022_GetGlobalPlusE0();
        if (((((uVar20 & 4) != 0) && ((piVar7[0xf] & 0x10U) == 0)) ||
+diff --git a/src/overlays/scenes/ov002_field/Ov002_CancelQueuedLoads.c b/src/overlays/scenes/ov002_field/Ov002_CancelQueuedLoads.c
+index 88834eb06..594e376f1 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_CancelQueuedLoads.c
++++ b/src/overlays/scenes/ov002_field/Ov002_CancelQueuedLoads.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_IS_PACKED */
+ /*
+  * Ov002_CancelQueuedLoads - drop everything the load queue has not started.
+  *
+@@ -44,7 +45,7 @@ int Ov002_CancelQueuedLoads(void)
+             continue;
+         }
+         NNS_FndRemoveListObject(pQueue, pNode);
+-        if ((pNode[1] & 0x80000000) != 0) {
++        if (KH_IS_PACKED(pNode[1])) {
+             pNode[1] = 0;
+         } else if (pNode[1] != 0) {
+             NNSi_FndFreeFromDefaultHeap((void *)pNode[1]);
 diff --git a/src/overlays/scenes/ov002_field/Ov002_ClosePanelScreen.c b/src/overlays/scenes/ov002_field/Ov002_ClosePanelScreen.c
 index a7a3aab9b..c8a556432 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_ClosePanelScreen.c
@@ -15017,6 +15073,24 @@ index e2114b256..f4d5a2cb5 100644
      RegisterNamedTask(1, gOv002BguivbfuncName, Ov002_RunQueuedSteps);
  
      if (LoadGlobalU16At0() != 0x2a) {
+diff --git a/src/overlays/scenes/ov002_field/Ov002_DestroyOwnedEntry.c b/src/overlays/scenes/ov002_field/Ov002_DestroyOwnedEntry.c
+index 55d55df7f..1b4a87823 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_DestroyOwnedEntry.c
++++ b/src/overlays/scenes/ov002_field/Ov002_DestroyOwnedEntry.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_IS_PACKED */
+ /* Destroy a list entry: unlink it, release what it owns, then release it.
+  *
+  * The entry is first taken out of the container's list, which lives 0xc into the object behind the
+@@ -28,7 +29,7 @@ void Ov002_DestroyOwnedEntry(char *self, int freeOwned) {
+         *(void **)(self + 8) = 0;
+     }
+     buffer = *(u32 *)(self + 4);
+-    if ((buffer & 0x80000000) != 0) {
++    if (KH_IS_PACKED(buffer)) {
+         *(u32 *)(self + 4) = 0;
+     } else if (buffer != 0) {
+         NNSi_FndFreeFromDefaultHeap((void *)buffer);
 diff --git a/src/overlays/scenes/ov002_field/Ov002_DestroyUiContext.c b/src/overlays/scenes/ov002_field/Ov002_DestroyUiContext.c
 index f1b824861..6e27bd201 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_DestroyUiContext.c
@@ -15035,6 +15109,24 @@ index f1b824861..6e27bd201 100644
  
      pSlot = pUi;
      for (i = 0; i < 6; i++) {
+diff --git a/src/overlays/scenes/ov002_field/Ov002_DrainLoadQueue.c b/src/overlays/scenes/ov002_field/Ov002_DrainLoadQueue.c
+index 3f380c190..cff3c7a35 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_DrainLoadQueue.c
++++ b/src/overlays/scenes/ov002_field/Ov002_DrainLoadQueue.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_IS_PACKED */
+ /*
+  * Ov002_DrainLoadQueue - tear both load lists down.
+  *
+@@ -43,7 +44,7 @@ void Ov002_DrainLoadQueue(void)
+             }
+         }
+         NNS_FndRemoveListObject(pQueue, pNode);
+-        if ((pNode[1] & 0x80000000) != 0) {
++        if (KH_IS_PACKED(pNode[1])) {
+             pNode[1] = 0;
+         } else if (pNode[1] != 0) {
+             NNSi_FndFreeFromDefaultHeap((void *)pNode[1]);
 diff --git a/src/overlays/scenes/ov002_field/Ov002_EnterDimmedScene.c b/src/overlays/scenes/ov002_field/Ov002_EnterDimmedScene.c
 index 8ceedd80a..14366053b 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_EnterDimmedScene.c
