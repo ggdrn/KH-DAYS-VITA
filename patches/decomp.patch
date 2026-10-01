@@ -6020,6 +6020,80 @@ index 0a60d2f11..7eafbeeea 100644
 +    *(volatile u32 *)KH_HW(0x04000400) = command;
 +    *(volatile u32 *)KH_HW(0x04000400) = argument;
  }
+diff --git a/libs/nitro/nns/calls/NNSi_G3dSendTexMtxMode0.c b/libs/nitro/nns/calls/NNSi_G3dSendTexMtxMode0.c
+index 8b82fc6d1..f9b47632c 100644
+--- a/libs/nitro/nns/calls/NNSi_G3dSendTexMtxMode0.c
++++ b/libs/nitro/nns/calls/NNSi_G3dSendTexMtxMode0.c
+@@ -27,12 +27,32 @@ typedef struct NNSG3dProjectionBuilderTable {
+     NNSG3dProjectionBuilder entries[8];
+ } NNSG3dProjectionBuilderTable;
+ 
++#ifdef PLATFORM_VITA
++extern void texmtxCalc_flag_();
++extern void NNSi_G3dCalcTexMtxRot();
++extern void texmtxCalc_flagR_();
++extern void texmtxCalc_flagRS_();
++extern void texmtxCalc_flagT_();
++extern void G3d_ComputeFrustumPlanes();
++extern void texmtxCalc_flagTR_();
++extern void Mtx44_SetIdentity2D();
++#endif
+ #pragma opt_propagation off
+ static inline NNSG3dProjectionBuilder GetProjectionBuilder(u32 index)
+ {
++#ifdef PLATFORM_VITA
++    /* the ROM keeps this table in an ITCM gap at 0x01ffa1f8, between two functions: its entries
++     * here (the eight words of the gap, from the dump's ITCM image) */
++    static const NNSG3dProjectionBuilder table[8] = {
++        (NNSG3dProjectionBuilder)texmtxCalc_flag_, (NNSG3dProjectionBuilder)NNSi_G3dCalcTexMtxRot, (NNSG3dProjectionBuilder)texmtxCalc_flagR_, (NNSG3dProjectionBuilder)texmtxCalc_flagRS_,
++        (NNSG3dProjectionBuilder)texmtxCalc_flagT_, (NNSG3dProjectionBuilder)G3d_ComputeFrustumPlanes, (NNSG3dProjectionBuilder)texmtxCalc_flagTR_, (NNSG3dProjectionBuilder)Mtx44_SetIdentity2D,
++    };
++    return table[index];
++#else
+     volatile NNSG3dProjectionBuilder *table =
+         (volatile NNSG3dProjectionBuilder *)0x01ffa1f8;
+     return table[index];
++#endif
+ }
+ 
+ extern void GX_SendFifoWords(u32 op, const void *args, u32 numWords);
+diff --git a/libs/nitro/nns/calls/NNSi_G3dSendTexMtxMode2.c b/libs/nitro/nns/calls/NNSi_G3dSendTexMtxMode2.c
+index 6830d75a6..12791b305 100644
+--- a/libs/nitro/nns/calls/NNSi_G3dSendTexMtxMode2.c
++++ b/libs/nitro/nns/calls/NNSi_G3dSendTexMtxMode2.c
+@@ -27,12 +27,32 @@ typedef struct NNSG3dProjectionBuilderTable {
+     NNSG3dProjectionBuilder entries[8];
+ } NNSG3dProjectionBuilderTable;
+ 
++#ifdef PLATFORM_VITA
++extern void texmtxCalc_flag__2();
++extern void texmtxCalc_flagS_();
++extern void texmtxCalc_flagR__2();
++extern void texmtxCalc_flagRS__2();
++extern void texmtxCalc_flagT__2();
++extern void texmtxCalc_flagTS_();
++extern void texmtxCalc_flagTR__2();
++extern void Mtx44_SetIdentity2D_2();
++#endif
+ #pragma opt_propagation off
+ static inline NNSG3dProjectionBuilder GetProjectionBuilder(u32 index)
+ {
++#ifdef PLATFORM_VITA
++    /* the ROM keeps this table in an ITCM gap at 0x01ffa598, between two functions: its entries
++     * here (the eight words of the gap, from the dump's ITCM image) */
++    static const NNSG3dProjectionBuilder table[8] = {
++        (NNSG3dProjectionBuilder)texmtxCalc_flag__2, (NNSG3dProjectionBuilder)texmtxCalc_flagS_, (NNSG3dProjectionBuilder)texmtxCalc_flagR__2, (NNSG3dProjectionBuilder)texmtxCalc_flagRS__2,
++        (NNSG3dProjectionBuilder)texmtxCalc_flagT__2, (NNSG3dProjectionBuilder)texmtxCalc_flagTS_, (NNSG3dProjectionBuilder)texmtxCalc_flagTR__2, (NNSG3dProjectionBuilder)Mtx44_SetIdentity2D_2,
++    };
++    return table[index];
++#else
+     volatile NNSG3dProjectionBuilder *table =
+         (volatile NNSG3dProjectionBuilder *)0x01ffa598;
+     return table[index];
++#endif
+ }
+ 
+ extern void GX_SendFifoWords(u32 op, const void *args, u32 numWords);
 diff --git a/libs/nitro/nns/calls/func_02012e1c.c b/libs/nitro/nns/calls/func_02012e1c.c
 index 18b20a61e..9ad2382fa 100644
 --- a/libs/nitro/nns/calls/func_02012e1c.c
