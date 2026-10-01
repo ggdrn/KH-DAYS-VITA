@@ -55,7 +55,7 @@ extern void NitroMain(void);
 #define TP_RAW_PER_Y 21
 
 static uint32_t s_top[256 * 192], s_bottom[256 * 192];
-static int s_console = 1; /* bring-up builds start with the console shown */
+static int s_console; /* the on-screen log: off at start, L+R+Start toggles it */
 
 static int game_thread(SceSize args, void *argp)
 {

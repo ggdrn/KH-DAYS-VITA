@@ -9307,6 +9307,42 @@ index ed8ee39cf..fcbf3794d 100644
  
  typedef struct GameHeap {
      int saveA;                          /* +0x00 */
+diff --git a/src/engine/Session_RandNext.c b/src/engine/Session_RandNext.c
+index 1c1dfacb9..0dd906d60 100644
+--- a/src/engine/Session_RandNext.c
++++ b/src/engine/Session_RandNext.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /*
+  * Session_RandNext - advance the session's 64-bit LCG RNG and return its top 12 bits.
+  *
+@@ -12,7 +13,7 @@
+  * forces the generic mov #0 / lsl #12 / orr ...,lsr #20 merge codegen the ROM has.
+  */
+ 
+-typedef struct { char pad[8]; long long seed; long long mult; long long inc; } GameSession;
++typedef struct { char pad[8]; long long seed KH_ALIGN64; long long mult KH_ALIGN64; long long inc KH_ALIGN64; } GameSession;
+ extern GameSession *data_0204c228;
+ 
+ int Session_RandNext(void)
+diff --git a/src/engine/Session_RandNextScaled.c b/src/engine/Session_RandNextScaled.c
+index 3e40342c7..1e1a32abb 100644
+--- a/src/engine/Session_RandNextScaled.c
++++ b/src/engine/Session_RandNextScaled.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /*
+  * Session_RandNextScaled - advance the session RNG and return a value scaled to [0, range).
+  *
+@@ -12,7 +13,7 @@
+  * mwcc schedule the operand loads mult-first only for that order.
+  */
+ 
+-typedef struct { char pad[8]; long long seed; long long mult; long long inc; } GameSession;
++typedef struct { char pad[8]; long long seed KH_ALIGN64; long long mult KH_ALIGN64; long long inc KH_ALIGN64; } GameSession;
+ extern GameSession *data_0204c228;
+ 
+ unsigned Session_RandNextScaled(unsigned range)
 diff --git a/src/engine/SetMasterBrightnessMain.c b/src/engine/SetMasterBrightnessMain.c
 index 7329cf003..b0d08cb17 100644
 --- a/src/engine/SetMasterBrightnessMain.c
@@ -9648,6 +9684,42 @@ index f69c118cd..aa6082ff8 100644
          if (*reg & 0x2000) return param_1 + 2;
      }
      return param_1;
+diff --git a/src/overlays/enemies/ov119_enemy_hover_ghost/Ov119_HoldTick.c b/src/overlays/enemies/ov119_enemy_hover_ghost/Ov119_HoldTick.c
+index 744d5f296..7352d9912 100644
+--- a/src/overlays/enemies/ov119_enemy_hover_ghost/Ov119_HoldTick.c
++++ b/src/overlays/enemies/ov119_enemy_hover_ghost/Ov119_HoldTick.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Hold tick of the ov119 enemy (x3 with ov272/ov279). While the owner's +0x3ac grab partner is
+  * missing or not flagged 0x8000 in its +0x464 state, the +0x50 timer runs and past 0x2a8 sub-state
+  * 8 is requested. Otherwise the owner is placed (c5c54) 0.94 behind the +8 target (its rig yaw
+@@ -10,7 +11,7 @@
+ #include "game/enemy_common.h"
+ 
+ typedef struct { int w[4]; } Quat;
+-struct Partner { char pad[0x464]; unsigned long long flags; };
++struct Partner { char pad[0x464]; unsigned long long flags KH_ALIGN64; };
+ 
+ #define ANG2IDX(a) ((unsigned short)(((long long)(a) * 0x28be60db9391LL + 0x80000000000LL) >> 44) >> 4)
+ 
+diff --git a/src/overlays/enemies/ov119_enemy_hover_ghost/Ov119_TickHoldTarget.c b/src/overlays/enemies/ov119_enemy_hover_ghost/Ov119_TickHoldTarget.c
+index 777228bb5..9c535c65f 100644
+--- a/src/overlays/enemies/ov119_enemy_hover_ghost/Ov119_TickHoldTarget.c
++++ b/src/overlays/enemies/ov119_enemy_hover_ghost/Ov119_TickHoldTarget.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Ov119_TickHoldTarget -- hold tick of the ov279 enemy: keeps itself at the point 1.875 in front
+  * of the held target (along the target model's yaw), faces it, and drops the hold (owner +0x1c7 =
+  * 2) once the target is gone, belongs to another world or is no longer active. If the target
+@@ -12,7 +13,7 @@
+ typedef struct { int w[4]; } Quat;
+ struct hw60 { unsigned short lo : 8, hi : 8; };
+ struct lo8 { unsigned int lo : 8; };
+-typedef struct { char pad[0x464]; unsigned long long flags; char pad2[0x12]; } Rider;
++typedef struct { char pad[0x464]; unsigned long long flags KH_ALIGN64; char pad2[0x12]; } Rider;
+ 
+ extern void Mtx33_LookAt(int *dst, const VecFx32 *a, const VecFx32 *b, const void *c);
+ extern void Quat_FromMtx33(void *dst, const int *src);
 diff --git a/src/overlays/enemies/ov131_enemy_minute_bomb/Ov131_throwRelease_tick.c b/src/overlays/enemies/ov131_enemy_minute_bomb/Ov131_throwRelease_tick.c
 index 352309457..170a9e1bc 100644
 --- a/src/overlays/enemies/ov131_enemy_minute_bomb/Ov131_throwRelease_tick.c
@@ -9702,6 +9774,42 @@ index b8d9f9286..746b34dda 100644
  };
  
  struct Node {
+diff --git a/src/overlays/enemies/ov160_enemy_switch_launcher/Ov160_GrabTick.c b/src/overlays/enemies/ov160_enemy_switch_launcher/Ov160_GrabTick.c
+index fed9b5472..a802ce68e 100644
+--- a/src/overlays/enemies/ov160_enemy_switch_launcher/Ov160_GrabTick.c
++++ b/src/overlays/enemies/ov160_enemy_switch_launcher/Ov160_GrabTick.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Grab tick of the ov160 enemy. With a held body (+0x2c) that carries flag bit 15 of its
+  * +0x464 word pair, the body's +0x20 object is pulled to the +0x38c item's +0xb0 point
+  * (0202b450), the body's +0x4ec attachment is moved there too (its +0x190 point, c5c54, and
+@@ -23,7 +24,7 @@ typedef struct {
+     Fx24 pos[3];        /* +0x5 */
+ } PosMsg;
+ 
+-struct Ov160Flags464 { char pad[0x464]; unsigned long long flags; };
++struct Ov160Flags464 { char pad[0x464]; unsigned long long flags KH_ALIGN64; };
+ struct Ov160Bits40 { int b0 : 1, b1 : 1; };
+ 
+ static inline void PackFx24(Fx24 *dst, int v) {
+diff --git a/src/overlays/enemies/ov160_enemy_switch_launcher/Ov160_GroundDropTick.c b/src/overlays/enemies/ov160_enemy_switch_launcher/Ov160_GroundDropTick.c
+index 598499f71..4b2e2a0fa 100644
+--- a/src/overlays/enemies/ov160_enemy_switch_launcher/Ov160_GroundDropTick.c
++++ b/src/overlays/enemies/ov160_enemy_switch_launcher/Ov160_GroundDropTick.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Ground drop tick of the ov160 enemy. In owner mode 1 the +0x28 radius grows by the owner's
+  * rate and, up to 0xa00, the entities inside 2.0 of the +0x10 anchor are swept: each one whose
+  * +0x1b4 slot bit is still clear in the +0x30 hit mask is tested along the zero vector (flag
+@@ -27,7 +28,7 @@ typedef struct {
+     Fx24 pos[3];        /* +0x5 */
+ } PosMsg;
+ 
+-struct Ov160Flags464 { char pad[0x464]; unsigned long long flags; };
++struct Ov160Flags464 { char pad[0x464]; unsigned long long flags KH_ALIGN64; };
+ struct Ov160Bits40 { int b0 : 1, b1 : 1; };
+ 
+ static inline void PackFx24(Fx24 *dst, int v) {
 diff --git a/src/overlays/enemies/ov161_enemy_storm_bomb/Ov161_ThrowReleaseTick.c b/src/overlays/enemies/ov161_enemy_storm_bomb/Ov161_ThrowReleaseTick.c
 index 73c767989..b5bd65d07 100644
 --- a/src/overlays/enemies/ov161_enemy_storm_bomb/Ov161_ThrowReleaseTick.c
@@ -9828,6 +9936,24 @@ index be62dc320..e89e22fe4 100644
  };
  
  struct Node {
+diff --git a/src/overlays/enemies/ov212_enemy_veil_lizard/Ov212_CarryTick.c b/src/overlays/enemies/ov212_enemy_veil_lizard/Ov212_CarryTick.c
+index b057d49df..51cdf2475 100644
+--- a/src/overlays/enemies/ov212_enemy_veil_lizard/Ov212_CarryTick.c
++++ b/src/overlays/enemies/ov212_enemy_veil_lizard/Ov212_CarryTick.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Carry tick of the ov212 enemy. Idle means the +0x57c speed is at most 0x1b3 with the +4 item
+  * finished (+0xad). While a +0x5ac order and the +0xc carried actor exist: if the carried actor
+  * flags bit 15 of its +0x464 word, the +0x5d4 handle's +0xb0 position is raised by its radius and
+@@ -10,7 +11,7 @@
+ 
+ #include "nitro/fx_types.h"
+ 
+-struct Flags464 { char pad[0x464]; unsigned long long flags; };
++struct Flags464 { char pad[0x464]; unsigned long long flags KH_ALIGN64; };
+ 
+ extern int *Collision_CastRay(void *world, VecFx32 *origin, VecFx32 *dir);
+ extern void ScaleVec3Fixed27(int scale, VecFx32 *in, VecFx32 *out);
 diff --git a/src/overlays/enemies/ov218_enemy_lock/Ov218_ShotBurstTick.c b/src/overlays/enemies/ov218_enemy_lock/Ov218_ShotBurstTick.c
 index 026e8fcde..f86d05792 100644
 --- a/src/overlays/enemies/ov218_enemy_lock/Ov218_ShotBurstTick.c
@@ -9880,6 +10006,132 @@ index e201c905f..dd031b5c8 100644
      if (self->nPhase != 5) {
          self->nPhaseTimer = 0;
      }
+diff --git a/src/overlays/enemies/ov253_enemy_leechgrave/Ov253_CarryHoldTick.c b/src/overlays/enemies/ov253_enemy_leechgrave/Ov253_CarryHoldTick.c
+index 2747fcfe2..6e30ba3ad 100644
+--- a/src/overlays/enemies/ov253_enemy_leechgrave/Ov253_CarryHoldTick.c
++++ b/src/overlays/enemies/ov253_enemy_leechgrave/Ov253_CarryHoldTick.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Ov253_CarryHoldTick -- carry hold tick: the +0x18 speed follows twice the frame step
+  * (30 / 15) and the +0x1c timer runs up; past 1.0 bit 1 of the +0x3bc target's +0x60 high byte
+  * clears, the target is dropped, pose 7 plays and the node moves to 020d0938. Before that,
+@@ -10,7 +11,7 @@
+ #include "game/enemy_common.h"
+ 
+ struct htriple { unsigned short a, b, c; };
+-struct Ov253Rider { char pad[0x464]; unsigned long long flags; };
++struct Ov253Rider { char pad[0x464]; unsigned long long flags KH_ALIGN64; };
+ 
+ extern void SetIndexedSlot(int *node, int slot, void *cb);
+ extern void func_ov022_020ad838(int target, int a);
+diff --git a/src/overlays/enemies/ov266_enemy_lurk_lizard/Ov266_CarryTick.c b/src/overlays/enemies/ov266_enemy_lurk_lizard/Ov266_CarryTick.c
+index 2cb10280c..0607f5921 100644
+--- a/src/overlays/enemies/ov266_enemy_lurk_lizard/Ov266_CarryTick.c
++++ b/src/overlays/enemies/ov266_enemy_lurk_lizard/Ov266_CarryTick.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Carry tick of the ov266 enemy. Idle means the +0x57c speed is at most 0x200 with the +4 item
+  * finished (+0xad). While a +0x5ac order and the +0xc carried actor exist: if the carried actor
+  * flags bit 15 of its +0x464 word, the +0x5d4 handle's +0xb0 position is raised by its radius and
+@@ -10,7 +11,7 @@
+ 
+ #include "nitro/fx_types.h"
+ 
+-struct Flags464 { char pad[0x464]; unsigned long long flags; };
++struct Flags464 { char pad[0x464]; unsigned long long flags KH_ALIGN64; };
+ 
+ extern int *Collision_CastRay(void *world, VecFx32 *origin, VecFx32 *dir);
+ extern void ScaleVec3Fixed27(int scale, VecFx32 *in, VecFx32 *out);
+diff --git a/src/overlays/enemies/ov267_enemy_lurk_lizard_2/Ov267_CarryTick.c b/src/overlays/enemies/ov267_enemy_lurk_lizard_2/Ov267_CarryTick.c
+index e8dc985d3..6af61fef4 100644
+--- a/src/overlays/enemies/ov267_enemy_lurk_lizard_2/Ov267_CarryTick.c
++++ b/src/overlays/enemies/ov267_enemy_lurk_lizard_2/Ov267_CarryTick.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Carry tick of the ov266 enemy. Idle means the +0x57c speed is at most 0x200 with the +4 item
+  * finished (+0xad). While a +0x5ac order and the +0xc carried actor exist: if the carried actor
+  * flags bit 15 of its +0x464 word, the +0x5d4 handle's +0xb0 position is raised by its radius and
+@@ -10,7 +11,7 @@
+ 
+ #include "nitro/fx_types.h"
+ 
+-struct Flags464 { char pad[0x464]; unsigned long long flags; };
++struct Flags464 { char pad[0x464]; unsigned long long flags KH_ALIGN64; };
+ 
+ extern int *Collision_CastRay(void *world, VecFx32 *origin, VecFx32 *dir);
+ extern void ScaleVec3Fixed27(int scale, VecFx32 *in, VecFx32 *out);
+diff --git a/src/overlays/enemies/ov272_enemy_living_pod/Ov272_HoldTick.c b/src/overlays/enemies/ov272_enemy_living_pod/Ov272_HoldTick.c
+index 716705638..2930e08fb 100644
+--- a/src/overlays/enemies/ov272_enemy_living_pod/Ov272_HoldTick.c
++++ b/src/overlays/enemies/ov272_enemy_living_pod/Ov272_HoldTick.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Hold tick of the ov272 enemy. While the owner's +0x3ac grab partner is
+  * missing or not flagged 0x8000 in its +0x464 state, the +0x50 timer runs and past 0x2a8 sub-state
+  * 8 is requested. Otherwise the owner is placed (c5c54) 0.94 behind the +8 target (its rig yaw
+@@ -10,7 +11,7 @@
+ #include "game/enemy_common.h"
+ 
+ typedef struct { int w[4]; } Quat;
+-struct Partner { char pad[0x464]; unsigned long long flags; };
++struct Partner { char pad[0x464]; unsigned long long flags KH_ALIGN64; };
+ 
+ #define ANG2IDX(a) ((unsigned short)(((long long)(a) * 0x28be60db9391LL + 0x80000000000LL) >> 44) >> 4)
+ 
+diff --git a/src/overlays/enemies/ov272_enemy_living_pod/Ov272_TickHoldTarget.c b/src/overlays/enemies/ov272_enemy_living_pod/Ov272_TickHoldTarget.c
+index 931747f59..fd1250209 100644
+--- a/src/overlays/enemies/ov272_enemy_living_pod/Ov272_TickHoldTarget.c
++++ b/src/overlays/enemies/ov272_enemy_living_pod/Ov272_TickHoldTarget.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Ov272_TickHoldTarget -- hold tick of the ov279 enemy: keeps itself at the point 1.875 in front
+  * of the held target (along the target model's yaw), faces it, and drops the hold (owner +0x1c7 =
+  * 2) once the target is gone, belongs to another world or is no longer active. If the target
+@@ -12,7 +13,7 @@
+ typedef struct { int w[4]; } Quat;
+ struct hw60 { unsigned short lo : 8, hi : 8; };
+ struct lo8 { unsigned int lo : 8; };
+-typedef struct { char pad[0x464]; unsigned long long flags; char pad2[0x12]; } Rider;
++typedef struct { char pad[0x464]; unsigned long long flags KH_ALIGN64; char pad2[0x12]; } Rider;
+ 
+ extern void Mtx33_LookAt(int *dst, const VecFx32 *a, const VecFx32 *b, const void *c);
+ extern void Quat_FromMtx33(void *dst, const int *src);
+diff --git a/src/overlays/enemies/ov279_enemy_carrier_ghost/Ov279_HoldTick.c b/src/overlays/enemies/ov279_enemy_carrier_ghost/Ov279_HoldTick.c
+index c2e2e9cbb..9e45c075e 100644
+--- a/src/overlays/enemies/ov279_enemy_carrier_ghost/Ov279_HoldTick.c
++++ b/src/overlays/enemies/ov279_enemy_carrier_ghost/Ov279_HoldTick.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Hold tick of the ov279 enemy. While the owner's +0x3ac grab partner is
+  * missing or not flagged 0x8000 in its +0x464 state, the +0x50 timer runs and past 0x2a8 sub-state
+  * 8 is requested. Otherwise the owner is placed (c5c54) 0.94 behind the +8 target (its rig yaw
+@@ -10,7 +11,7 @@
+ #include "game/enemy_common.h"
+ 
+ typedef struct { int w[4]; } Quat;
+-struct Partner { char pad[0x464]; unsigned long long flags; };
++struct Partner { char pad[0x464]; unsigned long long flags KH_ALIGN64; };
+ 
+ #define ANG2IDX(a) ((unsigned short)(((long long)(a) * 0x28be60db9391LL + 0x80000000000LL) >> 44) >> 4)
+ 
+diff --git a/src/overlays/enemies/ov279_enemy_carrier_ghost/Ov279_TickHoldTarget.c b/src/overlays/enemies/ov279_enemy_carrier_ghost/Ov279_TickHoldTarget.c
+index 04b7cf37e..e9b88634d 100644
+--- a/src/overlays/enemies/ov279_enemy_carrier_ghost/Ov279_TickHoldTarget.c
++++ b/src/overlays/enemies/ov279_enemy_carrier_ghost/Ov279_TickHoldTarget.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Ov279_TickHoldTarget -- hold tick of the ov279 enemy: keeps itself at the point 1.875 in front
+  * of the held target (along the target model's yaw), faces it, and drops the hold (owner +0x1c7 =
+  * 2) once the target is gone, belongs to another world or is no longer active. If the target
+@@ -12,7 +13,7 @@
+ typedef struct { int w[4]; } Quat;
+ struct hw60 { unsigned short lo : 8, hi : 8; };
+ struct lo8 { unsigned int lo : 8; };
+-typedef struct { char pad[0x464]; unsigned long long flags; char pad2[0x12]; } Rider;
++typedef struct { char pad[0x464]; unsigned long long flags KH_ALIGN64; char pad2[0x12]; } Rider;
+ 
+ extern void Mtx33_LookAt(int *dst, const VecFx32 *a, const VecFx32 *b, const void *c);
+ extern void Quat_FromMtx33(void *dst, const int *src);
 diff --git a/src/overlays/enemies/ov287_enemy_training_barrel/Ov287_AreaSweepAttack_Tick.c b/src/overlays/enemies/ov287_enemy_training_barrel/Ov287_AreaSweepAttack_Tick.c
 index e441f06b1..a532196f2 100644
 --- a/src/overlays/enemies/ov287_enemy_training_barrel/Ov287_AreaSweepAttack_Tick.c
@@ -10098,6 +10350,22 @@ index 87cd7b711..e7ff3014f 100644
      u8 pad474[0x24];
      VecFx32 vecStep;         /* 0x498 */
      VecFx32 vecPush;         /* 0x4a4 */
+diff --git a/src/overlays/field/ov022_battle/Ov022_ArmChargeIfReady.c b/src/overlays/field/ov022_battle/Ov022_ArmChargeIfReady.c
+index 223fa481a..f983ad2d0 100644
+--- a/src/overlays/field/ov022_battle/Ov022_ArmChargeIfReady.c
++++ b/src/overlays/field/ov022_battle/Ov022_ArmChargeIfReady.c
+@@ -1,9 +1,10 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Host only: when a charge is requested and the actor is free to act, arms the charge with its
+  * parameter; always clears the request. */
+ 
+ #include "game/engine.h"
+ 
+-struct Flags020ad358 { char pad0[0x464]; unsigned long long f464; };
++struct Flags020ad358 { char pad0[0x464]; unsigned long long f464 KH_ALIGN64; };
+ 
+ void Ov022_ArmChargeIfReady(int obj, int param_2) {
+     struct Flags020ad358 *fp = (struct Flags020ad358 *)obj;
 diff --git a/src/overlays/field/ov022_battle/Ov022_BroadcastCue.c b/src/overlays/field/ov022_battle/Ov022_BroadcastCue.c
 index c77ecd174..24eb1d7e8 100644
 --- a/src/overlays/field/ov022_battle/Ov022_BroadcastCue.c
@@ -10116,6 +10384,21 @@ index c77ecd174..24eb1d7e8 100644
      u8 pad0008[0xa];
      u16 nHp;                     /* 0x12 */
  };
+diff --git a/src/overlays/field/ov022_battle/Ov022_CanTriggerFinisher.c b/src/overlays/field/ov022_battle/Ov022_CanTriggerFinisher.c
+index 81c579bea..da196af79 100644
+--- a/src/overlays/field/ov022_battle/Ov022_CanTriggerFinisher.c
++++ b/src/overlays/field/ov022_battle/Ov022_CanTriggerFinisher.c
+@@ -1,8 +1,9 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ extern int func_ov022_02095450(int a);
+ extern int Ov022_IsState9Or6WithFlag200(int a);
+ 
+ /* The struct-field form keeps the direct `ldr [obj,#0x468]` for the high half. */
+-struct Flags02095d10 { char pad0[0x464]; unsigned long long flags; };
++struct Flags02095d10 { char pad0[0x464]; unsigned long long flags KH_ALIGN64; };
+ 
+ int Ov022_CanTriggerFinisher(int obj) {
+     unsigned long long f = ((struct Flags02095d10 *)obj)->flags;
 diff --git a/src/overlays/field/ov022_battle/Ov022_ClampHitPoints.c b/src/overlays/field/ov022_battle/Ov022_ClampHitPoints.c
 index 12a5ecebd..4d29162fa 100644
 --- a/src/overlays/field/ov022_battle/Ov022_ClampHitPoints.c
@@ -10186,6 +10469,32 @@ index 084acdd90..5b1a2e8ce 100644
  } Ov022Stream;
  
  unsigned long long Ov022_GetStreamTimestamp(int idx) {
+diff --git a/src/overlays/field/ov022_battle/Ov022_GetSubKindIfState2.c b/src/overlays/field/ov022_battle/Ov022_GetSubKindIfState2.c
+index 1a8c8858e..62a382343 100644
+--- a/src/overlays/field/ov022_battle/Ov022_GetSubKindIfState2.c
++++ b/src/overlays/field/ov022_battle/Ov022_GetSubKindIfState2.c
+@@ -1,5 +1,6 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* 64-bit flag word at +0x464; the struct-field form keeps `ldr [obj,#0x468]` direct. */
+-struct Flags020ad1d0 { char pad0[0x464]; unsigned long long flags; };
++struct Flags020ad1d0 { char pad0[0x464]; unsigned long long flags KH_ALIGN64; };
+ 
+ int Ov022_GetSubKindIfState2(int arg0) {
+     int r = -1;
+diff --git a/src/overlays/field/ov022_battle/Ov022_IsActionAllowed.c b/src/overlays/field/ov022_battle/Ov022_IsActionAllowed.c
+index c689e5725..8995f4a67 100644
+--- a/src/overlays/field/ov022_battle/Ov022_IsActionAllowed.c
++++ b/src/overlays/field/ov022_battle/Ov022_IsActionAllowed.c
+@@ -1,7 +1,8 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* False when obj+4 is not 10. For sub-kinds 5 and 10 it is also false once bit 16 of the 64-bit
+  * flag word at obj[0x328]+0x464 is set. True otherwise. */
+ 
+-struct Flags020955b0 { char pad0[0x464]; unsigned long long flags; };
++struct Flags020955b0 { char pad0[0x464]; unsigned long long flags KH_ALIGN64; };
+ 
+ int Ov022_IsActionAllowed(int arg0) {
+     int base = *(int *)(arg0 + 0x328);
 diff --git a/src/overlays/field/ov022_battle/Ov022_LoadNodeFromResource.c b/src/overlays/field/ov022_battle/Ov022_LoadNodeFromResource.c
 index de2e7a832..2e78904f1 100644
 --- a/src/overlays/field/ov022_battle/Ov022_LoadNodeFromResource.c
@@ -10423,6 +10732,56 @@ index 11da93d12..b6f174877 100644
      char padding008[0x10];
      unsigned short flags018;
      unsigned short flags01a;
+diff --git a/src/overlays/field/ov022_battle/Ov022_SubmitGaugeValue.c b/src/overlays/field/ov022_battle/Ov022_SubmitGaugeValue.c
+index c41320cfd..8bf62796a 100644
+--- a/src/overlays/field/ov022_battle/Ov022_SubmitGaugeValue.c
++++ b/src/overlays/field/ov022_battle/Ov022_SubmitGaugeValue.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ extern int Anim_GetFrame(int a, int b);
+ extern int func_ov022_0209fc78(int obj, int a);
+ extern int Ov022_GetGlobal34(void);
+@@ -5,7 +6,7 @@ extern void Ov022_DrawTaggedVoice(int a, int b, int c, int d);
+ 
+ /* Bit 52 of the 64-bit flag word at obj+0x464. The struct-field form keeps the
+  * direct `ldr [obj,#0x468]` for the high half; a plain cast splits the base. */
+-struct Flags0209c7dc { char pad0[0x464]; unsigned long long flags; };
++struct Flags0209c7dc { char pad0[0x464]; unsigned long long flags KH_ALIGN64; };
+ 
+ void Ov022_SubmitGaugeValue(int obj) {
+     int v = *(int *)(obj + 0x6bc);
+diff --git a/src/overlays/field/ov022_battle/Ov022_TickSubObjectChain.c b/src/overlays/field/ov022_battle/Ov022_TickSubObjectChain.c
+index 084d02024..6b340df49 100644
+--- a/src/overlays/field/ov022_battle/Ov022_TickSubObjectChain.c
++++ b/src/overlays/field/ov022_battle/Ov022_TickSubObjectChain.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Per-tick sub-object orchestrator. First runs func_ov022_0209093c on the obj+0x2288 block. Returns
+  * if the 64-bit flag word at obj[0] has bit 9 set, or if bit 0 of obj+0x694 is clear. Otherwise
+  * runs Ov022_DropGroundMark, then four check-then-run pairs over the sub blocks at
+@@ -18,7 +19,7 @@ extern void Ov022_RefreshDirtyPanels(int p);
+ extern void Ov022_DrawChargeEntries(int obj);
+ extern void func_ov022_0209d3a0(int obj);
+ 
+-struct Obj020a0710 { char pad[0x464]; unsigned long long flags464; };
++struct Obj020a0710 { char pad[0x464]; unsigned long long flags464 KH_ALIGN64; };
+ struct Bit694 { unsigned char lo1 : 1; };
+ 
+ void Ov022_TickSubObjectChain(int obj, int param2, int param3, int param4) {
+diff --git a/src/overlays/field/ov022_battle/Ov022_ToggleBit13ByMode.c b/src/overlays/field/ov022_battle/Ov022_ToggleBit13ByMode.c
+index 2f793fa32..1b206a87c 100644
+--- a/src/overlays/field/ov022_battle/Ov022_ToggleBit13ByMode.c
++++ b/src/overlays/field/ov022_battle/Ov022_ToggleBit13ByMode.c
+@@ -1,7 +1,8 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ extern int Ov022_IsState9Or6WithFlag200(int a);
+ 
+ /* Struct-field form keeps the direct `ldr [obj,#0x468]` for the high half. */
+-struct Flags020ad8e0 { char pad0[0x464]; unsigned long long f464; };
++struct Flags020ad8e0 { char pad0[0x464]; unsigned long long f464 KH_ALIGN64; };
+ 
+ void Ov022_ToggleBit13ByMode(int obj, int mode) {
+     if (mode != 0) {
 diff --git a/src/overlays/field/ov022_battle/Ov022_TrackWallPress.c b/src/overlays/field/ov022_battle/Ov022_TrackWallPress.c
 index cd1deb4fa..8d08f5cf1 100644
 --- a/src/overlays/field/ov022_battle/Ov022_TrackWallPress.c
@@ -10913,8 +11272,26 @@ index 4c56ccae7..4455d3b9b 100644
          GX_DisableBankForLCDC();
      }
      StoreToGlobalPtr4FieldE4IfSet(0);
+diff --git a/src/overlays/players/ov030_player_roxas/Ov030_ApplyModeChange.c b/src/overlays/players/ov030_player_roxas/Ov030_ApplyModeChange.c
+index f85608bc1..8eda7b769 100644
+--- a/src/overlays/players/ov030_player_roxas/Ov030_ApplyModeChange.c
++++ b/src/overlays/players/ov030_player_roxas/Ov030_ApplyModeChange.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /*
+  * Apply a mode change to the actor -- the guarded/link variant with a slot check
+  * (x4: ov030/054b/074b/091b -- see the dedup fan-out for the exact twins).
+@@ -27,7 +28,7 @@
+  *    borrow order in the ROM is what tells you which. All 40 constraint-satisfying permutations
+  *    were swept; exactly one matches.
+  */
+-struct Actor { unsigned long long flags; };
++struct Actor { unsigned long long flags KH_ALIGN64; };
+ 
+ extern int Ov022_IsIndexedRecordBit0Set(int self, int i);
+ extern int func_ov022_0209fc78(int self, int i);
 diff --git a/src/overlays/players/ov032_player_xigbar/Ov032_SpawnAttachEffects.c b/src/overlays/players/ov032_player_xigbar/Ov032_SpawnAttachEffects.c
-index fc70edc38..bb457b35a 100644
+index fc70edc38..e235ff300 100644
 --- a/src/overlays/players/ov032_player_xigbar/Ov032_SpawnAttachEffects.c
 +++ b/src/overlays/players/ov032_player_xigbar/Ov032_SpawnAttachEffects.c
 @@ -1,3 +1,4 @@
@@ -10922,7 +11299,12 @@ index fc70edc38..bb457b35a 100644
  /* Spawns the ov032 enemy's two attachment effects (and its byte-identical twins): for each of
   * the overlay's two 64-bit capability masks that the actor's +0x464 flags carry, the +0x2c2c
   * extra class is asked for a slot at the origin (a negative answer ends the pass), bound to the
-@@ -10,7 +11,7 @@ struct Masks { long long m[2]; };
+@@ -6,11 +7,11 @@
+ 
+ #include "nitro/fx_types.h"
+ 
+-struct Masks { long long m[2]; };
++struct Masks { long long m[2] KH_ALIGN64; };
  
  struct Ov032Actor {
      char pad000[0x464];
@@ -10949,6 +11331,42 @@ index 48542e941..caca34916 100644
      char pad46c[0x2aba - 0x46c];
      short f2aba;
  } Self;
+diff --git a/src/overlays/players/ov034_player_xaldin/Ov034_DriveGuardSequence.c b/src/overlays/players/ov034_player_xaldin/Ov034_DriveGuardSequence.c
+index 941db4467..f95e3b017 100644
+--- a/src/overlays/players/ov034_player_xaldin/Ov034_DriveGuardSequence.c
++++ b/src/overlays/players/ov034_player_xaldin/Ov034_DriveGuardSequence.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Drive the guard/counter sequence (x4: ov034 + 3 twins). While a sequence is live, refresh
+  * it (020b5310) if either the owner is not blocked (bit 16 of the 64-bit flags at +0x464 is
+  * clear AND ov022_02095524 says idle) or the override bit 38 is set. Then run the state:
+@@ -15,7 +16,7 @@
+  *  - NO `default:` and NO `case 0:` -- state 0 and anything above 5 fall through the jump
+  *    table to the function's implicit end, which is why the ROM's default and case-0 slots are
+  *    bare `pop {r3,r4,r5,pc}` instructions. See codegen-cracks.md. */
+-struct Self { char pad[0x464]; unsigned long long flags; };
++struct Self { char pad[0x464]; unsigned long long flags KH_ALIGN64; };
+ 
+ extern int Ov022_IsState9Or6WithFlag200(void *p);
+ extern void Ov034_ClearTimer(int self, int p2);
+diff --git a/src/overlays/players/ov038_player_lexaeus/Ov038_DriveSwingSequence.c b/src/overlays/players/ov038_player_lexaeus/Ov038_DriveSwingSequence.c
+index c185c3511..cca83e59e 100644
+--- a/src/overlays/players/ov038_player_lexaeus/Ov038_DriveSwingSequence.c
++++ b/src/overlays/players/ov038_player_lexaeus/Ov038_DriveSwingSequence.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Drive the swing sequence (x4: ov038 + 3 twins). While a sequence is live, refresh it
+  * (020b42f4) when the owner has left mode 0x2e, is not blocked (bit 16 of the 64-bit flags at
+  * +0x464) and reports idle -- and refresh it AGAIN, unconditionally of all that, when the
+@@ -12,7 +13,7 @@
+  * NO `default:` and NO `case 0:` -- both fall through the jump table to the implicit end,
+  * which is why those two slots hold bare `pop {r4,r5,r6,pc}` instructions. Matched byte-exact
+  * on the first compile with both spellings in place. */
+-struct Self { char pad[0x464]; unsigned long long flags; };
++struct Self { char pad[0x464]; unsigned long long flags KH_ALIGN64; };
+ 
+ extern int Ov022_IsState9Or6WithFlag200(void *p);
+ extern void Ov038_ResetSequenceState(int self, int *p);
 diff --git a/src/overlays/players/ov038_player_lexaeus/Ov038_StepCharge.c b/src/overlays/players/ov038_player_lexaeus/Ov038_StepCharge.c
 index 56d31567c..62c058959 100644
 --- a/src/overlays/players/ov038_player_lexaeus/Ov038_StepCharge.c
@@ -10985,6 +11403,24 @@ index c40fde68a..c5f5dba5c 100644
  } Self;
  
  void Ov042_UpdateSlotsWithGate(Self *self, int *node, int arg) {
+diff --git a/src/overlays/players/ov044_player_xion/Ov044_ApplyModeChange.c b/src/overlays/players/ov044_player_xion/Ov044_ApplyModeChange.c
+index 129101df8..9bd9e70bc 100644
+--- a/src/overlays/players/ov044_player_xion/Ov044_ApplyModeChange.c
++++ b/src/overlays/players/ov044_player_xion/Ov044_ApplyModeChange.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /*
+  * Apply a mode change to the actor -- the guarded/link variant (x4: ov044/063/081/098).
+  *
+@@ -39,7 +40,7 @@
+  * written FIRST, leaving 020a384c as the cold tail; and 0209fc48/0209fc78 take TWO args each
+  * (Ghidra invents five for the first).
+  */
+-struct Actor { unsigned long long flags; };
++struct Actor { unsigned long long flags KH_ALIGN64; };
+ 
+ extern int Ov022_IsIndexedRecordBit0Set(int self, int i);
+ extern int func_ov022_0209fc78(int self, int i);
 diff --git a/src/overlays/players/ov051_player_saix_2/Ov051_UpdateGuardedSlots.c b/src/overlays/players/ov051_player_saix_2/Ov051_UpdateGuardedSlots.c
 index 2394dd437..f3edfe759 100644
 --- a/src/overlays/players/ov051_player_saix_2/Ov051_UpdateGuardedSlots.c
@@ -11004,7 +11440,7 @@ index 2394dd437..f3edfe759 100644
      short f2aba;
  } Self;
 diff --git a/src/overlays/players/ov052_player_xigbar_2/Ov052_SpawnAttachEffects.c b/src/overlays/players/ov052_player_xigbar_2/Ov052_SpawnAttachEffects.c
-index d167071ac..e27ec1af2 100644
+index d167071ac..fd890c8ea 100644
 --- a/src/overlays/players/ov052_player_xigbar_2/Ov052_SpawnAttachEffects.c
 +++ b/src/overlays/players/ov052_player_xigbar_2/Ov052_SpawnAttachEffects.c
 @@ -1,3 +1,4 @@
@@ -11012,7 +11448,12 @@ index d167071ac..e27ec1af2 100644
  /* Spawns the ov032 enemy's two attachment effects (and its byte-identical twins): for each of
   * the overlay's two 64-bit capability masks that the actor's +0x464 flags carry, the +0x2c2c
   * extra class is asked for a slot at the origin (a negative answer ends the pass), bound to the
-@@ -10,7 +11,7 @@ struct Masks { long long m[2]; };
+@@ -6,11 +7,11 @@
+ 
+ #include "nitro/fx_types.h"
+ 
+-struct Masks { long long m[2]; };
++struct Masks { long long m[2] KH_ALIGN64; };
  
  struct Ov032Actor {
      char pad000[0x464];
@@ -11021,6 +11462,42 @@ index d167071ac..e27ec1af2 100644
      char pad46c[0x528 - 0x46c];
      char aMatrix528[2][0x30];
      char pad588[0x6bc - 0x588];
+diff --git a/src/overlays/players/ov053_player_xaldin_2/Ov053_DriveGuardSequence.c b/src/overlays/players/ov053_player_xaldin_2/Ov053_DriveGuardSequence.c
+index 8c74db91d..78acea8e2 100644
+--- a/src/overlays/players/ov053_player_xaldin_2/Ov053_DriveGuardSequence.c
++++ b/src/overlays/players/ov053_player_xaldin_2/Ov053_DriveGuardSequence.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Drive the guard/counter sequence (x4: ov034 + 3 twins). While a sequence is live, refresh
+  * it (020b5310) if either the owner is not blocked (bit 16 of the 64-bit flags at +0x464 is
+  * clear AND ov022_02095524 says idle) or the override bit 38 is set. Then run the state:
+@@ -15,7 +16,7 @@
+  *  - NO `default:` and NO `case 0:` -- state 0 and anything above 5 fall through the jump
+  *    table to the function's implicit end, which is why the ROM's default and case-0 slots are
+  *    bare `pop {r3,r4,r5,pc}` instructions. See codegen-cracks.md. */
+-struct Self { char pad[0x464]; unsigned long long flags; };
++struct Self { char pad[0x464]; unsigned long long flags KH_ALIGN64; };
+ 
+ extern int Ov022_IsState9Or6WithFlag200(void *p);
+ extern void Ov053_ClearTimer(int self, int p2);
+diff --git a/src/overlays/players/ov057_player_lexaeus_2/Ov057_DriveSwingSequence.c b/src/overlays/players/ov057_player_lexaeus_2/Ov057_DriveSwingSequence.c
+index 69d516e6b..1cf70ff6e 100644
+--- a/src/overlays/players/ov057_player_lexaeus_2/Ov057_DriveSwingSequence.c
++++ b/src/overlays/players/ov057_player_lexaeus_2/Ov057_DriveSwingSequence.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Drive the swing sequence (x4: ov038 + 3 twins). While a sequence is live, refresh it
+  * (020b42f4) when the owner has left mode 0x2e, is not blocked (bit 16 of the 64-bit flags at
+  * +0x464) and reports idle -- and refresh it AGAIN, unconditionally of all that, when the
+@@ -12,7 +13,7 @@
+  * NO `default:` and NO `case 0:` -- both fall through the jump table to the implicit end,
+  * which is why those two slots hold bare `pop {r4,r5,r6,pc}` instructions. Matched byte-exact
+  * on the first compile with both spellings in place. */
+-struct Self { char pad[0x464]; unsigned long long flags; };
++struct Self { char pad[0x464]; unsigned long long flags KH_ALIGN64; };
+ 
+ extern int Ov022_IsState9Or6WithFlag200(void *p);
+ extern void Ov057_ResetSequenceState(int self, int *p);
 diff --git a/src/overlays/players/ov057_player_lexaeus_2/Ov057_TickChargeSequence.c b/src/overlays/players/ov057_player_lexaeus_2/Ov057_TickChargeSequence.c
 index 0d559449e..16f9c3b17 100644
 --- a/src/overlays/players/ov057_player_lexaeus_2/Ov057_TickChargeSequence.c
@@ -11057,6 +11534,24 @@ index acaf4f8dc..2da026fe2 100644
  } Self;
  
  void Ov061_UpdateSlotsWithGate(Self *self, int *node, int arg) {
+diff --git a/src/overlays/players/ov063_player_xion_2/Ov063_ApplyModeChange.c b/src/overlays/players/ov063_player_xion_2/Ov063_ApplyModeChange.c
+index 80cb05e80..3edb89e1e 100644
+--- a/src/overlays/players/ov063_player_xion_2/Ov063_ApplyModeChange.c
++++ b/src/overlays/players/ov063_player_xion_2/Ov063_ApplyModeChange.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /*
+  * Apply a mode change to the actor -- the guarded/link variant (x4: ov044/063/081/098).
+  *
+@@ -39,7 +40,7 @@
+  * written FIRST, leaving 020a384c as the cold tail; and 0209fc48/0209fc78 take TWO args each
+  * (Ghidra invents five for the first).
+  */
+-struct Actor { unsigned long long flags; };
++struct Actor { unsigned long long flags KH_ALIGN64; };
+ 
+ extern int Ov022_IsIndexedRecordBit0Set(int self, int i);
+ extern int func_ov022_0209fc78(int self, int i);
 diff --git a/src/overlays/players/ov071_player_saix_3/Ov071_UpdateGuardedSlots.c b/src/overlays/players/ov071_player_saix_3/Ov071_UpdateGuardedSlots.c
 index 10f220fa3..382aef8db 100644
 --- a/src/overlays/players/ov071_player_saix_3/Ov071_UpdateGuardedSlots.c
@@ -11076,7 +11571,7 @@ index 10f220fa3..382aef8db 100644
      short f2aba;
  } Self;
 diff --git a/src/overlays/players/ov072_player_xigbar_3/Ov072_SpawnAttachEffects.c b/src/overlays/players/ov072_player_xigbar_3/Ov072_SpawnAttachEffects.c
-index 498501ac8..1117c1f6e 100644
+index 498501ac8..dc71e1dc9 100644
 --- a/src/overlays/players/ov072_player_xigbar_3/Ov072_SpawnAttachEffects.c
 +++ b/src/overlays/players/ov072_player_xigbar_3/Ov072_SpawnAttachEffects.c
 @@ -1,3 +1,4 @@
@@ -11084,7 +11579,12 @@ index 498501ac8..1117c1f6e 100644
  /* Spawns the ov032 enemy's two attachment effects (and its byte-identical twins): for each of
   * the overlay's two 64-bit capability masks that the actor's +0x464 flags carry, the +0x2c2c
   * extra class is asked for a slot at the origin (a negative answer ends the pass), bound to the
-@@ -10,7 +11,7 @@ struct Masks { long long m[2]; };
+@@ -6,11 +7,11 @@
+ 
+ #include "nitro/fx_types.h"
+ 
+-struct Masks { long long m[2]; };
++struct Masks { long long m[2] KH_ALIGN64; };
  
  struct Ov032Actor {
      char pad000[0x464];
@@ -11093,6 +11593,42 @@ index 498501ac8..1117c1f6e 100644
      char pad46c[0x528 - 0x46c];
      char aMatrix528[2][0x30];
      char pad588[0x6bc - 0x588];
+diff --git a/src/overlays/players/ov073_player_xaldin_3/Ov073_DriveGuardSequence.c b/src/overlays/players/ov073_player_xaldin_3/Ov073_DriveGuardSequence.c
+index e74835572..f6840a6d5 100644
+--- a/src/overlays/players/ov073_player_xaldin_3/Ov073_DriveGuardSequence.c
++++ b/src/overlays/players/ov073_player_xaldin_3/Ov073_DriveGuardSequence.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Drive the guard/counter sequence (x4: ov034 + 3 twins). While a sequence is live, refresh
+  * it (020b5310) if either the owner is not blocked (bit 16 of the 64-bit flags at +0x464 is
+  * clear AND ov022_02095524 says idle) or the override bit 38 is set. Then run the state:
+@@ -15,7 +16,7 @@
+  *  - NO `default:` and NO `case 0:` -- state 0 and anything above 5 fall through the jump
+  *    table to the function's implicit end, which is why the ROM's default and case-0 slots are
+  *    bare `pop {r3,r4,r5,pc}` instructions. See codegen-cracks.md. */
+-struct Self { char pad[0x464]; unsigned long long flags; };
++struct Self { char pad[0x464]; unsigned long long flags KH_ALIGN64; };
+ 
+ extern int Ov022_IsState9Or6WithFlag200(void *p);
+ extern void Ov073_ClearTimer(int self, int p2);
+diff --git a/src/overlays/players/ov077_player_lexaeus_3/Ov077_DriveSwingSequence.c b/src/overlays/players/ov077_player_lexaeus_3/Ov077_DriveSwingSequence.c
+index f96b73986..e261daa8a 100644
+--- a/src/overlays/players/ov077_player_lexaeus_3/Ov077_DriveSwingSequence.c
++++ b/src/overlays/players/ov077_player_lexaeus_3/Ov077_DriveSwingSequence.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Drive the swing sequence (x4: ov038 + 3 twins). While a sequence is live, refresh it
+  * (020b42f4) when the owner has left mode 0x2e, is not blocked (bit 16 of the 64-bit flags at
+  * +0x464) and reports idle -- and refresh it AGAIN, unconditionally of all that, when the
+@@ -12,7 +13,7 @@
+  * NO `default:` and NO `case 0:` -- both fall through the jump table to the implicit end,
+  * which is why those two slots hold bare `pop {r4,r5,r6,pc}` instructions. Matched byte-exact
+  * on the first compile with both spellings in place. */
+-struct Self { char pad[0x464]; unsigned long long flags; };
++struct Self { char pad[0x464]; unsigned long long flags KH_ALIGN64; };
+ 
+ extern int Ov022_IsState9Or6WithFlag200(void *p);
+ extern void Ov077_ResetSequenceState(int self, int *p);
 diff --git a/src/overlays/players/ov077_player_lexaeus_3/Ov077_UpdateChargeSequence.c b/src/overlays/players/ov077_player_lexaeus_3/Ov077_UpdateChargeSequence.c
 index 24b51b483..9e019133a 100644
 --- a/src/overlays/players/ov077_player_lexaeus_3/Ov077_UpdateChargeSequence.c
@@ -11129,6 +11665,24 @@ index 7906337fb..c7235964e 100644
  } Self;
  
  void Ov081_UpdateSlotsWithGate(Self *self, int *node, int arg) {
+diff --git a/src/overlays/players/ov082_player_xion_3/Ov082_ApplyModeChange.c b/src/overlays/players/ov082_player_xion_3/Ov082_ApplyModeChange.c
+index 776ed669a..bbd011f95 100644
+--- a/src/overlays/players/ov082_player_xion_3/Ov082_ApplyModeChange.c
++++ b/src/overlays/players/ov082_player_xion_3/Ov082_ApplyModeChange.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /*
+  * Apply a mode change to the actor -- the guarded/link variant (x4: ov044/063/081/098).
+  *
+@@ -39,7 +40,7 @@
+  * written FIRST, leaving 020a384c as the cold tail; and 0209fc48/0209fc78 take TWO args each
+  * (Ghidra invents five for the first).
+  */
+-struct Actor { unsigned long long flags; };
++struct Actor { unsigned long long flags KH_ALIGN64; };
+ 
+ extern int Ov022_IsIndexedRecordBit0Set(int self, int i);
+ extern int func_ov022_0209fc78(int self, int i);
 diff --git a/src/overlays/players/ov089_player_saix_4/Ov089_UpdateGuardedSlots.c b/src/overlays/players/ov089_player_saix_4/Ov089_UpdateGuardedSlots.c
 index 590ec708a..51404b577 100644
 --- a/src/overlays/players/ov089_player_saix_4/Ov089_UpdateGuardedSlots.c
@@ -11147,6 +11701,42 @@ index 590ec708a..51404b577 100644
      char pad46c[0x2aba - 0x46c];
      short f2aba;
  } Self;
+diff --git a/src/overlays/players/ov090_player_xaldin_4/Ov090_DriveGuardSequence.c b/src/overlays/players/ov090_player_xaldin_4/Ov090_DriveGuardSequence.c
+index 5379e26c3..2ecfbb6f4 100644
+--- a/src/overlays/players/ov090_player_xaldin_4/Ov090_DriveGuardSequence.c
++++ b/src/overlays/players/ov090_player_xaldin_4/Ov090_DriveGuardSequence.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Drive the guard/counter sequence (x4: ov034 + 3 twins). While a sequence is live, refresh
+  * it (020b5310) if either the owner is not blocked (bit 16 of the 64-bit flags at +0x464 is
+  * clear AND ov022_02095524 says idle) or the override bit 38 is set. Then run the state:
+@@ -15,7 +16,7 @@
+  *  - NO `default:` and NO `case 0:` -- state 0 and anything above 5 fall through the jump
+  *    table to the function's implicit end, which is why the ROM's default and case-0 slots are
+  *    bare `pop {r3,r4,r5,pc}` instructions. See codegen-cracks.md. */
+-struct Self { char pad[0x464]; unsigned long long flags; };
++struct Self { char pad[0x464]; unsigned long long flags KH_ALIGN64; };
+ 
+ extern int Ov022_IsState9Or6WithFlag200(void *p);
+ extern void Ov090_ClearTimer(int self, int p2);
+diff --git a/src/overlays/players/ov094_player_lexaeus_4/Ov094_DriveSwingSequence.c b/src/overlays/players/ov094_player_lexaeus_4/Ov094_DriveSwingSequence.c
+index 740e61ffb..ab4a4b00a 100644
+--- a/src/overlays/players/ov094_player_lexaeus_4/Ov094_DriveSwingSequence.c
++++ b/src/overlays/players/ov094_player_lexaeus_4/Ov094_DriveSwingSequence.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Drive the swing sequence (x4: ov038 + 3 twins). While a sequence is live, refresh it
+  * (020b42f4) when the owner has left mode 0x2e, is not blocked (bit 16 of the 64-bit flags at
+  * +0x464) and reports idle -- and refresh it AGAIN, unconditionally of all that, when the
+@@ -12,7 +13,7 @@
+  * NO `default:` and NO `case 0:` -- both fall through the jump table to the implicit end,
+  * which is why those two slots hold bare `pop {r4,r5,r6,pc}` instructions. Matched byte-exact
+  * on the first compile with both spellings in place. */
+-struct Self { char pad[0x464]; unsigned long long flags; };
++struct Self { char pad[0x464]; unsigned long long flags KH_ALIGN64; };
+ 
+ extern int Ov022_IsState9Or6WithFlag200(void *p);
+ extern void Ov094_ResetSequenceState(int self, int *p);
 diff --git a/src/overlays/players/ov094_player_lexaeus_4/Ov094_StepCharge.c b/src/overlays/players/ov094_player_lexaeus_4/Ov094_StepCharge.c
 index 27d65d2aa..ff4d0cbc6 100644
 --- a/src/overlays/players/ov094_player_lexaeus_4/Ov094_StepCharge.c
@@ -11183,6 +11773,24 @@ index abc7988ad..2c1d12c1b 100644
  } Self;
  
  void Ov098_UpdateSlotsWithGate(Self *self, int *node, int arg) {
+diff --git a/src/overlays/players/ov099_player_xion_4/Ov099_ApplyModeChange.c b/src/overlays/players/ov099_player_xion_4/Ov099_ApplyModeChange.c
+index dc9f01804..c8e2463f0 100644
+--- a/src/overlays/players/ov099_player_xion_4/Ov099_ApplyModeChange.c
++++ b/src/overlays/players/ov099_player_xion_4/Ov099_ApplyModeChange.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /*
+  * Apply a mode change to the actor -- the guarded/link variant (x4: ov044/063/081/098).
+  *
+@@ -39,7 +40,7 @@
+  * written FIRST, leaving 020a384c as the cold tail; and 0209fc48/0209fc78 take TWO args each
+  * (Ghidra invents five for the first).
+  */
+-struct Actor { unsigned long long flags; };
++struct Actor { unsigned long long flags KH_ALIGN64; };
+ 
+ extern int Ov022_IsIndexedRecordBit0Set(int self, int i);
+ extern int func_ov022_0209fc78(int self, int i);
 diff --git a/src/overlays/scenes/ov000_title/Ov000_BootFadeAndSubScreenSetup.c b/src/overlays/scenes/ov000_title/Ov000_BootFadeAndSubScreenSetup.c
 index 86892c0f3..f3a70f40b 100644
 --- a/src/overlays/scenes/ov000_title/Ov000_BootFadeAndSubScreenSetup.c
@@ -13805,6 +14413,22 @@ index 9e8169b17..cb59a6752 100644
  void Ov005_FadeInResultScreen(void) {
      u64 elapsed = OS_GetTick() - data_ov005_0205b810->startTick;
      int step = (int)func_02020368(elapsed, 0x7fd8);
+diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_FadeOutResultScreen.c b/src/overlays/scenes/ov005_mission_result/Ov005_FadeOutResultScreen.c
+index 630d13913..0a5e11b1c 100644
+--- a/src/overlays/scenes/ov005_mission_result/Ov005_FadeOutResultScreen.c
++++ b/src/overlays/scenes/ov005_mission_result/Ov005_FadeOutResultScreen.c
+@@ -1,9 +1,10 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Fade out the sub-screen and advance to the finished result phase. */
+ 
+ #include "nitro/types.h"
+ #include "game/engine.h"
+ 
+-typedef struct Ov005ResultContext { char unknown00[0x4b5c]; long long startTick; char unknown4b64[16]; int resultPhase; } Ov005ResultContext;
++typedef struct Ov005ResultContext { char unknown00[0x4b5c]; long long startTick KH_ALIGN64; char unknown4b64[16]; int resultPhase; } Ov005ResultContext;
+ extern Ov005ResultContext *data_ov005_0205b810;
+ extern u64 OS_GetTick(void), func_02020368(u64, u64);
+ void Ov005_FadeOutResultScreen(void) {
 diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_GetGridMaskExtent.c b/src/overlays/scenes/ov005_mission_result/Ov005_GetGridMaskExtent.c
 index c2e844217..2e80ed69b 100644
 --- a/src/overlays/scenes/ov005_mission_result/Ov005_GetGridMaskExtent.c
@@ -13821,15 +14445,21 @@ index c2e844217..2e80ed69b 100644
  
  void Ov005_GetGridMaskExtent(struct S *s, unsigned short *outW, unsigned short *outH)
 diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_InitResultResources.c b/src/overlays/scenes/ov005_mission_result/Ov005_InitResultResources.c
-index d334c670a..e10e663a8 100644
+index d334c670a..8d0601af1 100644
 --- a/src/overlays/scenes/ov005_mission_result/Ov005_InitResultResources.c
 +++ b/src/overlays/scenes/ov005_mission_result/Ov005_InitResultResources.c
-@@ -1,3 +1,4 @@
+@@ -1,16 +1,17 @@
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
  /* Initialises the result screen: allocates its row buffers, resets its tweens, loads its text and
   * archives, and computes the gauge range. */
  
-@@ -10,7 +11,7 @@ typedef struct Ov005TextTable {void *resource;int count;void *entries;} Ov005Tex
+ #include "nitro/types.h"
+ #include "game/engine.h"
+ 
+-typedef struct Tween {int mode,duration,from,to;long long startTick;unsigned int flags;} Tween;
++typedef struct Tween {int mode,duration,from,to;long long startTick KH_ALIGN64;unsigned int flags;} Tween;
+ typedef struct Ov005ResultTween {Tween tween;int value;char unknown20[12];} Ov005ResultTween;
+ typedef struct Ov005TextTable {void *resource;int count;void *entries;} Ov005TextTable;
  typedef struct Ov005Config {char unknown00[0x48];int gaugeScore;char unknown4c[16];u8 bMode;} Ov005Config;
  typedef struct Ov005ResultContext {
   void *resultArchive,*localizedResultArchive;char unknown08[0x4b54];
@@ -13967,6 +14597,21 @@ index 8bacae372..d0618cb0b 100644
  void Ov005_UpdateFadeIn(void) {
      u64 elapsed=OS_GetTick()-data_ov005_0205b80c->startTick;
      int step=(int)func_02020368(elapsed,0x7fd8);
+diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_UpdateRewardPosition.c b/src/overlays/scenes/ov005_mission_result/Ov005_UpdateRewardPosition.c
+index 404f2ce78..f277bf752 100644
+--- a/src/overlays/scenes/ov005_mission_result/Ov005_UpdateRewardPosition.c
++++ b/src/overlays/scenes/ov005_mission_result/Ov005_UpdateRewardPosition.c
+@@ -1,8 +1,9 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Slides the reward multiplier banner with its tween and shows it with the multiplier's frame. */
+ 
+ #include "nitro/types.h"
+ 
+-typedef struct Tween {int mode,duration,from,to;long long startTick;unsigned int flags;} Tween;
++typedef struct Tween {int mode,duration,from,to;long long startTick KH_ALIGN64;unsigned int flags;} Tween;
+ typedef struct Ov005Context {char header[0x54];char embeddedManager[0x4a80];char opaque4ad4[0x19c];Tween statusTween;} Ov005Context;
+ typedef struct Ov005Config {char opaque00[0x68];u8 rewardMultiplier;} Ov005Config;
+ extern Ov005Context *data_ov005_0205b80c;
 diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_UpdateRewardPresentation.c b/src/overlays/scenes/ov005_mission_result/Ov005_UpdateRewardPresentation.c
 index a3e72037d..426ca5641 100644
 --- a/src/overlays/scenes/ov005_mission_result/Ov005_UpdateRewardPresentation.c
@@ -17362,6 +18007,20 @@ index 7c2c435f8..fc93bd52c 100644
  #define FS_OVERLAY_ID_ov028 ((FSOverlayID)(u32) & (OVERLAY_28_ID))
  
  extern BOOL FS_LoadOverlay(MIProcessor target, FSOverlayID id);
+diff --git a/src/overlays/system/ov001_boot/Ov001_SeedMathRandContexts.c b/src/overlays/system/ov001_boot/Ov001_SeedMathRandContexts.c
+index 40b3234ca..327904ab2 100644
+--- a/src/overlays/system/ov001_boot/Ov001_SeedMathRandContexts.c
++++ b/src/overlays/system/ov001_boot/Ov001_SeedMathRandContexts.c
+@@ -1,7 +1,8 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
+ /* Seeds the game's 32-bit and 64-bit random generators from the system's low-entropy data. The two
+  * accumulators are never initialised: the ROM mixes the entropy into whatever the registers held. */
+ 
+-typedef struct { unsigned long long x, mul, add; } Rand64;
++typedef struct { unsigned long long x KH_ALIGN64, mul KH_ALIGN64, add KH_ALIGN64; } Rand64;
+ typedef struct { unsigned x, mul, add; } Rand32;
+ extern void OS_GetLowEntropyData(unsigned *buf);
+ extern Rand32 data_0204c168;
 diff --git a/src/overlays/system/ov001_boot/Ov001_SetupDisplayRegs.c b/src/overlays/system/ov001_boot/Ov001_SetupDisplayRegs.c
 index 20cdee838..a42de742d 100644
 --- a/src/overlays/system/ov001_boot/Ov001_SetupDisplayRegs.c

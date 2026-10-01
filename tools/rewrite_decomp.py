@@ -379,6 +379,48 @@ def raw64_member_lines(text):
     return out
 
 
+RAW64_DECL = re.compile(r"\b(?:(?:unsigned|signed)\s+)?long\s+long\s+(?:int\s+)?([^;(){}]*);")
+
+
+def raw64_member_sites(text):
+    """Offsets of the ';' (and ',') ending plain long long member declarators of a struct or
+    union, wherever they sit: one per line or a whole struct on one line (0.0.37: ov005's
+    `typedef struct Tween {...; long long startTick; ...}` moved the result screen's menuText
+    by 0x10 and the screen freed garbage)."""
+    # comments blanked to spaces, so offsets stay those of the original text
+    t = re.sub(r"/\*.*?\*/", lambda m: re.sub(r"[^\n]", " ", m.group(0)), text, flags=re.S)
+    t = re.sub(r"//[^\n]*", lambda m: " " * len(m.group(0)), t)
+    in_struct = [False] * (len(t) + 1)
+    stack, last = [], 0
+    for i, ch in enumerate(t):
+        if ch == "{":
+            head = t[max(last, i - 200):i]
+            stack.append(bool(re.search(r"\b(struct|union)\b[^;{}()]*$", head)))
+            last = i + 1
+        elif ch == "}":
+            if stack:
+                stack.pop()
+            last = i + 1
+        elif ch == ";":
+            last = i + 1
+        in_struct[i] = bool(stack and stack[-1])
+    sites = []
+    for m in RAW64_DECL.finditer(t):
+        if not in_struct[m.start()] or ALIGN64 in m.group(1) or "aligned" in m.group(1):
+            continue
+        # the statement must begin with the type (a member, not `x = (long long)y;`)
+        before = re.sub(r"(?:\b(?:volatile|const)\s*)+$", "", t[max(0, m.start() - 80):m.start()].rstrip())
+        before = before.rstrip()
+        if before and before[-1] not in ";{}":
+            continue
+        decl_start = m.start(1)
+        for j, ch in enumerate(m.group(1)):
+            if ch == ",":
+                sites.append(decl_start + j)
+        sites.append(m.end() - 1)
+    return sites
+
+
 def pass_align64(tree):
     changed = 0
     for path in sorted(tree.rglob("*")):
@@ -390,21 +432,15 @@ def pass_align64(tree):
         text = path.read_text(encoding="utf-8", errors="surrogateescape")
         if "long long" not in text:
             continue
-        lines = text.split("\n")
-        dirty = False
-        for no in raw64_member_lines(text):
-            line = lines[no - 1]
-            if ALIGN64 in line:
-                continue
-            at = line.index(";")
-            lines[no - 1] = line[:at].rstrip() + " " + ALIGN64 + line[at:]
-            dirty = True
-        if dirty:
-            text = "\n".join(lines)
-            if HW_INCLUDE not in text:
-                text = HW_INCLUDE + "  /* PLATFORM_VITA: KH_ALIGN64 */\n" + text
-            path.write_text(text, encoding="utf-8", errors="surrogateescape")
-            changed += 1
+        sites = raw64_member_sites(text)
+        if not sites:
+            continue
+        for at in sorted(sites, reverse=True):
+            text = text[:at].rstrip() + " " + ALIGN64 + text[at:]
+        if HW_INCLUDE not in text:
+            text = HW_INCLUDE + "  /* PLATFORM_VITA: KH_ALIGN64 */\n" + text
+        path.write_text(text, encoding="utf-8", errors="surrogateescape")
+        changed += 1
     return changed
 
 
