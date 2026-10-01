@@ -6421,6 +6421,65 @@ index 6830d75a6..12791b305 100644
  }
  
  extern void GX_SendFifoWords(u32 op, const void *args, u32 numWords);
+diff --git a/libs/nitro/nns/calls/func_02010f7c.c b/libs/nitro/nns/calls/func_02010f7c.c
+index 347c41637..6fd2ae0f6 100644
+--- a/libs/nitro/nns/calls/func_02010f7c.c
++++ b/libs/nitro/nns/calls/func_02010f7c.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"
+ 
+ 
+ #include "nitro/types.h"
+@@ -154,6 +155,24 @@ NNSGfdTexKey func_02010f7c(u32 szByte, BOOL is4x4comp, u32 opt)
+     if (result) {
+         return NNS_GfdMakeTexKey(addr, szByte, is4x4comp);
+     } else {
++#ifdef PLATFORM_VITA
++        {
++            static int traced;
++            if (traced++ < 12)
++                KH_TRACE("gfd: texture VRAM alloc of %x bytes (4x4 %d) failed; regions "
++                         "%x-%x%c %x-%x%c %x-%x%c %x-%x%c %x-%x%c", (unsigned)szByte, is4x4comp,
++                         (unsigned)data_02042418[0].head, (unsigned)data_02042418[0].tail,
++                         data_02042418[0].bActive ? '+' : '-',
++                         (unsigned)data_02042418[1].head, (unsigned)data_02042418[1].tail,
++                         data_02042418[1].bActive ? '+' : '-',
++                         (unsigned)data_02042418[2].head, (unsigned)data_02042418[2].tail,
++                         data_02042418[2].bActive ? '+' : '-',
++                         (unsigned)data_02042418[3].head, (unsigned)data_02042418[3].tail,
++                         data_02042418[3].bActive ? '+' : '-',
++                         (unsigned)data_02042418[4].head, (unsigned)data_02042418[4].tail,
++                         data_02042418[4].bActive ? '+' : '-');
++        }
++#endif
+         (void)0;
+         return NNS_GFD_ALLOC_ERROR_TEXKEY;
+     }
+diff --git a/libs/nitro/nns/calls/func_020111c0.c b/libs/nitro/nns/calls/func_020111c0.c
+index 5c20694e1..76812cefa 100644
+--- a/libs/nitro/nns/calls/func_020111c0.c
++++ b/libs/nitro/nns/calls/func_020111c0.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"
+ 
+ 
+ #include "nitro/types.h"
+@@ -124,6 +125,15 @@ NNSGfdPlttKey func_020111c0(u32 szByte, BOOL bPltt4, u32 allocFrom)
+     if (result) {
+         return NNS_GfdMakePlttKey(addr, szByte);
+     }
++#ifdef PLATFORM_VITA
++    {
++        static int traced;
++        if (traced++ < 12)
++            KH_TRACE("gfd: palette VRAM alloc of %x bytes (4-colour %d, from %s) failed; "
++                     "lo %x hi %x", (unsigned)szByte, bPltt4, allocFrom ? "lo" : "hi",
++                     (unsigned)data_02047364.loAddr, (unsigned)data_02047364.hiAddr);
++    }
++#endif
+     (void)0;
+     return NNS_GFD_ALLOC_ERROR_PLTTKEY;
+ }
 diff --git a/libs/nitro/nns/calls/func_02012e1c.c b/libs/nitro/nns/calls/func_02012e1c.c
 index 18b20a61e..9ad2382fa 100644
 --- a/libs/nitro/nns/calls/func_02012e1c.c
@@ -7837,6 +7896,39 @@ index 1453b55d2..3b525101a 100644
  }
  
  static inline void NNS_G3dGeMtxMode(u32 mode)
+diff --git a/libs/nns/gfd/calls/NNS_GfdResetFrmTexVramState.c b/libs/nns/gfd/calls/NNS_GfdResetFrmTexVramState.c
+index 17b4969a7..6a08d56e1 100644
+--- a/libs/nns/gfd/calls/NNS_GfdResetFrmTexVramState.c
++++ b/libs/nns/gfd/calls/NNS_GfdResetFrmTexVramState.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"
+ 
+ 
+ #include "nitro/types.h"
+@@ -38,4 +39,5 @@ void NNS_GfdResetFrmTexVramState (void)
+             ResetRegionNormal_(&data_02042418[i]);
+         }
+     }
++    KH_TRACE("gfd: texture VRAM reset (%u slots)", (unsigned)numSlot);
+ }
+diff --git a/libs/nns/gfd/calls/NNS_GfdSetFrmTexVramState.c b/libs/nns/gfd/calls/NNS_GfdSetFrmTexVramState.c
+index 10a1ce5ce..e446d28ae 100644
+--- a/libs/nns/gfd/calls/NNS_GfdSetFrmTexVramState.c
++++ b/libs/nns/gfd/calls/NNS_GfdSetFrmTexVramState.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"
+ 
+ 
+ #include "nitro/types.h"
+@@ -16,4 +17,8 @@ void NNS_GfdSetFrmTexVramState (const NNSGfdFrmTexVramState * pState)
+         data_02042418[i].head = pState->address[i * 2 + 0];
+         data_02042418[i].tail = pState->address[i * 2 + 1];
+     }
++    KH_TRACE("gfd: texture VRAM state restored (heads %x %x %x %x %x)",
++             (unsigned)data_02042418[0].head, (unsigned)data_02042418[1].head,
++             (unsigned)data_02042418[2].head, (unsigned)data_02042418[3].head,
++             (unsigned)data_02042418[4].head);
+ }
 diff --git a/libs/nns/snd/calls/NNS_SndArcGetBankInfo.c b/libs/nns/snd/calls/NNS_SndArcGetBankInfo.c
 index 5fc8c8039..827ac91cc 100644
 --- a/libs/nns/snd/calls/NNS_SndArcGetBankInfo.c
