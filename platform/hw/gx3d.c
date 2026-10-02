@@ -406,6 +406,22 @@ static void emit_polygon(const int *idx, int n, int odd)
         return;
     }
 
+    {
+        /* wholly outside one side of the view volume: the DS stores nothing of it */
+        int out_l = 1, out_r = 1, out_b = 1, out_t = 1, out_n = 1;
+        for (i = 0; i < n; i++) {
+            const KhGxVertex *v = &f->vtx[idx[i]];
+            out_l &= v->x < -v->w;
+            out_r &= v->x > v->w;
+            out_b &= v->y < -v->w;
+            out_t &= v->y > v->w;
+            out_n &= v->z < -v->w;
+        }
+        if (out_l | out_r | out_b | out_t | out_n) {
+            s_stats.culled++;
+            return;
+        }
+    }
     for (i = 0; i < n; i++) {
         const KhGxVertex *v = &f->vtx[idx[i]];
         /* far-plane crossing polygons are dropped unless attr bit 12 says to keep them */

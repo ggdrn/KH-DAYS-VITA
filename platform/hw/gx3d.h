@@ -10,8 +10,12 @@
 
 #include <stdint.h>
 
-#define KH_GX_MAX_VERTICES 6144
-#define KH_GX_MAX_POLYGONS 2048
+/* The DS keeps 6144 vertices and 2048 polygons a frame, counting only what survives culling
+ * and clipping (strip vertices shared). Here every transformed vertex is kept, those of culled
+ * polygons too, so the same scene needs more room: with the DS's own numbers, scenes with
+ * several characters overflowed and lost polygons (0.0.66: parts of characters vanishing). */
+#define KH_GX_MAX_VERTICES 24576
+#define KH_GX_MAX_POLYGONS 8192
 
 typedef struct {
     /* clip space with the polygon's viewport folded in: x/w, y/w are GL NDC over the whole
