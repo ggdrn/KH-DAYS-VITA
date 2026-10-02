@@ -8,6 +8,7 @@
 #include <psp2/kernel/threadmgr.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <psp2/kernel/processmgr.h>
 #include <string.h>
 
 static SceUID s_fd = -1;
@@ -104,18 +105,101 @@ RomStatus rom_open(const char *path, const char *stamp_path,
     return ROM_OK;
 }
 
+/* ---- read cache -------------------------------------------------------------------------
+ * The game reads the cartridge in small pieces (512-byte pages, 128-byte save chunks...), and
+ * every sceIoPread on the memory card costs milliseconds whatever its size: loading the title
+ * screen's 120 KiB took 1.5 s at ~6 ms a page. Reads are served from aligned 64 KiB blocks kept
+ * in a small LRU cache; reads of 128 KiB or more go straight to the file. */
+
+#define BLOCK_SHIFT 16
+#define BLOCK_SIZE (1u << BLOCK_SHIFT)
+#define BLOCKS 16
+#define DIRECT_MIN (128u * 1024u)
+
+typedef struct {
+    uint32_t base; /* block offset, or 0xffffffff when empty */
+    uint32_t len;  /* valid bytes */
+    uint32_t used; /* LRU stamp */
+} Block;
+
+static Block s_block[BLOCKS];
+static uint8_t s_block_data[BLOCKS][BLOCK_SIZE] __attribute__((aligned(64)));
+static uint32_t s_stamp;
+static RomStats s_stats;
+
+static int block_get(uint32_t base)
+{
+    int i, victim = 0;
+    for (i = 0; i < BLOCKS; i++) {
+        if (s_block[i].base == base) {
+            s_block[i].used = ++s_stamp;
+            s_stats.hits++;
+            return i;
+        }
+        if (s_block[i].used < s_block[victim].used)
+            victim = i;
+    }
+    {
+        uint64_t t0 = sceKernelGetProcessTimeWide();
+        int n = sceIoPread(s_fd, s_block_data[victim], BLOCK_SIZE, base);
+        s_stats.io_us += (uint32_t)(sceKernelGetProcessTimeWide() - t0);
+        s_stats.io_calls++;
+        s_block[victim].base = base;
+        s_block[victim].len = n > 0 ? (uint32_t)n : 0;
+        s_block[victim].used = ++s_stamp;
+    }
+    return victim;
+}
+
 int rom_read(uint32_t offset, void *dst, uint32_t size)
 {
-    int n;
+    int n = 0;
     if (offset >= ROM_EXPECTED_SIZE)
         return 0;
     if (size > ROM_EXPECTED_SIZE - offset)
         size = ROM_EXPECTED_SIZE - offset;
-    /* sceIoPread carries its own offset, the lock only serialises the card like the DS did */
     sceKernelLockMutex(s_lock, 1, NULL);
-    n = sceIoPread(s_fd, dst, size, offset);
+    s_stats.reads++;
+    if (!s_stamp) {
+        int i;
+        for (i = 0; i < BLOCKS; i++)
+            s_block[i].base = 0xffffffffu;
+        s_stamp = 1;
+    }
+    if (size >= DIRECT_MIN) {
+        uint64_t t0 = sceKernelGetProcessTimeWide();
+        n = sceIoPread(s_fd, dst, size, offset);
+        s_stats.io_us += (uint32_t)(sceKernelGetProcessTimeWide() - t0);
+        s_stats.io_calls++;
+    } else {
+        uint8_t *out = dst;
+        while (size) {
+            const uint32_t base = offset & ~(BLOCK_SIZE - 1), in = offset - base;
+            const Block *b = &s_block[block_get(base)];
+            uint32_t take = BLOCK_SIZE - in;
+            if (take > size)
+                take = size;
+            if (in >= b->len)
+                break;
+            if (take > b->len - in)
+                take = b->len - in;
+            memcpy(out, s_block_data[b - s_block] + in, take);
+            out += take;
+            offset += take;
+            size -= take;
+            n += (int)take;
+        }
+    }
     sceKernelUnlockMutex(s_lock, 1);
     return n;
+}
+
+void rom_take_stats(RomStats *out)
+{
+    sceKernelLockMutex(s_lock, 1, NULL);
+    *out = s_stats;
+    memset(&s_stats, 0, sizeof(s_stats));
+    sceKernelUnlockMutex(s_lock, 1);
 }
 
 const uint8_t *rom_header(void)

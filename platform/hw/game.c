@@ -471,6 +471,14 @@ void kh_game_run(void)
                 }
             }
             {
+                RomStats rs2;
+                rom_take_stats(&rs2);
+                if (rs2.reads)
+                    LOG("rom: 10 s: %u reads, %u from the cache, %u file reads in %u ms",
+                        (unsigned)rs2.reads, (unsigned)rs2.hits, (unsigned)rs2.io_calls,
+                        (unsigned)(rs2.io_us / 1000));
+            }
+            {
                 Snd7Stats ss;
                 snd7_take_stats(&ss);
                 if (ss.lists)

@@ -26,6 +26,12 @@ RomStatus rom_open(const char *path, const char *stamp_path,
                    void (*progress)(uint32_t done, uint32_t total));
 int rom_read(uint32_t offset, void *dst, uint32_t size);
 const uint8_t *rom_header(void); /* the 0x200-byte cartridge header */
+
+typedef struct {
+    uint32_t reads, hits, io_calls, io_us;
+} RomStats;
+/* Since the last call: reads served, cache hits, file reads made and the time they took. */
+void rom_take_stats(RomStats *out);
 void rom_close(void);
 
 #endif
