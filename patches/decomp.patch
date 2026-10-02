@@ -10201,6 +10201,167 @@ index 026e8fcde..f86d05792 100644
  };
  
  extern int Ov107_CollectSphereOverlaps(int owner, struct Sphere *query, int *out);
+diff --git a/src/overlays/enemies/ov221_enemy_tailbunker/Ov221_SyncPartNodesToJoint.c b/src/overlays/enemies/ov221_enemy_tailbunker/Ov221_SyncPartNodesToJoint.c
+index bd008bcf3..423ec7d6e 100644
+--- a/src/overlays/enemies/ov221_enemy_tailbunker/Ov221_SyncPartNodesToJoint.c
++++ b/src/overlays/enemies/ov221_enemy_tailbunker/Ov221_SyncPartNodesToJoint.c
+@@ -35,8 +35,18 @@ void Ov221_SyncPartNodesToJoint(struct Obj *a)
+ {
+     struct Sub *s;
+     int sel;
++#ifdef PLATFORM_VITA
++    /* NNS_G3dGetCurrentMtx writes a 4x3 matrix, 0x30 bytes, from local0: the ROM's frame has
++     * the translation row local24 right after the 3x3 local0. As two arrays GCC put them
++     * elsewhere and the write ran over the saved registers: the return went to 0x00011aec
++     * when a Tailbunker-type boss appeared (0.0.75). One buffer, the ROM's layout. */
++    char mtx[0x30];
++    char *const local0 = mtx;
++    char *const local24 = mtx + 0x24;
++#else
+     char local24[0xc];
+     char local0[0x24];
++#endif
+ 
+     s = *(struct Sub **)(((char *)a->field4) + 0x2c);
+ 
+diff --git a/src/overlays/enemies/ov222_enemy_tailbunker_2/Ov222_SyncPartNodesToJoint.c b/src/overlays/enemies/ov222_enemy_tailbunker_2/Ov222_SyncPartNodesToJoint.c
+index 5be005c99..f71672ec6 100644
+--- a/src/overlays/enemies/ov222_enemy_tailbunker_2/Ov222_SyncPartNodesToJoint.c
++++ b/src/overlays/enemies/ov222_enemy_tailbunker_2/Ov222_SyncPartNodesToJoint.c
+@@ -35,8 +35,18 @@ void Ov222_SyncPartNodesToJoint(struct Obj *a)
+ {
+     struct Sub *s;
+     int sel;
++#ifdef PLATFORM_VITA
++    /* NNS_G3dGetCurrentMtx writes a 4x3 matrix, 0x30 bytes, from local0: the ROM's frame has
++     * the translation row local24 right after the 3x3 local0. As two arrays GCC put them
++     * elsewhere and the write ran over the saved registers: the return went to 0x00011aec
++     * when a Tailbunker-type boss appeared (0.0.75). One buffer, the ROM's layout. */
++    char mtx[0x30];
++    char *const local0 = mtx;
++    char *const local24 = mtx + 0x24;
++#else
+     char local24[0xc];
+     char local0[0x24];
++#endif
+ 
+     s = *(struct Sub **)(((char *)a->field4) + 0x2c);
+ 
+diff --git a/src/overlays/enemies/ov223_enemy_wavecrest/Ov223_SyncPartNodesToJoint.c b/src/overlays/enemies/ov223_enemy_wavecrest/Ov223_SyncPartNodesToJoint.c
+index 29e2718b8..fc207badb 100644
+--- a/src/overlays/enemies/ov223_enemy_wavecrest/Ov223_SyncPartNodesToJoint.c
++++ b/src/overlays/enemies/ov223_enemy_wavecrest/Ov223_SyncPartNodesToJoint.c
+@@ -35,8 +35,18 @@ void Ov223_SyncPartNodesToJoint(struct Obj *a)
+ {
+     struct Sub *s;
+     int sel;
++#ifdef PLATFORM_VITA
++    /* NNS_G3dGetCurrentMtx writes a 4x3 matrix, 0x30 bytes, from local0: the ROM's frame has
++     * the translation row local24 right after the 3x3 local0. As two arrays GCC put them
++     * elsewhere and the write ran over the saved registers: the return went to 0x00011aec
++     * when a Tailbunker-type boss appeared (0.0.75). One buffer, the ROM's layout. */
++    char mtx[0x30];
++    char *const local0 = mtx;
++    char *const local24 = mtx + 0x24;
++#else
+     char local24[0xc];
+     char local0[0x24];
++#endif
+ 
+     s = *(struct Sub **)(((char *)a->field4) + 0x2c);
+ 
+diff --git a/src/overlays/enemies/ov224_enemy_avalanche/Ov224_SyncPartNodesToJoint.c b/src/overlays/enemies/ov224_enemy_avalanche/Ov224_SyncPartNodesToJoint.c
+index 486a7cb51..9f9172826 100644
+--- a/src/overlays/enemies/ov224_enemy_avalanche/Ov224_SyncPartNodesToJoint.c
++++ b/src/overlays/enemies/ov224_enemy_avalanche/Ov224_SyncPartNodesToJoint.c
+@@ -35,8 +35,18 @@ void Ov224_SyncPartNodesToJoint(struct Obj *a)
+ {
+     struct Sub *s;
+     int sel;
++#ifdef PLATFORM_VITA
++    /* NNS_G3dGetCurrentMtx writes a 4x3 matrix, 0x30 bytes, from local0: the ROM's frame has
++     * the translation row local24 right after the 3x3 local0. As two arrays GCC put them
++     * elsewhere and the write ran over the saved registers: the return went to 0x00011aec
++     * when a Tailbunker-type boss appeared (0.0.75). One buffer, the ROM's layout. */
++    char mtx[0x30];
++    char *const local0 = mtx;
++    char *const local24 = mtx + 0x24;
++#else
+     char local24[0xc];
+     char local0[0x24];
++#endif
+ 
+     s = *(struct Sub **)(((char *)a->field4) + 0x2c);
+ 
+diff --git a/src/overlays/enemies/ov225_enemy_phantomtail/Ov225_SyncPartNodesToJoint.c b/src/overlays/enemies/ov225_enemy_phantomtail/Ov225_SyncPartNodesToJoint.c
+index 81e23d5c2..53260587a 100644
+--- a/src/overlays/enemies/ov225_enemy_phantomtail/Ov225_SyncPartNodesToJoint.c
++++ b/src/overlays/enemies/ov225_enemy_phantomtail/Ov225_SyncPartNodesToJoint.c
+@@ -35,8 +35,18 @@ void Ov225_SyncPartNodesToJoint(struct Obj *a)
+ {
+     struct Sub *s;
+     int sel;
++#ifdef PLATFORM_VITA
++    /* NNS_G3dGetCurrentMtx writes a 4x3 matrix, 0x30 bytes, from local0: the ROM's frame has
++     * the translation row local24 right after the 3x3 local0. As two arrays GCC put them
++     * elsewhere and the write ran over the saved registers: the return went to 0x00011aec
++     * when a Tailbunker-type boss appeared (0.0.75). One buffer, the ROM's layout. */
++    char mtx[0x30];
++    char *const local0 = mtx;
++    char *const local24 = mtx + 0x24;
++#else
+     char local24[0xc];
+     char local0[0x24];
++#endif
+ 
+     s = *(struct Sub **)(((char *)a->field4) + 0x2c);
+ 
+diff --git a/src/overlays/enemies/ov226_enemy_windstorm/Ov226_SyncPartNodesToJoint.c b/src/overlays/enemies/ov226_enemy_windstorm/Ov226_SyncPartNodesToJoint.c
+index 2d0c31a6a..fad0602f4 100644
+--- a/src/overlays/enemies/ov226_enemy_windstorm/Ov226_SyncPartNodesToJoint.c
++++ b/src/overlays/enemies/ov226_enemy_windstorm/Ov226_SyncPartNodesToJoint.c
+@@ -35,8 +35,18 @@ void Ov226_SyncPartNodesToJoint(struct Obj *a)
+ {
+     struct Sub *s;
+     int sel;
++#ifdef PLATFORM_VITA
++    /* NNS_G3dGetCurrentMtx writes a 4x3 matrix, 0x30 bytes, from local0: the ROM's frame has
++     * the translation row local24 right after the 3x3 local0. As two arrays GCC put them
++     * elsewhere and the write ran over the saved registers: the return went to 0x00011aec
++     * when a Tailbunker-type boss appeared (0.0.75). One buffer, the ROM's layout. */
++    char mtx[0x30];
++    char *const local0 = mtx;
++    char *const local24 = mtx + 0x24;
++#else
+     char local24[0xc];
+     char local0[0x24];
++#endif
+ 
+     s = *(struct Sub **)(((char *)a->field4) + 0x2c);
+ 
+diff --git a/src/overlays/enemies/ov227_enemy_dustflier/Ov227_SyncPartNodesToJoint.c b/src/overlays/enemies/ov227_enemy_dustflier/Ov227_SyncPartNodesToJoint.c
+index 8239df45c..6e606ffe0 100644
+--- a/src/overlays/enemies/ov227_enemy_dustflier/Ov227_SyncPartNodesToJoint.c
++++ b/src/overlays/enemies/ov227_enemy_dustflier/Ov227_SyncPartNodesToJoint.c
+@@ -35,8 +35,18 @@ void Ov227_SyncPartNodesToJoint(struct Obj *a)
+ {
+     struct Sub *s;
+     int sel;
++#ifdef PLATFORM_VITA
++    /* NNS_G3dGetCurrentMtx writes a 4x3 matrix, 0x30 bytes, from local0: the ROM's frame has
++     * the translation row local24 right after the 3x3 local0. As two arrays GCC put them
++     * elsewhere and the write ran over the saved registers: the return went to 0x00011aec
++     * when a Tailbunker-type boss appeared (0.0.75). One buffer, the ROM's layout. */
++    char mtx[0x30];
++    char *const local0 = mtx;
++    char *const local24 = mtx + 0x24;
++#else
+     char local24[0xc];
+     char local0[0x24];
++#endif
+ 
+     s = *(struct Sub **)(((char *)a->field4) + 0x2c);
+ 
 diff --git a/src/overlays/enemies/ov238_enemy_pete_41/Ov238_ChargeSweepTick.c b/src/overlays/enemies/ov238_enemy_pete_41/Ov238_ChargeSweepTick.c
 index 2d139dd65..7f177fb22 100644
 --- a/src/overlays/enemies/ov238_enemy_pete_41/Ov238_ChargeSweepTick.c
