@@ -16,6 +16,8 @@ extern volatile uint32_t kh_cpu_irqs_delivered, kh_cpu_preempted, kh_cpu_switche
 extern volatile uint64_t kh_cpu_halt_us; /* game core idle time (OS_Halt), for the stats */
 
 void kh_cpu_init(void);
+/* For a hung game: the return addresses on the running DS thread's stack. */
+void kh_cpu_log_owner_stack(void);
 /* The calling Vita thread becomes the one running NitroSDK code (the launcher thread). */
 void kh_cpu_set_owner(void);
 

@@ -554,7 +554,7 @@ void kh_game_run(void)
             LOG("watchdog: no progress for 5 s (%s)", status);
             kh_cpu_log_state();
             log_wait_registers();
-            fault_sample_overlays();
+            kh_cpu_log_owner_stack();
             kh_probe_arm();
             log_flush();
         }

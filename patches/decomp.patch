@@ -2122,24 +2122,28 @@ index 6d32143b9..aa0d5e912 100644
 +    MIi_CpuCopy32(src, (void *)(offset + 0x400 + KH_HW(0x7000000)), len);
  }
 diff --git a/libs/nitro/gx/calls/GXS_LoadOBJExtPltt.c b/libs/nitro/gx/calls/GXS_LoadOBJExtPltt.c
-index 4e105f8d0..8043b3566 100644
+index 4e105f8d0..4a0ba722e 100644
 --- a/libs/nitro/gx/calls/GXS_LoadOBJExtPltt.c
 +++ b/libs/nitro/gx/calls/GXS_LoadOBJExtPltt.c
-@@ -1,3 +1,4 @@
+@@ -1,13 +1,17 @@
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: fixed DS addresses */
  /* Uploads a sub OBJ extended-palette block: async DMA when a channel is configured, plain
   * CPU copy otherwise. */
  extern void MI_DmaCopy32Async(int ch, const void *src, void *dst, unsigned int len, void *cb, void *arg);
-@@ -6,8 +7,8 @@ extern int data_020422b8[];
+ extern void MIi_CpuCopy32(const void *src, void *dst, unsigned int len);
+ extern int data_020422b8[];
  
++/* PLATFORM_VITA: the LCDC address of bank I in one piece; as 0x06000000 + 0x8a0000 it was
++ * the main BG view's base plus 0x8a0000, past every VRAM buffer (the shop's sub-screen
++ * sprites drew black, their palettes written elsewhere). */
  void GXS_LoadOBJExtPltt(const void *src, unsigned int offset, unsigned int len) {
      if (data_020422b8[0] != -1) {
 -        MI_DmaCopy32Async(data_020422b8[0], src, (void *)(offset + 0x8a0000 + 0x6000000), len, 0, 0);
-+        MI_DmaCopy32Async(data_020422b8[0], src, (void *)(offset + 0x8a0000 + KH_HW(0x6000000)), len, 0, 0);
++        MI_DmaCopy32Async(data_020422b8[0], src, (void *)(offset + KH_HW(0x068a0000)), len, 0, 0);
          return;
      }
 -    MIi_CpuCopy32(src, (void *)(offset + 0x8a0000 + 0x6000000), len);
-+    MIi_CpuCopy32(src, (void *)(offset + 0x8a0000 + KH_HW(0x6000000)), len);
++    MIi_CpuCopy32(src, (void *)(offset + KH_HW(0x068a0000)), len);
  }
 diff --git a/libs/nitro/gx/calls/GXS_LoadOBJPltt.c b/libs/nitro/gx/calls/GXS_LoadOBJPltt.c
 index 5dd1dee25..b3c22a636 100644

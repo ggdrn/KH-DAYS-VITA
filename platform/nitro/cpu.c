@@ -650,3 +650,42 @@ void kh_cpu_log_state(void)
         }
     }
 }
+
+/* The baton holder's live stack, for a game that spins without calling the port: every word
+ * that is a return address (the instruction before it a BL or BLX in the eboot's code), from
+ * the oldest frame down. Words below the thread's current sp are stale and may follow; the
+ * chain that ends in the spinning function comes first. */
+extern int kh_is_code(unsigned long a);
+
+static int is_call_return(uint32_t w)
+{
+    uint32_t ins;
+    if (!kh_is_code(w) || !kh_is_code(w - 4))
+        return 0;
+    ins = *(const uint32_t *)(uintptr_t)(w - 4);
+    return (ins & 0x0f000000u) == 0x0b000000u ||   /* BL */
+           (ins & 0xfe000000u) == 0xfa000000u ||   /* BLX imm */
+           (ins & 0x0ffffff0u) == 0x012fff30u;     /* BLX reg */
+}
+
+void kh_cpu_log_owner_stack(void)
+{
+    SceKernelThreadInfo info = { .size = sizeof(info) };
+    const uint32_t *lo, *hi, *p;
+    int n = 0;
+    if (s_owner < 0 || sceKernelGetThreadInfo(s_owner, &info) < 0) {
+        LOG("cpu: no stack for the baton holder");
+        return;
+    }
+    lo = (const uint32_t *)info.stack;
+    hi = (const uint32_t *)((const uint8_t *)info.stack + info.stackSize);
+    LOG("cpu: return addresses on %s's stack (%p-%p), oldest first:", info.name, (const void *)lo,
+        (const void *)hi);
+    for (p = hi - 1; p >= lo && n < 64; p--) {
+        if (is_call_return(*p)) {
+            LOG("cpu:   +%05x %08x", (unsigned)((const uint8_t *)hi - (const uint8_t *)p),
+                (unsigned)*p);
+            n++;
+        }
+    }
+}

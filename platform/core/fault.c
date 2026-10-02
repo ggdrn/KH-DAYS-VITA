@@ -90,67 +90,9 @@ static int null_call(KuKernelExceptionContext *c)
     return 1;
 }
 
-/* Where a hung game thread is (fault_sample_overlays): the overlays' code is made
- * non-executable for a moment, and the first thread that runs it stops here with its
- * registers; the code is executable again before it carries on. */
-extern char kh_ov000_text_start[], kh_ov_text_all_end[];
-static volatile int s_sampling;
-static KuKernelExceptionContext s_sample;
-static volatile int s_sampled;
-
-static uintptr_t sample_lo(void) { return ((uintptr_t)kh_ov000_text_start + 0xfff) & ~0xfffu; }
-static uintptr_t sample_hi(void) { return (uintptr_t)kh_ov_text_all_end & ~0xfffu; }
-
-static int sample_hit(KuKernelExceptionContext *c)
-{
-    if (!s_sampling || c->exceptionType != 1 || c->pc < sample_lo() || c->pc >= sample_hi())
-        return 0;
-    kuKernelMemProtect((void *)sample_lo(), sample_hi() - sample_lo(),
-                       KU_KERNEL_PROT_READ | KU_KERNEL_PROT_EXEC);
-    s_sample = *c;
-    s_sampling = 0;
-    s_sampled = 1;
-    return 1; /* the instruction runs again, executable now */
-}
-
-void fault_sample_overlays(void)
-{
-    int r, i;
-    s_sampled = 0;
-    s_sampling = 1;
-    r = kuKernelMemProtect((void *)sample_lo(), sample_hi() - sample_lo(), KU_KERNEL_PROT_READ);
-    if (r < 0) {
-        s_sampling = 0;
-        LOG("sample: could not protect the overlay code (%08x)", (unsigned)r);
-        return;
-    }
-    for (i = 0; i < 30 && !s_sampled; i++)
-        sceKernelDelayThread(10000);
-    if (!s_sampled) {
-        s_sampling = 0;
-        kuKernelMemProtect((void *)sample_lo(), sample_hi() - sample_lo(),
-                           KU_KERNEL_PROT_READ | KU_KERNEL_PROT_EXEC);
-        LOG("sample: no thread ran overlay code in 300 ms (the hang is in the main module)");
-        return;
-    }
-    LOG("sample: a thread is at pc=%08x lr=%08x sp=%08x (main=%08x)", (unsigned)s_sample.pc,
-        (unsigned)s_sample.lr, (unsigned)s_sample.sp, (unsigned)(uintptr_t)main);
-    LOG("sample:   r0=%08x r1=%08x r2=%08x r3=%08x r4=%08x r5=%08x r6=%08x r7=%08x",
-        (unsigned)s_sample.r0, (unsigned)s_sample.r1, (unsigned)s_sample.r2, (unsigned)s_sample.r3,
-        (unsigned)s_sample.r4, (unsigned)s_sample.r5, (unsigned)s_sample.r6, (unsigned)s_sample.r7);
-    {
-        const uint32_t *sp = (const uint32_t *)(uintptr_t)s_sample.sp;
-        LOG("sample:   stack %08x %08x %08x %08x %08x %08x %08x %08x", (unsigned)sp[0],
-            (unsigned)sp[1], (unsigned)sp[2], (unsigned)sp[3], (unsigned)sp[4], (unsigned)sp[5],
-            (unsigned)sp[6], (unsigned)sp[7]);
-    }
-}
-
 #define HANDLER(i)                                                                 \
     static void handler##i(KuKernelExceptionContext *c)                            \
     {                                                                              \
-        if (sample_hit(c))                                                         \
-            return;                                                                \
         if (null_call(c))                                                          \
             return;                                                                \
         report(c);                                                                 \
@@ -173,7 +115,7 @@ void fault_init(void)
 
 /* Whether a is an address in the eboot's code (the main module's .text through the overlays'),
  * for game code that is about to call a value it computed. */
-extern char _init[];
+extern char _init[], kh_ov_text_all_end[];
 int kh_is_code(unsigned long a)
 {
     return a >= (uintptr_t)_init && a < (uintptr_t)kh_ov_text_all_end && !(a & 3);
