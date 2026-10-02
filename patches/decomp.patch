@@ -17052,6 +17052,23 @@ index c2e844217..2e80ed69b 100644
  };
  
  void Ov005_GetGridMaskExtent(struct S *s, unsigned short *outW, unsigned short *outH)
+diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_HandleDirectionalInput.c b/src/overlays/scenes/ov005_mission_result/Ov005_HandleDirectionalInput.c
+index d724f9538..4dcd0c427 100644
+--- a/src/overlays/scenes/ov005_mission_result/Ov005_HandleDirectionalInput.c
++++ b/src/overlays/scenes/ov005_mission_result/Ov005_HandleDirectionalInput.c
+@@ -11,9 +11,10 @@ extern int Ov005_MoveSelection(int);
+ extern void PlaySound(int,int);
+ extern void Ov005_RefreshSelectionIndicators(void);
+ int Ov005_HandleDirectionalInput(void) {
+-    int direction;
++    int direction=0;
+     int changed;
+-    /* The target leaves r4 unchanged when none of these direction bits is set. */
++    /* The target leaves r4 unchanged when none of these direction bits is set. PLATFORM_VITA: 0;
++     * GCC otherwise folds the unset value into one of the directions. */
+     if(Mem_ReadU16(&data_ov005_0205b80c->menuLimitHeader)&0x40)direction=0x40;
+     if(Mem_ReadU16(&data_ov005_0205b80c->menuLimitHeader)&0x80)direction=0x80;
+     if(Mem_ReadU16(&data_ov005_0205b80c->menuLimitHeader)&0x20)direction=0x20;
 diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_InitResultResources.c b/src/overlays/scenes/ov005_mission_result/Ov005_InitResultResources.c
 index d334c670a..8d0601af1 100644
 --- a/src/overlays/scenes/ov005_mission_result/Ov005_InitResultResources.c
@@ -17202,6 +17219,23 @@ index 11b15fb55..79b002e36 100644
  #define FS_OVERLAY_ID_ov302 ((FSOverlayID)(u32)&OVERLAY_302_ID)
  
  typedef struct Ov009ListConfig {
+diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_UpdateConfirmation.c b/src/overlays/scenes/ov005_mission_result/Ov005_UpdateConfirmation.c
+index 1ea651bc7..b65c79f46 100644
+--- a/src/overlays/scenes/ov005_mission_result/Ov005_UpdateConfirmation.c
++++ b/src/overlays/scenes/ov005_mission_result/Ov005_UpdateConfirmation.c
+@@ -22,9 +22,10 @@ extern void PlaySound(int,int);
+ extern int Session_IsActive(void);
+ extern void *InstantiateClass(const void *,void *);
+ void Ov005_UpdateConfirmation(void) {
+-    int action;
++    int action=0;
+     u16 held;
+-    /* The original leaves r4 unchanged if none of these input bits is set. */
++    /* The original leaves r4 unchanged if none of these input bits is set. PLATFORM_VITA: 0;
++     * GCC otherwise folds the unset value into one of the cases, which then fires every frame. */
+     if(Mem_ReadU16(&data_ov005_0205b80c->menuLimitHeader)&0x20)action=0x20;
+     if(Mem_ReadU16(&data_ov005_0205b80c->menuLimitHeader)&0x10)action=0x10;
+     held=gPadPressed;
 diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_UpdateDialogVisibility.c b/src/overlays/scenes/ov005_mission_result/Ov005_UpdateDialogVisibility.c
 index 6719b966f..87c43fb49 100644
 --- a/src/overlays/scenes/ov005_mission_result/Ov005_UpdateDialogVisibility.c

@@ -38,6 +38,9 @@ COMMON_CFLAGS = [
 PORT_CFLAGS = ["-std=gnu11", "-O3", "-Wall", "-Wno-unused-function", "-funwind-tables"]
 GAME_CFLAGS = [
     "-std=gnu11", "-O2", "-w", "-funwind-tables",
+    # locals the ROM reads before setting (it gets whatever the register held) are 0: GCC would
+    # otherwise treat such a read as any value it likes and fold branches on it
+    "-ftrivial-auto-var-init=zero",
     # objects in source order, as mwcc emits them: the decomp's data files list a module's
     # objects in DS address order, and code reads from one into the next (tools/check_layout.py)
     "-fno-toplevel-reorder",
@@ -48,7 +51,7 @@ GAME_CFLAGS = [
     "-Wno-error=return-mismatch",
 ]
 
-GAME_CXXFLAGS = ["-std=gnu++11", "-O2", "-w", "-fno-exceptions", "-funwind-tables",
+GAME_CXXFLAGS = ["-std=gnu++11", "-O2", "-w", "-ftrivial-auto-var-init=zero", "-fno-exceptions", "-funwind-tables",
                  "-fno-toplevel-reorder", "-fpermissive"]
 
 LIBS = [
