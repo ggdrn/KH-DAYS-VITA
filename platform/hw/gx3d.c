@@ -501,6 +501,8 @@ static void emit_vertex(void)
     out->g = c5to6(s_color[1]);
     out->b = c5to6(s_color[2]);
     out->a = (uint8_t)((s_attr >> 16) & 31);
+    out->tag = (s_attr * 0x9e3779b1u) ^ (s_teximage * 0x85ebca6bu) ^ (s_pltt * 0xc2b2ae35u) ^
+               ((uint32_t)s_prim << 28) ^ (uint32_t)s_prim_n;
     s_stats.vertices++;
 
     s_prim_vtx[s_prim_n++] = idx;

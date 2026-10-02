@@ -768,34 +768,30 @@ done:
  * The game draws its 3D at 30 fps, each frame shown for two Vita frames. With interpolation on
  * (config.ini), a new frame B is first shown as the halfway mix of the previous frame A and B,
  * and B itself one Vita frame later: the movement goes at 60 fps for one frame of latency. Only
- * when A and B are the same polygons in the same order (an animated scene, not a cut, not a
- * different set of objects) and A was up for two Vita frames; otherwise B is shown at once. */
+ * the vertices both frames share from the start (mix_vertices), and when A was up for two
+ * Vita frames; otherwise B is shown at once. */
 static KhGxVertex *s_prev_vtx, *s_mix_vtx;
-static KhGxPolygon *s_prev_poly;
-static int s_prev_nvtx = -1, s_prev_npoly = -1;
+static int s_prev_nvtx = -1;
 static uint32_t s_prev_disp3dcnt;
 static int s_shown_count;  /* renders of the current serial so far */
 static int s_final_pending; /* the mix was shown: B itself next */
 
-static int same_structure(const KhGxFrame *f)
-{
-    int i;
-    if (f->nvtx != s_prev_nvtx || f->npoly != s_prev_npoly || f->disp3dcnt != s_prev_disp3dcnt)
-        return 0;
-    for (i = 0; i < f->npoly; i++) {
-        const KhGxPolygon *a = &s_prev_poly[i], *b = &f->poly[i];
-        if (a->count != b->count || a->attr != b->attr || a->teximage != b->teximage ||
-            a->pltt != b->pltt || memcmp(a->v, b->v, sizeof(a->v)))
-            return 0;
-    }
-    return 1;
-}
-
-/* the halfway vertices; 0 when too many of them jump (a camera cut on the same models) */
+/* How many vertices from the start of the frame are the previous frame's again (same tag in
+ * the same place): the scene is sent in the same order every frame -- the field, the
+ * characters, then effects that come and go -- so this keeps the field and the characters
+ * interpolated when the tail differs. Their halfway mix goes to s_mix_vtx, the rest is the
+ * new frame's; 0 when too little matches or a quarter of it jumps (a camera cut). */
 static int mix_vertices(const KhGxFrame *f)
 {
-    int i, jumps = 0;
-    for (i = 0; i < f->nvtx; i++) {
+    const int n = f->nvtx < s_prev_nvtx ? f->nvtx : s_prev_nvtx;
+    int i, p, jumps = 0;
+    if (f->disp3dcnt != s_prev_disp3dcnt)
+        return 0;
+    for (p = 0; p < n && s_prev_vtx[p].tag == f->vtx[p].tag; p++)
+        ;
+    if (p * 2 < f->nvtx)
+        return 0;
+    for (i = 0; i < p; i++) {
         const KhGxVertex *a = &s_prev_vtx[i], *b = &f->vtx[i];
         KhGxVertex *m = &s_mix_vtx[i];
         if (a->w > 0 && b->w > 0) {
@@ -813,8 +809,12 @@ static int mix_vertices(const KhGxFrame *f)
         m->g = (uint8_t)((a->g + b->g + 1) >> 1);
         m->b = (uint8_t)((a->b + b->b + 1) >> 1);
         m->a = b->a;
+        m->tag = b->tag;
     }
-    return jumps * 4 < f->nvtx;
+    if (jumps * 4 >= p)
+        return 0;
+    memcpy(s_mix_vtx + p, f->vtx + p, sizeof(KhGxVertex) * (size_t)(f->nvtx - p));
+    return 1;
 }
 
 static void keep_as_previous(const KhGxFrame *f)
@@ -822,14 +822,11 @@ static void keep_as_previous(const KhGxFrame *f)
     if (!s_prev_vtx) {
         s_prev_vtx = malloc(sizeof(KhGxVertex) * KH_GX_MAX_VERTICES);
         s_mix_vtx = malloc(sizeof(KhGxVertex) * KH_GX_MAX_VERTICES);
-        s_prev_poly = malloc(sizeof(KhGxPolygon) * KH_GX_MAX_POLYGONS);
-        if (!s_prev_vtx || !s_mix_vtx || !s_prev_poly)
+        if (!s_prev_vtx || !s_mix_vtx)
             return;
     }
     memcpy(s_prev_vtx, f->vtx, sizeof(KhGxVertex) * (size_t)f->nvtx);
-    memcpy(s_prev_poly, f->poly, sizeof(KhGxPolygon) * (size_t)f->npoly);
     s_prev_nvtx = f->nvtx;
-    s_prev_npoly = f->npoly;
     s_prev_disp3dcnt = f->disp3dcnt;
 }
 
@@ -853,7 +850,7 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
         unsigned tex;
         s_shown_count = 0;
         if (kh_config.frame_interpolation && s_prev_vtx && was_shown >= 1 && !s_final_pending &&
-            same_structure(f) && mix_vertices(f)) {
+            mix_vertices(f)) {
             tex = draw_frame(f, s_mix_vtx);
             s_final_pending = 1;
         } else {

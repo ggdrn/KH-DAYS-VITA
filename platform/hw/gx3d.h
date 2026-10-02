@@ -24,6 +24,8 @@ typedef struct {
     float s, t;       /* texture coordinates in texels */
     uint8_t r, g, b;  /* 0-63, the rasterizer's 6-bit vertex colour */
     uint8_t a;        /* the polygon's alpha (POLYGON_ATTR 16-20), 0-31 */
+    uint32_t tag;     /* what it belongs to (attributes, texture, primitive): matches the
+                       * same vertex in the next frame, for the 60 fps interpolation */
 } KhGxVertex;
 
 typedef struct {
