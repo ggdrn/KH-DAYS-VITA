@@ -26,6 +26,13 @@ static uint8_t s_valid[256];
 /* ---- engine state ---------------------------------------------------------------------- */
 
 static Mtx s_proj, s_pos, s_vec, s_tex, s_clip;
+volatile float kh_gx3d_wide_x = 1.0f;
+
+/* a perspective projection (w taken from z): the field's camera, not a flat 2D-like layout */
+static int wide_now(void)
+{
+    return kh_gx3d_wide_x < 0.999f && s_proj[11] != 0;
+}
 static Mtx s_proj_stack[1], s_pos_stack[32], s_vec_stack[32], s_tex_stack[1];
 static int s_proj_sp, s_pos_sp, s_tex_sp, s_mtx_mode, s_stack_error;
 static int s_clip_dirty = 1;
@@ -476,6 +483,8 @@ static void emit_vertex(void)
                              (int64_t)s_vtx[2] * s_tex[9]) >> 24) + s_raw_st[1];
     }
     transform(s_vtx, c);
+    if (wide_now())
+        c[0] = (int32_t)((float)c[0] * kh_gx3d_wide_x);
     idx = f->nvtx++;
     out = &f->vtx[idx];
     {
@@ -543,6 +552,8 @@ static void box_test(const uint32_t *p)
         int16_t v[3] = { (int16_t)(x + ((i & 1) ? w : 0)), (int16_t)(y + ((i & 2) ? h : 0)),
                          (int16_t)(z + ((i & 4) ? d : 0)) };
         transform(v, c[i]);
+        if (wide_now())
+            c[i][0] = (int32_t)((float)c[i][0] * kh_gx3d_wide_x);
     }
     /* invisible when every corner lies outside one and the same frustum plane */
     for (plane = 0; plane < 6 && visible; plane++) {
@@ -569,6 +580,9 @@ static void pos_test(const uint32_t *p)
     s_vtx[1] = (int16_t)(p[0] >> 16);
     s_vtx[2] = (int16_t)(p[1] & 0xffff);
     transform(s_vtx, c);
+    /* in widescreen too, so that 2D markers the game places from it stay on their models */
+    if (wide_now())
+        c[0] = (int32_t)((float)c[0] * kh_gx3d_wide_x);
     for (i = 0; i < 4; i++)
         KH_IO32(0x04000620 + i * 4) = (uint32_t)c[i];
 }

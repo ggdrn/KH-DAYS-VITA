@@ -442,6 +442,12 @@ static void compute_layout(void)
     }
 }
 
+float video_screen_aspect(int screen)
+{
+    const ScreenRect *r = &s_rect[screen & 1];
+    return r->h ? (float)r->w / (float)r->h : 4.0f / 3.0f;
+}
+
 int video_inset_screen(void)
 {
     return s_inset;

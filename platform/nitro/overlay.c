@@ -66,6 +66,11 @@ static void mark_loaded(const KhOverlay *ov)
     s_loaded_seq[ov->id] = ++s_seq;
 }
 
+int kh_overlay_loaded(int id)
+{
+    return s_loaded_seq && id >= 0 && id < kh_overlay_count && s_loaded_seq[id] != 0;
+}
+
 /* The dispatchers of tools/ovdisp.py: tab = { DS address, n, { overlay id, function } x n }.
  * The function of the candidate loaded last; with none loaded the first that exists (logged). */
 void *kh_ovdisp_resolve(const uint32_t *tab)

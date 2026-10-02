@@ -252,6 +252,13 @@ static void present(void)
         }
     }
     {
+        /* widescreen in the field (ov022, the field's action code, is loaded; menus over a
+         * 3D model keep the DS's picture) when engine A's screen is drawn wider than 4:3 */
+        const float aspect = video_screen_aspect(a_on_top ? 0 : 1);
+        kh_gx3d_wide_x = (kh_config.widescreen && kh_overlay_loaded(22) && aspect > 1.4f)
+                             ? (4.0f / 3.0f) / aspect : 1.0f;
+    }
+    {
         const KhGxFrame *frame3d = NULL;
         const int on3d = (KH_IO32(0x04000000) & 0x108) == 0x108 && s_gpu3d;
         if (on3d) {

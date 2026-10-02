@@ -49,6 +49,11 @@ typedef struct {
 
 void kh_gx3d_init(void);
 
+/* Widescreen: perspective geometry has its clip-space x multiplied by this before it is
+ * drawn (1 = the DS's 4:3), and the box test sees the wider view. The game's own reads of
+ * the matrices and position tests stay as on the DS. Set by the display loop. */
+extern volatile float kh_gx3d_wide_x;
+
 /* A word written to a GX register as the decomp's KH_GX_CMD (or a FIFO copy) does it. */
 void kh_gx_cmd(volatile void *reg, unsigned long value);
 

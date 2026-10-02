@@ -12,16 +12,9 @@
 
 #define STICK_DEADZONE 48
 
-/* Positional mapping, as on the DS: the right face button is A, the bottom one B. */
-static const struct {
-    uint32_t vita;
-    uint16_t ds;
-} s_map[] = {
-    { SCE_CTRL_CIRCLE, DS_KEY_A },     { SCE_CTRL_CROSS, DS_KEY_B },
-    { SCE_CTRL_TRIANGLE, DS_KEY_X },   { SCE_CTRL_SQUARE, DS_KEY_Y },
-    { SCE_CTRL_SELECT, DS_KEY_SELECT }, { SCE_CTRL_START, DS_KEY_START },
-    { SCE_CTRL_RTRIGGER, DS_KEY_R },   { SCE_CTRL_LTRIGGER, DS_KEY_L },
-};
+/* the DS button each kh_config.button[] entry stands for */
+static const uint16_t s_ds_key[KH_BTN_COUNT] = { DS_KEY_A, DS_KEY_B, DS_KEY_X, DS_KEY_Y,
+                                                 DS_KEY_L, DS_KEY_R, DS_KEY_START, DS_KEY_SELECT };
 
 static uint32_t s_prev_buttons;
 static int s_front_down;  /* a finger is on the front panel */
@@ -125,9 +118,9 @@ void input_poll(InputState *out)
 
     memset(out, 0, sizeof(*out));
     sceCtrlPeekBufferPositive(0, &pad, 1);
-    for (i = 0; i < sizeof(s_map) / sizeof(s_map[0]); i++)
-        if (pad.buttons & s_map[i].vita)
-            held |= s_map[i].ds;
+    for (i = 0; i < KH_BTN_COUNT; i++)
+        if (pad.buttons & kh_config.button[i])
+            held |= s_ds_key[i];
 
     s_rx = stick_axis(pad.rx);
     s_ry = stick_axis(pad.ry);

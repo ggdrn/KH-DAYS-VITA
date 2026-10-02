@@ -29,6 +29,8 @@ ScreenRect video_bottom_rect(void);
 int video_on_inset(int px, int py);
 /* Display pixel (960x544) -> DS touch-screen pixel; 0 when it is not on the touch screen. */
 int video_map_touch(int px, int py, int *x, int *y);
+/* The width/height of the display rectangle a screen (0 top, 1 bottom) is drawn into. */
+float video_screen_aspect(int screen);
 /* The screen drawn small (0 top, 1 bottom), -1 when both are full size. */
 int video_inset_screen(void);
 /* Swap which screen is the large one (top-main <-> bottom-main). */

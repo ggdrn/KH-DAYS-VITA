@@ -14,6 +14,7 @@
 #include "hw/io.h"
 #include "hw/textures.h"
 #include "hw/vram.h"
+#include "config.h"
 #include "log.h"
 #include "video.h"
 #include "workers.h"
@@ -146,8 +147,8 @@ static void tex_put(TexEntry *e, uint32_t teximage, const uint32_t *px)
     }
     glBindTexture(GL_TEXTURE_2D, e->tex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, kh_config.texture_filter ? GL_LINEAR : GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, kh_config.texture_filter ? GL_LINEAR : GL_NEAREST);
     ws = !(teximage & (1u << 16)) ? GL_CLAMP_TO_EDGE : (teximage & (1u << 18)) ? GL_MIRRORED_REPEAT : GL_REPEAT;
     wt = !(teximage & (1u << 17)) ? GL_CLAMP_TO_EDGE : (teximage & (1u << 19)) ? GL_MIRRORED_REPEAT : GL_REPEAT;
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, ws);
@@ -243,7 +244,10 @@ static TexEntry *tex_get(uint32_t teximage, uint32_t pltt)
         e->checked = s_frame;
         if (hv != e->hash || !e->sx) {
             e->hash = hv;
-            tex_refresh(e, teximage, kp);
+            /* the game drawing while it uploads: VRAM still empty where a texture that is
+             * already decoded lives, keep that one rather than flash a blank one */
+            if (!(e->sx && kh_tex_source_empty(teximage)))
+                tex_refresh(e, teximage, kp);
         }
     }
     return e;
@@ -308,6 +312,7 @@ typedef struct {
     int depth_write;
     int depth_equal;
     int shadow;     /* 0 no, 1 shadow mask (polygon ID 0), 2 shadow colour */
+    int id;         /* POLYGON_ATTR 24-29, the polygon ID */
 } DrawState;
 
 static uint16_t s_idx[KH_GX_MAX_POLYGONS * 6];
@@ -335,23 +340,32 @@ static void apply_state(const DrawState *st)
     /* DS shadow polygons through the stencil: an ID-0 shadow polygon marks the pixels where it
      * lies behind the scene (its depth test fails) without drawing; a shadow polygon of
      * another ID draws its colour on marked pixels only and clears the mark */
+    /* the stencil: bit 0 the shadow mark, bits 1-6 the polygon ID of the opaque pixel (the
+     * DS's attribute buffer), so that a shadow does not fall on the model of its own ID */
+    glEnable(GL_STENCIL_TEST);
     switch (st->shadow) {
     case 1:
-        glEnable(GL_STENCIL_TEST);
-        glStencilMask(0xff);
+        glStencilMask(0x01);
         glStencilFunc(GL_ALWAYS, 1, 0xff);
         glStencilOp(GL_KEEP, GL_REPLACE, GL_KEEP);
         glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
         break;
     case 2:
-        glEnable(GL_STENCIL_TEST);
-        glStencilMask(0xff);
-        glStencilFunc(GL_EQUAL, 1, 0xff);
+        glStencilMask(0x01);
+        glStencilFunc(GL_EQUAL, 1, 0x01);
         glStencilOp(GL_KEEP, GL_KEEP, GL_ZERO);
         glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
         break;
     default:
-        glDisable(GL_STENCIL_TEST);
+        if (!st->blend && st->depth_write) {
+            glStencilMask(0x7e);
+            glStencilFunc(GL_ALWAYS, st->id << 1, 0xff);
+            glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+        } else {
+            glStencilMask(0);
+            glStencilFunc(GL_ALWAYS, 0, 0);
+            glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+        }
         glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
         break;
     }
@@ -361,6 +375,14 @@ static void flush(const DrawState *st, int first, int count)
 {
     if (!count)
         return;
+    if (st->shadow == 2) {
+        /* first unmark the pixels whose opaque polygon has this shadow's ID */
+        apply_state(st);
+        glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+        glStencilFunc(GL_EQUAL, (st->id << 1) | 1, 0x7f);
+        glStencilOp(GL_KEEP, GL_ZERO, GL_ZERO);
+        glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, s_idx + first);
+    }
     apply_state(st);
     glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, s_idx + first);
     s_stats.batches++;
@@ -603,6 +625,7 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
             ps->mode = (p->attr >> 4) & 3;
             s_stats.modes[ps->mode]++;
             ps->shadow = ps->mode == 3 ? (((p->attr >> 24) & 63) == 0 ? 1 : 2) : 0;
+            ps->id = (int)((p->attr >> 24) & 63);
             if (alpha == 0) {
                 s_stats.skipped++; /* wireframe: not yet */
                 s_pkey[i] = 0xffffffffu;
@@ -638,7 +661,8 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
                 s_pkey[i] = 0xfffffffeu;
             } else {
                 s_pkey[i] = (ps->tex ? (uint32_t)(ps->tex - s_tex) + 1 : 0) << 4 |
-                            (uint32_t)ps->mode << 1 | (uint32_t)ps->depth_equal;
+                            (uint32_t)ps->id << 20 | (uint32_t)ps->mode << 1 |
+                            (uint32_t)ps->depth_equal;
                 s_popaque[nop++] = (uint16_t)i;
             }
         }
