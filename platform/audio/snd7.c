@@ -352,10 +352,12 @@ static uint16_t rand16(void)
 
 /* ---- channels ------------------------------------------------------------------------- */
 
+/* The SDK's channel timers (SND_SetupChannelPcm, SNDWaveParam.timer) are the sample period in
+ * channel clocks; the ARM7 writes 0x10000 - timer to the hardware register. */
 static double timer_rate(uint32_t timer)
 {
     timer &= 0xffff;
-    return CHANNEL_CLOCK / (double)(0x10000 - (timer ? timer : 1));
+    return CHANNEL_CLOCK / (double)(timer ? timer : 1);
 }
 
 static void hw_set_gain(Channel *c, double amp, int pan /* 0-127 */)
