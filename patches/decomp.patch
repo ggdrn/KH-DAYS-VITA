@@ -10003,6 +10003,132 @@ index b8d9f9286..746b34dda 100644
  };
  
  struct Node {
+diff --git a/src/overlays/enemies/ov156_enemy_blizzard_plant/Ov156_ChargeAimedShotState.c b/src/overlays/enemies/ov156_enemy_blizzard_plant/Ov156_ChargeAimedShotState.c
+index 8de12fec4..20630d893 100644
+--- a/src/overlays/enemies/ov156_enemy_blizzard_plant/Ov156_ChargeAimedShotState.c
++++ b/src/overlays/enemies/ov156_enemy_blizzard_plant/Ov156_ChargeAimedShotState.c
+@@ -41,7 +41,16 @@
+ 
+ extern void Ov156_ProbeGroundBelowNode(int *state, int *p);
+ extern long long FX_DivFx64c(int a, int b);
++#ifdef PLATFORM_VITA
++/* defined with a long long length: mwccarm passed it in the next two registers, GCC's
++ * EABI starts it on an even one, so the call goes through the real prototype with the
++ * halves put back together (0.0.76: the Poison Plant crashed in its sweep) */
++extern void Ov156_GroundSweep(void *state, long long len, const void *at);
++#define Ov156_GroundSweep(s, lo, hi, p) \
++    Ov156_GroundSweep((void *)(s), (long long)(unsigned)(lo) | (long long)(hi) << 32, (const void *)(p))
++#else
+ extern void Ov156_GroundSweep(int *state, int lo, int hi, int *p);
++#endif
+ extern void SetIndexedSlot(int self, int idx, int cb);
+ extern int Ov107_FindNearestObject(int obj, int out);
+ extern void VEC_Subtract(void *a, void *b, void *d);
+diff --git a/src/overlays/enemies/ov156_enemy_blizzard_plant/Ov156_ChargeWindup.c b/src/overlays/enemies/ov156_enemy_blizzard_plant/Ov156_ChargeWindup.c
+index bda1d45eb..655ce9761 100644
+--- a/src/overlays/enemies/ov156_enemy_blizzard_plant/Ov156_ChargeWindup.c
++++ b/src/overlays/enemies/ov156_enemy_blizzard_plant/Ov156_ChargeWindup.c
+@@ -16,7 +16,16 @@ extern void VEC_Subtract(void *a, void *b, void *d);
+ extern int func_020050b4(int x, int z);
+ extern void Ov156_ProbeGroundBelowNode(int *state, int *p);
+ extern long long FX_DivFx64c(int a, int b);
++#ifdef PLATFORM_VITA
++/* defined with a long long length: mwccarm passed it in the next two registers, GCC's
++ * EABI starts it on an even one, so the call goes through the real prototype with the
++ * halves put back together (0.0.76: the Poison Plant crashed in its sweep) */
++extern void Ov156_GroundSweep(void *state, long long len, const void *at);
++#define Ov156_GroundSweep(s, lo, hi, p) \
++    Ov156_GroundSweep((void *)(s), (long long)(unsigned)(lo) | (long long)(hi) << 32, (const void *)(p))
++#else
+ extern void Ov156_GroundSweep(int *state, int lo, int hi, int *p);
++#endif
+ extern void SetIndexedSlot(int self, int idx, int cb);
+ extern int Ov156_ChargeAimedShotState;
+ void Ov156_ChargeWindup(int *self) {
+diff --git a/src/overlays/enemies/ov156_enemy_blizzard_plant/Ov156_stTimedInterpPhases.c b/src/overlays/enemies/ov156_enemy_blizzard_plant/Ov156_stTimedInterpPhases.c
+index 4c734fcf2..ea1dd58a9 100644
+--- a/src/overlays/enemies/ov156_enemy_blizzard_plant/Ov156_stTimedInterpPhases.c
++++ b/src/overlays/enemies/ov156_enemy_blizzard_plant/Ov156_stTimedInterpPhases.c
+@@ -7,7 +7,16 @@
+ struct bf { unsigned b : 8; };
+ extern void Ov156_ProbeGroundBelowNode(void *state, void *p);
+ extern long long FX_DivFx64c(int a, int b);
++#ifdef PLATFORM_VITA
++/* defined with a long long length: mwccarm passed it in the next two registers, GCC's
++ * EABI starts it on an even one, so the call goes through the real prototype with the
++ * halves put back together (0.0.76: the Poison Plant crashed in its sweep) */
++extern void Ov156_GroundSweep(void *state, long long len, const void *at);
++#define Ov156_GroundSweep(s, lo, hi, p) \
++    Ov156_GroundSweep((void *)(s), (long long)(unsigned)(lo) | (long long)(hi) << 32, (const void *)(p))
++#else
+ extern void Ov156_GroundSweep(void *state, int a, int b, void *p);
++#endif
+ extern void SetIndexedSlot(void *obj, int idx, void *value);
+ 
+ void Ov156_stTimedInterpPhases(int *node) {
+diff --git a/src/overlays/enemies/ov157_enemy_blizzard_plant_2/Ov157_ChargeAimedShotState.c b/src/overlays/enemies/ov157_enemy_blizzard_plant_2/Ov157_ChargeAimedShotState.c
+index 681eec870..ad47c80e1 100644
+--- a/src/overlays/enemies/ov157_enemy_blizzard_plant_2/Ov157_ChargeAimedShotState.c
++++ b/src/overlays/enemies/ov157_enemy_blizzard_plant_2/Ov157_ChargeAimedShotState.c
+@@ -41,7 +41,16 @@
+ 
+ extern void Ov157_ProbeGroundBelowNode(int *state, int *p);
+ extern long long FX_DivFx64c(int a, int b);
++#ifdef PLATFORM_VITA
++/* defined with a long long length: mwccarm passed it in the next two registers, GCC's
++ * EABI starts it on an even one, so the call goes through the real prototype with the
++ * halves put back together (0.0.76: the Poison Plant crashed in its sweep) */
++extern void Ov157_GroundSweep(void *state, long long len, const void *at);
++#define Ov157_GroundSweep(s, lo, hi, p) \
++    Ov157_GroundSweep((void *)(s), (long long)(unsigned)(lo) | (long long)(hi) << 32, (const void *)(p))
++#else
+ extern void Ov157_GroundSweep(int *state, int lo, int hi, int *p);
++#endif
+ extern void SetIndexedSlot(int self, int idx, int cb);
+ extern int Ov107_FindNearestObject(int obj, int out);
+ extern void VEC_Subtract(void *a, void *b, void *d);
+diff --git a/src/overlays/enemies/ov157_enemy_blizzard_plant_2/Ov157_ChargeWindup.c b/src/overlays/enemies/ov157_enemy_blizzard_plant_2/Ov157_ChargeWindup.c
+index c98537e67..6d646d754 100644
+--- a/src/overlays/enemies/ov157_enemy_blizzard_plant_2/Ov157_ChargeWindup.c
++++ b/src/overlays/enemies/ov157_enemy_blizzard_plant_2/Ov157_ChargeWindup.c
+@@ -16,7 +16,16 @@ extern void VEC_Subtract(void *a, void *b, void *d);
+ extern int func_020050b4(int x, int z);
+ extern void Ov157_ProbeGroundBelowNode(int *state, int *p);
+ extern long long FX_DivFx64c(int a, int b);
++#ifdef PLATFORM_VITA
++/* defined with a long long length: mwccarm passed it in the next two registers, GCC's
++ * EABI starts it on an even one, so the call goes through the real prototype with the
++ * halves put back together (0.0.76: the Poison Plant crashed in its sweep) */
++extern void Ov157_GroundSweep(void *state, long long len, const void *at);
++#define Ov157_GroundSweep(s, lo, hi, p) \
++    Ov157_GroundSweep((void *)(s), (long long)(unsigned)(lo) | (long long)(hi) << 32, (const void *)(p))
++#else
+ extern void Ov157_GroundSweep(int *state, int lo, int hi, int *p);
++#endif
+ extern void SetIndexedSlot(int self, int idx, int cb);
+ extern int Ov157_ChargeAimedShotState;
+ void Ov157_ChargeWindup(int *self) {
+diff --git a/src/overlays/enemies/ov157_enemy_blizzard_plant_2/Ov157_stTimedInterpPhases.c b/src/overlays/enemies/ov157_enemy_blizzard_plant_2/Ov157_stTimedInterpPhases.c
+index d769fe15a..8cf0182b9 100644
+--- a/src/overlays/enemies/ov157_enemy_blizzard_plant_2/Ov157_stTimedInterpPhases.c
++++ b/src/overlays/enemies/ov157_enemy_blizzard_plant_2/Ov157_stTimedInterpPhases.c
+@@ -7,7 +7,16 @@
+ struct bf { unsigned b : 8; };
+ extern void Ov157_ProbeGroundBelowNode(void *state, void *p);
+ extern long long FX_DivFx64c(int a, int b);
++#ifdef PLATFORM_VITA
++/* defined with a long long length: mwccarm passed it in the next two registers, GCC's
++ * EABI starts it on an even one, so the call goes through the real prototype with the
++ * halves put back together (0.0.76: the Poison Plant crashed in its sweep) */
++extern void Ov157_GroundSweep(void *state, long long len, const void *at);
++#define Ov157_GroundSweep(s, lo, hi, p) \
++    Ov157_GroundSweep((void *)(s), (long long)(unsigned)(lo) | (long long)(hi) << 32, (const void *)(p))
++#else
+ extern void Ov157_GroundSweep(void *state, int a, int b, void *p);
++#endif
+ extern void SetIndexedSlot(void *obj, int idx, void *value);
+ 
+ void Ov157_stTimedInterpPhases(int *node) {
 diff --git a/src/overlays/enemies/ov160_enemy_switch_launcher/Ov160_GrabTick.c b/src/overlays/enemies/ov160_enemy_switch_launcher/Ov160_GrabTick.c
 index fed9b5472..a802ce68e 100644
 --- a/src/overlays/enemies/ov160_enemy_switch_launcher/Ov160_GrabTick.c
@@ -10129,6 +10255,132 @@ index 823eec9c9..8ce85441a 100644
  };
  
  struct Node {
+diff --git a/src/overlays/enemies/ov191_enemy_poison_plant/Ov191_ChargeAimedShotState.c b/src/overlays/enemies/ov191_enemy_poison_plant/Ov191_ChargeAimedShotState.c
+index ad86faf3a..a0bb76a7d 100644
+--- a/src/overlays/enemies/ov191_enemy_poison_plant/Ov191_ChargeAimedShotState.c
++++ b/src/overlays/enemies/ov191_enemy_poison_plant/Ov191_ChargeAimedShotState.c
+@@ -41,7 +41,16 @@
+ 
+ extern void Ov191_ProbeGroundBelowNode(int *state, int *p);
+ extern long long FX_DivFx64c(int a, int b);
++#ifdef PLATFORM_VITA
++/* defined with a long long length: mwccarm passed it in the next two registers, GCC's
++ * EABI starts it on an even one, so the call goes through the real prototype with the
++ * halves put back together (0.0.76: the Poison Plant crashed in its sweep) */
++extern void Ov191_BoxSweepPush(void *state, long long len, const void *at);
++#define Ov191_BoxSweepPush(s, lo, hi, p) \
++    Ov191_BoxSweepPush((void *)(s), (long long)(unsigned)(lo) | (long long)(hi) << 32, (const void *)(p))
++#else
+ extern void Ov191_BoxSweepPush(int *state, int lo, int hi, int *p);
++#endif
+ extern void SetIndexedSlot(int self, int idx, int cb);
+ extern int Ov191_FindTarget(int obj, int out);
+ extern void VEC_Subtract(void *a, void *b, void *d);
+diff --git a/src/overlays/enemies/ov191_enemy_poison_plant/Ov191_stTimedInterpPhases.c b/src/overlays/enemies/ov191_enemy_poison_plant/Ov191_stTimedInterpPhases.c
+index c2994dd71..875e6e840 100644
+--- a/src/overlays/enemies/ov191_enemy_poison_plant/Ov191_stTimedInterpPhases.c
++++ b/src/overlays/enemies/ov191_enemy_poison_plant/Ov191_stTimedInterpPhases.c
+@@ -7,7 +7,16 @@
+ struct bf { unsigned b : 8; };
+ extern void Ov191_ProbeGroundBelowNode(void *state, void *p);
+ extern long long FX_DivFx64c(int a, int b);
++#ifdef PLATFORM_VITA
++/* defined with a long long length: mwccarm passed it in the next two registers, GCC's
++ * EABI starts it on an even one, so the call goes through the real prototype with the
++ * halves put back together (0.0.76: the Poison Plant crashed in its sweep) */
++extern void Ov191_BoxSweepPush(void *state, long long len, const void *at);
++#define Ov191_BoxSweepPush(s, lo, hi, p) \
++    Ov191_BoxSweepPush((void *)(s), (long long)(unsigned)(lo) | (long long)(hi) << 32, (const void *)(p))
++#else
+ extern void Ov191_BoxSweepPush(void *state, int a, int b, void *p);
++#endif
+ extern void SetIndexedSlot(void *obj, int idx, void *value);
+ 
+ void Ov191_stTimedInterpPhases(int *node) {
+diff --git a/src/overlays/enemies/ov192_enemy_poison_plant_2/Ov192_ChargeAimedShotState.c b/src/overlays/enemies/ov192_enemy_poison_plant_2/Ov192_ChargeAimedShotState.c
+index 46e5c963d..75e3d1506 100644
+--- a/src/overlays/enemies/ov192_enemy_poison_plant_2/Ov192_ChargeAimedShotState.c
++++ b/src/overlays/enemies/ov192_enemy_poison_plant_2/Ov192_ChargeAimedShotState.c
+@@ -41,7 +41,16 @@
+ 
+ extern void Ov192_ProbeGroundBelowNode(int *state, int *p);
+ extern long long FX_DivFx64c(int a, int b);
++#ifdef PLATFORM_VITA
++/* defined with a long long length: mwccarm passed it in the next two registers, GCC's
++ * EABI starts it on an even one, so the call goes through the real prototype with the
++ * halves put back together (0.0.76: the Poison Plant crashed in its sweep) */
++extern void Ov192_BoxSweepPush(void *state, long long len, const void *at);
++#define Ov192_BoxSweepPush(s, lo, hi, p) \
++    Ov192_BoxSweepPush((void *)(s), (long long)(unsigned)(lo) | (long long)(hi) << 32, (const void *)(p))
++#else
+ extern void Ov192_BoxSweepPush(int *state, int lo, int hi, int *p);
++#endif
+ extern void SetIndexedSlot(int self, int idx, int cb);
+ extern int Ov192_FindTarget(int obj, int out);
+ extern void VEC_Subtract(void *a, void *b, void *d);
+diff --git a/src/overlays/enemies/ov192_enemy_poison_plant_2/Ov192_stTimedInterpPhases.c b/src/overlays/enemies/ov192_enemy_poison_plant_2/Ov192_stTimedInterpPhases.c
+index a0f6afbb9..982165eca 100644
+--- a/src/overlays/enemies/ov192_enemy_poison_plant_2/Ov192_stTimedInterpPhases.c
++++ b/src/overlays/enemies/ov192_enemy_poison_plant_2/Ov192_stTimedInterpPhases.c
+@@ -7,7 +7,16 @@
+ struct bf { unsigned b : 8; };
+ extern void Ov192_ProbeGroundBelowNode(void *state, void *p);
+ extern long long FX_DivFx64c(int a, int b);
++#ifdef PLATFORM_VITA
++/* defined with a long long length: mwccarm passed it in the next two registers, GCC's
++ * EABI starts it on an even one, so the call goes through the real prototype with the
++ * halves put back together (0.0.76: the Poison Plant crashed in its sweep) */
++extern void Ov192_BoxSweepPush(void *state, long long len, const void *at);
++#define Ov192_BoxSweepPush(s, lo, hi, p) \
++    Ov192_BoxSweepPush((void *)(s), (long long)(unsigned)(lo) | (long long)(hi) << 32, (const void *)(p))
++#else
+ extern void Ov192_BoxSweepPush(void *state, int a, int b, void *p);
++#endif
+ extern void SetIndexedSlot(void *obj, int idx, void *value);
+ 
+ void Ov192_stTimedInterpPhases(int *node) {
+diff --git a/src/overlays/enemies/ov193_enemy_poison_plant_3/Ov193_ChargeAimedShotState.c b/src/overlays/enemies/ov193_enemy_poison_plant_3/Ov193_ChargeAimedShotState.c
+index 517efcfeb..654757a62 100644
+--- a/src/overlays/enemies/ov193_enemy_poison_plant_3/Ov193_ChargeAimedShotState.c
++++ b/src/overlays/enemies/ov193_enemy_poison_plant_3/Ov193_ChargeAimedShotState.c
+@@ -41,7 +41,16 @@
+ 
+ extern void Ov193_ProbeGroundBelowNode(int *state, int *p);
+ extern long long FX_DivFx64c(int a, int b);
++#ifdef PLATFORM_VITA
++/* defined with a long long length: mwccarm passed it in the next two registers, GCC's
++ * EABI starts it on an even one, so the call goes through the real prototype with the
++ * halves put back together (0.0.76: the Poison Plant crashed in its sweep) */
++extern void Ov193_BoxSweepPush(void *state, long long len, const void *at);
++#define Ov193_BoxSweepPush(s, lo, hi, p) \
++    Ov193_BoxSweepPush((void *)(s), (long long)(unsigned)(lo) | (long long)(hi) << 32, (const void *)(p))
++#else
+ extern void Ov193_BoxSweepPush(int *state, int lo, int hi, int *p);
++#endif
+ extern void SetIndexedSlot(int self, int idx, int cb);
+ extern int Ov193_FindTarget(int obj, int out);
+ extern void VEC_Subtract(void *a, void *b, void *d);
+diff --git a/src/overlays/enemies/ov193_enemy_poison_plant_3/Ov193_stTimedInterpPhases.c b/src/overlays/enemies/ov193_enemy_poison_plant_3/Ov193_stTimedInterpPhases.c
+index 6b85c9ec3..bc895bfb4 100644
+--- a/src/overlays/enemies/ov193_enemy_poison_plant_3/Ov193_stTimedInterpPhases.c
++++ b/src/overlays/enemies/ov193_enemy_poison_plant_3/Ov193_stTimedInterpPhases.c
+@@ -7,7 +7,16 @@
+ struct bf { unsigned b : 8; };
+ extern void Ov193_ProbeGroundBelowNode(void *state, void *p);
+ extern long long FX_DivFx64c(int a, int b);
++#ifdef PLATFORM_VITA
++/* defined with a long long length: mwccarm passed it in the next two registers, GCC's
++ * EABI starts it on an even one, so the call goes through the real prototype with the
++ * halves put back together (0.0.76: the Poison Plant crashed in its sweep) */
++extern void Ov193_BoxSweepPush(void *state, long long len, const void *at);
++#define Ov193_BoxSweepPush(s, lo, hi, p) \
++    Ov193_BoxSweepPush((void *)(s), (long long)(unsigned)(lo) | (long long)(hi) << 32, (const void *)(p))
++#else
+ extern void Ov193_BoxSweepPush(void *state, int a, int b, void *p);
++#endif
+ extern void SetIndexedSlot(void *obj, int idx, void *value);
+ 
+ void Ov193_stTimedInterpPhases(int *node) {
 diff --git a/src/overlays/enemies/ov202_enemy_detonator/Ov202_ThrowReleaseTick.c b/src/overlays/enemies/ov202_enemy_detonator/Ov202_ThrowReleaseTick.c
 index 206744bf7..8531b308d 100644
 --- a/src/overlays/enemies/ov202_enemy_detonator/Ov202_ThrowReleaseTick.c
