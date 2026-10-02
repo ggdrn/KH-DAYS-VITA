@@ -200,7 +200,7 @@ int kh_gpu3d_init(int scale)
 {
     static const char *const attribs[] = { "aPos", "aTex", "aCol" };
 
-    s_scale = scale < 1 ? 1 : scale > 3 ? 3 : scale;
+    s_scale = scale < 1 ? 1 : scale > 4 ? 4 : scale;
     s_w = 256 * s_scale;
     s_h = 192 * s_scale;
 
@@ -252,6 +252,7 @@ typedef struct {
     int blend;      /* translucent with blending on */
     int depth_write;
     int depth_equal;
+    int shadow;     /* 0 no, 1 shadow mask (polygon ID 0), 2 shadow colour */
 } DrawState;
 
 static uint16_t s_idx[KH_GX_MAX_POLYGONS * 6];
@@ -269,13 +270,36 @@ static void apply_state(const DrawState *st)
     } else {
         glUniform1f(u_textured, 0.0f);
     }
-    glUniform1f(u_mode, (float)st->mode);
+    glUniform1f(u_mode, st->mode == 3 ? 0.0f : (float)st->mode);
     if (st->blend)
         glEnable(GL_BLEND);
     else
         glDisable(GL_BLEND);
     glDepthMask(st->depth_write ? GL_TRUE : GL_FALSE);
     glDepthFunc(st->depth_equal ? GL_LEQUAL : GL_LESS);
+    /* DS shadow polygons through the stencil: an ID-0 shadow polygon marks the pixels where it
+     * lies behind the scene (its depth test fails) without drawing; a shadow polygon of
+     * another ID draws its colour on marked pixels only and clears the mark */
+    switch (st->shadow) {
+    case 1:
+        glEnable(GL_STENCIL_TEST);
+        glStencilMask(0xff);
+        glStencilFunc(GL_ALWAYS, 1, 0xff);
+        glStencilOp(GL_KEEP, GL_REPLACE, GL_KEEP);
+        glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+        break;
+    case 2:
+        glEnable(GL_STENCIL_TEST);
+        glStencilMask(0xff);
+        glStencilFunc(GL_EQUAL, 1, 0xff);
+        glStencilOp(GL_KEEP, GL_KEEP, GL_ZERO);
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+        break;
+    default:
+        glDisable(GL_STENCIL_TEST);
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+        break;
+    }
 }
 
 static void flush(const DrawState *st, int first, int count)
@@ -432,7 +456,9 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
         glClearColor(r * a, g * a, b * a, a);
         glClearDepthf((float)(cd * 0x200 + 0x1ff) / 16777215.0f);
         glDepthMask(GL_TRUE);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glStencilMask(0xff);
+        glClearStencil(0);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
     }
     if (!f->npoly)
         goto done;
@@ -468,8 +494,9 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
             DrawState *ps = &s_pstate[i];
             ps->mode = (p->attr >> 4) & 3;
             s_stats.modes[ps->mode]++;
-            if (ps->mode == 3 || alpha == 0) {
-                s_stats.skipped++; /* shadow polygons, wireframe: not yet */
+            ps->shadow = ps->mode == 3 ? (((p->attr >> 24) & 63) == 0 ? 1 : 2) : 0;
+            if (alpha == 0) {
+                s_stats.skipped++; /* wireframe: not yet */
                 s_pkey[i] = 0xffffffffu;
                 continue;
             }
@@ -489,7 +516,13 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
             ps->depth_write = !p->translucent || (p->attr & (1u << 11));
             ps->depth_equal = (p->attr >> 14) & 1;
             s_stats.depth_equal += ps->depth_equal;
-            if (p->translucent || ps->depth_equal || kh_gpu3d_debug == 1) {
+            if (ps->shadow) {
+                /* shadows draw over the finished opaque scene, in the frame's order, blended
+                 * as translucent polygons are, never writing depth */
+                ps->blend = blending_on;
+                ps->depth_write = 0;
+            }
+            if (p->translucent || ps->depth_equal || ps->shadow || kh_gpu3d_debug == 1) {
                 /* keeps its place, after the grouped opaque ones. Depth-equal polygons are
                  * second passes over geometry drawn before them (a field's textures over its
                  * lit base): grouped, they could come first and be covered (Tram Common's
@@ -576,6 +609,8 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glUseProgram(0);
     glDisable(GL_DEPTH_TEST);
+    glDisable(GL_STENCIL_TEST);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glDisable(GL_BLEND);
     glDepthMask(GL_TRUE);
 done:

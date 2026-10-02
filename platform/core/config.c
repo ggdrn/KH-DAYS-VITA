@@ -9,14 +9,15 @@
 
 KhConfig kh_config = { .render_scale = 3, .layout = 0, .inset_width = 224 };
 
-#define CONFIG_VERSION 2
+#define CONFIG_VERSION 3
 
 static const char s_default[] =
     "# khdays-vita settings\n"
-    "config_version = 2\n"
+    "config_version = 3\n"
     "\n"
-    "# 3D internal resolution, as a multiple of the DS's 256x192: 1, 2 or 3.\n"
-    "# 3 (768x576) covers the Vita's 544 lines; lower ones cost less GPU time.\n"
+    "# 3D internal resolution, as a multiple of the DS's 256x192: 1, 2, 3 or 4.\n"
+    "# 3 (768x576) covers the Vita's 544 lines; 4 (1024x768) is above the screen both ways,\n"
+    "# which smooths edges (the game turns on the DS's anti-aliasing) for more GPU time.\n"
     "render_scale = 3\n"
     "\n"
     "# Starting screen layout: top (top screen over the whole display, the touch screen small\n"
@@ -88,7 +89,7 @@ void config_load(void)
             kh_config.inset_width = w < 128 ? 128 : w > 480 ? 480 : w;
         } else if (!strcmp(k, "render_scale")) {
             int s = atoi(v);
-            kh_config.render_scale = s < 1 ? 1 : s > 3 ? 3 : s;
+            kh_config.render_scale = s < 1 ? 1 : s > 4 ? 4 : s;
         }
     }
     fclose(f);

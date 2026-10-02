@@ -6,7 +6,7 @@
 
 #include "hw/gx3d.h"
 
-/* scale: the internal resolution, 1-3 times the DS's. 0 when the shaders failed to build. */
+/* scale: the internal resolution, 1-4 times the DS's. 0 when the shaders failed to build. */
 int kh_gpu3d_init(int scale);
 
 /* Draw the frame; returns the GL texture holding the 3D layer (premultiplied RGBA, GL
