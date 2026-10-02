@@ -20,6 +20,7 @@
 #include "config.h"
 #include "console.h"
 #include "workers.h"
+#include "fault.h"
 #include "input.h"
 #include "log.h"
 #include "nitro/arm7.h"
@@ -553,6 +554,7 @@ void kh_game_run(void)
             LOG("watchdog: no progress for 5 s (%s)", status);
             kh_cpu_log_state();
             log_wait_registers();
+            fault_sample_overlays();
             kh_probe_arm();
             log_flush();
         }

@@ -9232,7 +9232,7 @@ index 0df393d7c..7a5744b80 100644
      }
      if (((struct Flags *)(entry + 0x78))->f2) {
 diff --git a/src/engine/Obj_UpdateAll.c b/src/engine/Obj_UpdateAll.c
-index b793da177..e1fc1f69d 100644
+index b793da177..359ba8950 100644
 --- a/src/engine/Obj_UpdateAll.c
 +++ b/src/engine/Obj_UpdateAll.c
 @@ -1,3 +1,4 @@
@@ -9240,8 +9240,19 @@ index b793da177..e1fc1f69d 100644
  /*
   * Obj_UpdateAll - run one frame of the object registry (gObjSystem, head at [3]). Each object
   * is published as the current one ([1]) while it runs. An update callback of -2 marks an object
-@@ -36,6 +37,18 @@ void Obj_UpdateAll(int paused)
+@@ -33,9 +34,29 @@ void Obj_UpdateAll(int paused)
+         default:
+             if (paused == 0 || (obj[0] & 4)) {
+                 int arena = Heap_SetCurrent(obj[7]);
++#ifdef PLATFORM_VITA
++                /* the ROM calls through r0 (blx r0): the callback gets its own address as its
++                 * first argument, and the game's empty states (a bare `bx lr`, decompiled as
++                 * `return arg;`) hand it back to stay where they are */
++                int fn = ((int *)gObjSystem[1])[5];
++                int cb = ((int (*)(int))fn)(fn);
++#else
                  int cb = ((int (*)(void))((int *)gObjSystem[1])[5])();
++#endif
  
                  Heap_SetCurrent(arena);
 +#ifdef PLATFORM_VITA
