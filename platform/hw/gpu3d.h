@@ -9,6 +9,11 @@
 /* scale: the internal resolution, 1-4 times the DS's. 0 when the shaders failed to build. */
 int kh_gpu3d_init(int scale);
 
+/* From the port menu, any thread: a new internal resolution (1-4), the textures decoded again
+ * (after the filter changed). Applied at the next kh_gpu3d_render. */
+void kh_gpu3d_set_scale(int scale);
+void kh_gpu3d_reload_textures(void);
+
 /* Draw the frame; returns the GL texture holding the 3D layer (premultiplied RGBA, GL
  * orientation: row 0 is the bottom of the screen), 0 when there is nothing to show. */
 unsigned kh_gpu3d_render(const KhGxFrame *frame);
@@ -21,6 +26,8 @@ void kh_gpu3d_prepare(const KhGxFrame *frame);
  * order (no grouping by state), 2 every texture re-hashed every frame, 3 texture-coordinate
  * generation ignored (raw TEXCOORD values). */
 extern volatile int kh_gpu3d_debug;
+/* halfway mixes shown so far (60 fps mode), for the frame-rate counter */
+extern volatile uint32_t kh_gpu3d_mixes;
 #define KH_GPU3D_DEBUG_MODES 4
 
 /* Write the next rendered frame's textures (TGA) and polygons (text) to

@@ -26,7 +26,8 @@ typedef struct {
     uint16_t extkeys;  /* the ARM7's word at 0x027fffa8: X/Y/debug active low, hinge open */
     int touching;
     int touch_x, touch_y; /* DS pixels, 0..255 / 0..191 */
-    int swap_layout;      /* port hotkey: cycle the screen layout (edge-triggered) */
+    int port_menu;        /* port hotkey L+R+Select: open/close the port menu (edge-triggered) */
+    uint32_t vita_buttons; /* the Vita's buttons as held (SCE_CTRL_*), for the port menu */
     int toggle_console;   /* port hotkey: show/hide the on-screen console (edge-triggered) */
     int debug_cycle;      /* port hotkey: next 3D debug mode (edge-triggered) */
     int dump_3d;          /* port hotkey: dump the 3D frame for diagnosis (edge-triggered) */

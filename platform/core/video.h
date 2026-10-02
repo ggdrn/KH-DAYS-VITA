@@ -39,6 +39,10 @@ void video_swap_screens(void);
 #define VIDEO_OVERLAY_W 480
 #define VIDEO_OVERLAY_H 272
 void video_set_overlay(const uint32_t *pixels);
+/* The overlay's pixels changed: upload them at the next present (a new pointer does it too). */
+void video_overlay_changed(void);
+/* Lay the screens out again (after the port menu changed the aspect or the inset size). */
+void video_relayout(void);
 
 /* For the next video_present: screen (0 top, 1 bottom, -1 none) carries engine A's 3D layer
  * (alpha codes from hw/gpu2d.h) to lay in from the GL texture tex, then the engine's master

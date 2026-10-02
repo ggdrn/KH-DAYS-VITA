@@ -423,8 +423,11 @@ static void compute_layout(void)
 {
     switch (s_layout) {
     case LAYOUT_TOP_MAIN:
-        /* the top screen over the whole display (16:9), the touch screen small */
-        s_rect[0] = (ScreenRect){ 0, 0, DISPLAY_W, DISPLAY_H };
+        /* the top screen over the whole display (16:9), or in its own 4:3 (config aspect),
+         * the touch screen small */
+        s_rect[0] = kh_config.aspect == KH_ASPECT_4_3
+                        ? (ScreenRect){ (DISPLAY_W - 725) / 2, 0, 725, 544 }
+                        : (ScreenRect){ 0, 0, DISPLAY_W, DISPLAY_H };
         s_rect[1] = inset_rect();
         s_inset = 1;
         break;
@@ -440,6 +443,11 @@ static void compute_layout(void)
         s_inset = -1;
         break;
     }
+}
+
+void video_relayout(void)
+{
+    video_set_layout(video_layout());
 }
 
 float video_screen_aspect(int screen)
@@ -534,8 +542,17 @@ ScreenLayout video_layout(void)
     return p >= 0 ? (ScreenLayout)p : s_layout;
 }
 
+static volatile int s_overlay_dirty;
+
+void video_overlay_changed(void)
+{
+    s_overlay_dirty = 1;
+}
+
 void video_set_overlay(const uint32_t *pixels)
 {
+    if (pixels != s_overlay)
+        s_overlay_dirty = 1;
     s_overlay = pixels;
 }
 
@@ -594,8 +611,11 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glBindTexture(GL_TEXTURE_2D, s_overlay_tex);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, VIDEO_OVERLAY_W, VIDEO_OVERLAY_H, GL_RGBA,
-                        GL_UNSIGNED_BYTE, s_overlay);
+        if (s_overlay_dirty) {
+            s_overlay_dirty = 0;
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, VIDEO_OVERLAY_W, VIDEO_OVERLAY_H, GL_RGBA,
+                            GL_UNSIGNED_BYTE, s_overlay);
+        }
         draw_quad(&full);
         glDisable(GL_BLEND);
     }

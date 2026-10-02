@@ -125,7 +125,7 @@ static void diagnostic_loop(void)
     for (;;) {
         int i;
         input_poll(&in);
-        if (in.swap_layout)
+        if (in.port_menu)
             video_set_layout(video_layout() + 1);
 
         fill(s_top, 0xff402010);

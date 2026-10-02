@@ -72,6 +72,7 @@ static uint32_t s_frame;
 static uint32_t s_last_serial;
 static KhGpu3dStats s_stats;
 volatile int kh_gpu3d_debug;
+volatile uint32_t kh_gpu3d_mixes;
 
 /* ---- texture cache --------------------------------------------------------------------- */
 
@@ -255,6 +256,64 @@ static TexEntry *tex_get(uint32_t teximage, uint32_t pltt)
 
 /* ---- set-up ---------------------------------------------------------------------------- */
 
+/* the off-screen target the 3D is drawn into, s_w x s_h */
+static void make_target(void)
+{
+    glGenTextures(1, &s_color);
+    glBindTexture(GL_TEXTURE_2D, s_color);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, s_w, s_h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glGenFramebuffers(1, &s_fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, s_fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s_color, 0);
+    glGenRenderbuffers(1, &s_depth);
+    glBindRenderbuffer(GL_RENDERBUFFER, s_depth);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, s_w, s_h);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, s_depth);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+static volatile int s_want_scale, s_want_reload;
+
+void kh_gpu3d_set_scale(int scale)
+{
+    s_want_scale = scale < 1 ? 1 : scale > 4 ? 4 : scale;
+}
+
+void kh_gpu3d_reload_textures(void)
+{
+    s_want_reload = 1;
+}
+
+/* requests from the port menu, applied on the thread that draws */
+static void apply_requests(void)
+{
+    if (s_want_scale && s_want_scale != s_scale && s_prog) {
+        glDeleteFramebuffers(1, &s_fbo);
+        glDeleteRenderbuffers(1, &s_depth);
+        glDeleteTextures(1, &s_color);
+        s_scale = s_want_scale;
+        s_w = 256 * s_scale;
+        s_h = 192 * s_scale;
+        make_target();
+        s_last_serial = 0; /* draw the frame again into the new target */
+        LOG("gpu3d: now %dx%d (scale %d)", s_w, s_h, s_scale);
+    }
+    s_want_scale = 0;
+    if (s_want_reload) {
+        int i;
+        s_want_reload = 0;
+        for (i = 0; i < TEX_SLOTS; i++)
+            s_tex[i].sx = 0; /* decoded again, with the filter now chosen, when next used */
+        for (i = 0; i < TEX_SLOTS; i++)
+            s_tex[i].gen = s_tex_gen - 1;
+    }
+}
+
 int kh_gpu3d_init(int scale)
 {
     static const char *const attribs[] = { "aPos", "aTex", "aCol" };
@@ -275,22 +334,7 @@ int kh_gpu3d_init(int scale)
     u_tex = glGetUniformLocation(s_prog, "uTex");
     u_toon = glGetUniformLocation(s_prog, "uToon");
 
-    glGenTextures(1, &s_color);
-    glBindTexture(GL_TEXTURE_2D, s_color);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, s_w, s_h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-    glGenFramebuffers(1, &s_fbo);
-    glBindFramebuffer(GL_FRAMEBUFFER, s_fbo);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s_color, 0);
-    glGenRenderbuffers(1, &s_depth);
-    glBindRenderbuffer(GL_RENDERBUFFER, s_depth);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, s_w, s_h);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, s_depth);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    make_target();
 
     glGenTextures(1, &s_toon_tex);
     glBindTexture(GL_TEXTURE_2D, s_toon_tex);
@@ -834,6 +878,7 @@ static void keep_as_previous(const KhGxFrame *f)
 
 unsigned kh_gpu3d_render(const KhGxFrame *f)
 {
+    apply_requests();
     if (!s_prog || !f)
         return 0;
     if (f->serial == s_last_serial) {
@@ -856,10 +901,12 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
              * at once when no mix is possible, B would come a frame early and the motion
              * stutter (0.0.74 alternated between the two in the field) */
             s_was_mixed = mix_vertices(f);
-            if (s_was_mixed)
+            if (s_was_mixed) {
+                kh_gpu3d_mixes++;
                 tex = draw_frame(f, s_mix_vtx);
-            else
+            } else {
                 tex = s_color; /* the target still holds A */
+            }
             s_final_pending = 1;
         } else {
             s_final_pending = 0;

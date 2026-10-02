@@ -63,8 +63,18 @@ unsigned int kh_vita_camera_bits(void)
     unsigned int bits = 0;
     /* full speed (a turn every tick, even) from about 70% of the stick's travel: below it the
      * turns are spread over the ticks, which shows as an uneven camera at 60 fps */
-    const int rx = s_rx * 127 / 90 > 127 ? 127 : s_rx * 127 / 90 < -127 ? -127 : s_rx * 127 / 90;
-    const int ry = s_ry * 127 / 90 > 127 ? 127 : s_ry * 127 / 90 < -127 ? -127 : s_ry * 127 / 90;
+    /* camera_speed: full speed from all of the travel (slow: never quite), 70% (normal), 40% */
+    static const int full_at[4] = { 90, 200, 90, 50 };
+    const int div = full_at[kh_config.camera_speed & 3];
+    int rx = s_rx * 127 / div, ry = s_ry * 127 / div;
+    if (!kh_config.camera_stick)
+        return 0;
+    rx = rx > 127 ? 127 : rx < -127 ? -127 : rx;
+    ry = ry > 127 ? 127 : ry < -127 ? -127 : ry;
+    if (kh_config.camera_invert_x)
+        rx = -rx;
+    if (kh_config.camera_invert_y)
+        ry = -ry;
     if (rx) {
         acc_x += rx < 0 ? -rx : rx;
         if (acc_x >= 127) {
@@ -134,7 +144,7 @@ void input_poll(InputState *out)
         const uint64_t now = sceKernelGetProcessTimeWide();
         int dir = (pad.buttons & SCE_CTRL_DOWN) ? 1 : (pad.buttons & SCE_CTRL_UP) ? 2
                 : (pad.buttons & SCE_CTRL_LEFT) ? 3 : (pad.buttons & SCE_CTRL_RIGHT) ? 4 : 0;
-        if (now - s_deck_seen < DECK_SEEN_US) {
+        if (kh_config.dpad_deck && now - s_deck_seen < DECK_SEEN_US) {
             if (dir && dir != s_nav_dir) {
                 nav_push(dir);
                 s_nav_next = now + NAV_FIRST_US;
@@ -157,12 +167,14 @@ void input_poll(InputState *out)
     if (pad.ly < 128 - STICK_DEADZONE) held |= DS_KEY_UP;
     if (pad.ly > 128 + STICK_DEADZONE) held |= DS_KEY_DOWN;
 
-    /* L+R+Select cycles the screen layout; the combination is swallowed. */
+    /* L+R+Select opens and closes the port menu; the combination is swallowed. */
     if ((pad.buttons & (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_SELECT)) ==
         (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_SELECT)) {
-        out->swap_layout = (s_prev_buttons & SCE_CTRL_SELECT) == 0;
-        held &= ~(DS_KEY_L | DS_KEY_R | DS_KEY_SELECT);
+        out->port_menu = (s_prev_buttons & (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_SELECT)) !=
+                         (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_SELECT);
+        held = 0;
     }
+    out->vita_buttons = pad.buttons;
     /* the debug hotkeys, with debug = 1 in config.ini */
     if (kh_config.debug) {
         /* L+R+Start toggles the on-screen console; the combination is swallowed. */

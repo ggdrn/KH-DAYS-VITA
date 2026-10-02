@@ -42,5 +42,6 @@ const uint32_t *console_render(const char *status)
         /* skip the "[   time] " stamp: the width is precious */
         text(0, row, strlen(line) > 10 && line[0] == '[' ? line + 10 : line, 0xffe0e0e0u);
     }
+    video_overlay_changed();
     return s_px;
 }

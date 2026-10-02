@@ -29,6 +29,9 @@ void snd7_set_running(int running);
  * arena on a 64-bit host (tools/snd_test). */
 extern uintptr_t snd7_ptr_base;
 
+/* The port's own volume over the game's, 0-1 (the port menu). */
+extern volatile float snd7_port_volume;
+
 /* Hooks the host provides: deliver a word to the ARM9 on PXI tag 7 (alarms). */
 extern void (*snd7_send_to_arm9)(uint32_t word);
 

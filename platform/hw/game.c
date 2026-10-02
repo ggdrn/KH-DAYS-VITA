@@ -19,6 +19,7 @@
 #include "hw/shared_area.h"
 #include "config.h"
 #include "console.h"
+#include "portmenu.h"
 #include "workers.h"
 #include "fault.h"
 #include "input.h"
@@ -275,7 +276,7 @@ static void present(void)
         /* widescreen in the field (ov022, the field's action code, is loaded; menus over a
          * 3D model keep the DS's picture) when engine A's screen is drawn wider than 4:3 */
         const float aspect = video_screen_aspect(a_on_top ? 0 : 1);
-        kh_gx3d_wide_x = (kh_config.widescreen && kh_overlay_loaded(22) && aspect > 1.4f)
+        kh_gx3d_wide_x = (kh_config.aspect == KH_ASPECT_WIDE && kh_overlay_loaded(22) && aspect > 1.4f)
                              ? (4.0f / 3.0f) / aspect : 1.0f;
     }
     {
@@ -371,6 +372,30 @@ static void present(void)
 
 static void sample_input(void);
 
+/* "60 FPS (jogo 30)": the 3D frames shown per second (the game's own and the mixed ones in
+ * between) and the game's, measured over the last second */
+static const char *fps_label(void)
+{
+    static char label[32];
+    static uint64_t since;
+    static uint32_t serial0, mixes0;
+    const uint64_t now = sceKernelGetProcessTimeWide();
+    if (!since) {
+        since = now;
+        serial0 = kh_gx3d_serial();
+        mixes0 = kh_gpu3d_mixes;
+        snprintf(label, sizeof(label), "-- FPS");
+    } else if (now - since >= 1000000) {
+        const uint32_t game = kh_gx3d_serial() - serial0, mixes = kh_gpu3d_mixes - mixes0;
+        const uint32_t shown = game + mixes > 60 ? 60 : game + mixes;
+        snprintf(label, sizeof(label), "%u FPS (jogo %u)", (unsigned)shown, (unsigned)game);
+        since = now;
+        serial0 = kh_gx3d_serial();
+        mixes0 = kh_gpu3d_mixes;
+    }
+    return label;
+}
+
 /* Diagnosis dump of the displayed frame's 2D side: both screens as composed (alpha = the
  * gpu2d.h code per pixel), engine A's layers one by one, and the display registers. */
 static void dump_2d(int a_on_top)
@@ -439,11 +464,14 @@ static int vblank_thread(SceSize args, void *argp)
     for (;;) {
         sceDisplayWaitVblankStart();
         sample_input();
+        s_vblanks++;
+        /* the port menu holds the game: no VBlank reaches it, so nothing advances */
+        if (portmenu_is_open())
+            continue;
         kh_hw_vblank_start_us = sceKernelGetProcessTimeWide();
         (*(volatile uint32_t *)KH_SHARED(HW_VBLANK_COUNT_BUF))++;
         if (KH_IO16(0x04000004) & 0x08) /* DISPSTAT: VBlank IRQ enabled */
             kh_irq_raise(KH_IRQ_VBLANK);
-        s_vblanks++;
     }
     return 0;
 }
@@ -452,8 +480,16 @@ static void sample_input(void)
 {
     InputState in;
     input_poll(&in);
-    if (in.swap_layout)
-        video_set_layout(video_layout() + 1);
+    if (in.port_menu)
+        portmenu_toggle();
+    if (portmenu_is_open()) {
+        /* the game sees no button and no touch while the menu has them */
+        portmenu_input(in.vita_buttons, sceKernelGetProcessTimeWide());
+        KH_IO16(0x04000130) = 0x03ff;
+        *(volatile uint16_t *)KH_SHARED(HW_BUTTON_XY_BUF) = 0x2c00;
+        kh_arm7_touch(0, 0, 0);
+        return;
+    }
     if (in.swap_screens)
         video_swap_screens();
     if (in.debug_cycle) {
@@ -523,6 +559,11 @@ static void watch_registers(uint32_t frame)
     }
 }
 
+static void set_volume(int percent)
+{
+    snd7_port_volume = (float)percent / 100.0f;
+}
+
 void kh_game_run(void)
 {
     int i, entries = 0;
@@ -535,6 +576,10 @@ void kh_game_run(void)
 
     boot_state();
     input_init();
+    portmenu_on_scale = kh_gpu3d_set_scale;
+    portmenu_on_texture_filter = kh_gpu3d_reload_textures;
+    portmenu_on_volume = set_volume;
+    set_volume(kh_config.volume);
 
     /* the display keeps core 0 whatever the game does; the game runs on core 1 */
     sceKernelChangeThreadCpuAffinityMask(sceKernelGetThreadId(), SCE_KERNEL_CPU_MASK_USER_0);
@@ -572,12 +617,15 @@ void kh_game_run(void)
                  (unsigned)frame, (unsigned)kh_cpu_irqs_delivered, (unsigned)kh_cpu_preempted,
                  (unsigned)kh_cpu_switches, (unsigned)KH_IO32(0x04000210),
                  KH_IO16(0x04000208) & 1, (unsigned)KH_IO32(0x04000000));
-        if (s_vblanks - s_debug_shown < 180) {
+        if (portmenu_is_open()) {
+            video_set_overlay(portmenu_render());
+        } else if (s_vblanks - s_debug_shown < 180) {
             /* a debug mode change: the console for 3 s, its top line naming the mode */
             snprintf(status, sizeof(status), "3D DEBUG MODE %d", kh_gpu3d_debug);
             video_set_overlay(console_render(status));
         } else {
-            video_set_overlay(s_console ? console_render(status) : NULL);
+            video_set_overlay(s_console ? console_render(status)
+                              : kh_config.show_fps ? portmenu_render_fps(fps_label()) : NULL);
         }
         present(); /* waits for the Vita's VBlank */
 
@@ -585,7 +633,7 @@ void kh_game_run(void)
          * count: VBlanks keep arriving while every NitroSDK thread is stuck (0.0.18: the main
          * thread asleep in OS_WaitIrq); a running frame loop switches threads every frame. */
         progress = kh_cpu_switches + kh_card_reads;
-        if (progress != s_last_progress) {
+        if (progress != s_last_progress || portmenu_is_open()) {
             s_last_progress = progress;
             s_stuck_frames = 0;
         } else if (++s_stuck_frames == 300) {

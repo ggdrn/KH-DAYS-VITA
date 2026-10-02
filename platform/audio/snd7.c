@@ -1502,6 +1502,7 @@ static void alarms_run(void)
  * DS; past 0.75 the sum is bent smoothly towards full scale instead of clipped, so that busy
  * scenes neither crackle nor have to be mixed quieter. */
 #define MIX_GAIN 1.0f
+volatile float snd7_port_volume = 1.0f;
 #define KNEE 0.75f
 
 static inline float soft_limit(float x)
@@ -1547,7 +1548,7 @@ void snd7_render(int16_t *out, int frames)
                 r += s * c->gain_r;
             }
             {
-                const float mv = (float)s_master_volume / 127.0f * MIX_GAIN;
+                const float mv = (float)s_master_volume / 127.0f * MIX_GAIN * snd7_port_volume;
                 int sl, sr;
                 l = soft_limit(l * mv);
                 r = soft_limit(r * mv);
