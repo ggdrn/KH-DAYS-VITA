@@ -551,7 +551,8 @@ void kh_gpu3d_prepare(const KhGxFrame *f)
     s_njobs = 0;
 }
 
-unsigned kh_gpu3d_render(const KhGxFrame *f)
+/* The frame's polygons drawn with the vertices vtx (the frame's own, or a mix of two). */
+static unsigned draw_frame(const KhGxFrame *f, const KhGxVertex *vtx)
 {
     uint64_t t0;
     const int textures_on = f && (f->disp3dcnt & 1);
@@ -559,11 +560,6 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
     DrawState cur = { 0 }, st;
     int i, nidx = 0, first = 0, have = 0;
 
-    if (!s_prog || !f)
-        return 0;
-    if (f->serial == s_last_serial)
-        return s_color; /* same frame as last time: the target still holds it */
-    s_last_serial = f->serial;
     s_stats.disp3dcnt = f->disp3dcnt;
     t0 = sceKernelGetProcessTimeWide();
     frame_setup(f);
@@ -605,7 +601,7 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
     glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
     glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
-    glBufferData(GL_ARRAY_BUFFER, f->nvtx * (int)sizeof(KhGxVertex), f->vtx, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, f->nvtx * (int)sizeof(KhGxVertex), vtx, GL_DYNAMIC_DRAW);
     glEnableVertexAttribArray(A_POS);
     glEnableVertexAttribArray(A_TEX);
     glEnableVertexAttribArray(A_COL);
@@ -766,6 +762,108 @@ done:
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     s_stats.render_us += (uint32_t)(sceKernelGetProcessTimeWide() - t0);
     return s_color;
+}
+
+/* ---- 60 fps: frames in between ------------------------------------------------------------
+ * The game draws its 3D at 30 fps, each frame shown for two Vita frames. With interpolation on
+ * (config.ini), a new frame B is first shown as the halfway mix of the previous frame A and B,
+ * and B itself one Vita frame later: the movement goes at 60 fps for one frame of latency. Only
+ * when A and B are the same polygons in the same order (an animated scene, not a cut, not a
+ * different set of objects) and A was up for two Vita frames; otherwise B is shown at once. */
+static KhGxVertex *s_prev_vtx, *s_mix_vtx;
+static KhGxPolygon *s_prev_poly;
+static int s_prev_nvtx = -1, s_prev_npoly = -1;
+static uint32_t s_prev_disp3dcnt;
+static int s_shown_count;  /* renders of the current serial so far */
+static int s_final_pending; /* the mix was shown: B itself next */
+
+static int same_structure(const KhGxFrame *f)
+{
+    int i;
+    if (f->nvtx != s_prev_nvtx || f->npoly != s_prev_npoly || f->disp3dcnt != s_prev_disp3dcnt)
+        return 0;
+    for (i = 0; i < f->npoly; i++) {
+        const KhGxPolygon *a = &s_prev_poly[i], *b = &f->poly[i];
+        if (a->count != b->count || a->attr != b->attr || a->teximage != b->teximage ||
+            a->pltt != b->pltt || memcmp(a->v, b->v, sizeof(a->v)))
+            return 0;
+    }
+    return 1;
+}
+
+/* the halfway vertices; 0 when too many of them jump (a camera cut on the same models) */
+static int mix_vertices(const KhGxFrame *f)
+{
+    int i, jumps = 0;
+    for (i = 0; i < f->nvtx; i++) {
+        const KhGxVertex *a = &s_prev_vtx[i], *b = &f->vtx[i];
+        KhGxVertex *m = &s_mix_vtx[i];
+        if (a->w > 0 && b->w > 0) {
+            const float dx = a->x / a->w - b->x / b->w, dy = a->y / a->w - b->y / b->w;
+            if (dx * dx + dy * dy > 0.09f)
+                jumps++;
+        }
+        m->x = (a->x + b->x) * 0.5f;
+        m->y = (a->y + b->y) * 0.5f;
+        m->z = (a->z + b->z) * 0.5f;
+        m->w = (a->w + b->w) * 0.5f;
+        m->s = (a->s + b->s) * 0.5f;
+        m->t = (a->t + b->t) * 0.5f;
+        m->r = (uint8_t)((a->r + b->r + 1) >> 1);
+        m->g = (uint8_t)((a->g + b->g + 1) >> 1);
+        m->b = (uint8_t)((a->b + b->b + 1) >> 1);
+        m->a = b->a;
+    }
+    return jumps * 4 < f->nvtx;
+}
+
+static void keep_as_previous(const KhGxFrame *f)
+{
+    if (!s_prev_vtx) {
+        s_prev_vtx = malloc(sizeof(KhGxVertex) * KH_GX_MAX_VERTICES);
+        s_mix_vtx = malloc(sizeof(KhGxVertex) * KH_GX_MAX_VERTICES);
+        s_prev_poly = malloc(sizeof(KhGxPolygon) * KH_GX_MAX_POLYGONS);
+        if (!s_prev_vtx || !s_mix_vtx || !s_prev_poly)
+            return;
+    }
+    memcpy(s_prev_vtx, f->vtx, sizeof(KhGxVertex) * (size_t)f->nvtx);
+    memcpy(s_prev_poly, f->poly, sizeof(KhGxPolygon) * (size_t)f->npoly);
+    s_prev_nvtx = f->nvtx;
+    s_prev_npoly = f->npoly;
+    s_prev_disp3dcnt = f->disp3dcnt;
+}
+
+unsigned kh_gpu3d_render(const KhGxFrame *f)
+{
+    if (!s_prog || !f)
+        return 0;
+    if (f->serial == s_last_serial) {
+        s_shown_count++;
+        if (s_final_pending) {
+            /* the frame itself, after its halfway mix */
+            s_final_pending = 0;
+            s_stats.interpolated++;
+            return draw_frame(f, f->vtx);
+        }
+        return s_color; /* same frame as last time: the target still holds it */
+    }
+    s_last_serial = f->serial;
+    {
+        const int was_shown = s_shown_count;
+        unsigned tex;
+        s_shown_count = 0;
+        if (kh_config.frame_interpolation && s_prev_vtx && was_shown >= 1 && !s_final_pending &&
+            same_structure(f) && mix_vertices(f)) {
+            tex = draw_frame(f, s_mix_vtx);
+            s_final_pending = 1;
+        } else {
+            s_final_pending = 0;
+            tex = draw_frame(f, f->vtx);
+        }
+        if (kh_config.frame_interpolation)
+            keep_as_previous(f);
+        return tex;
+    }
 }
 
 void kh_gpu3d_take_stats(KhGpu3dStats *out)

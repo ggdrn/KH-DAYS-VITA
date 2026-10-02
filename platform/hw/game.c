@@ -617,6 +617,9 @@ void kh_game_run(void)
             {
                 KhGpu3dStats rs;
                 kh_gpu3d_take_stats(&rs);
+                if (rs.interpolated)
+                    LOG("gpu3d: 10 s: %u frames shown after a halfway mix (60 fps)",
+                        (unsigned)rs.interpolated);
                 if (rs.textures_decoded)
                     LOG("gpu3d: 10 s: %u textures decoded (%u live), %u ms decoding in parallel, "
                         "at most %u in one frame", (unsigned)rs.textures_decoded,

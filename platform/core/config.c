@@ -10,7 +10,7 @@
 
 KhConfig kh_config = {
     .render_scale = 3, .layout = 0, .inset_width = 224, .debug = 0, .texture_filter = 0,
-    .widescreen = 1,
+    .widescreen = 1, .frame_interpolation = 1,
     /* positional, as on the DS: the right face button is A, the bottom one B */
     .button = { SCE_CTRL_CIRCLE, SCE_CTRL_CROSS, SCE_CTRL_TRIANGLE, SCE_CTRL_SQUARE,
                 SCE_CTRL_LTRIGGER, SCE_CTRL_RTRIGGER, SCE_CTRL_START, SCE_CTRL_SELECT },
@@ -36,11 +36,11 @@ static const char *button_name(uint32_t mask)
     return "none";
 }
 
-#define CONFIG_VERSION 5
+#define CONFIG_VERSION 6
 
 static const char s_default[] =
     "# khdays-vita settings\n"
-    "config_version = 5\n"
+    "config_version = 6\n"
     "\n"
     "# 3D internal resolution, as a multiple of the DS's 256x192: 1, 2, 3 or 4.\n"
     "# 3 (768x576) covers the Vita's 544 lines; 4 (1024x768) is above the screen both ways,\n"
@@ -58,6 +58,10 @@ static const char s_default[] =
     "# 1: the 3D is drawn for 16:9 when its screen fills the display (a wider view, characters\n"
     "# in their true proportions); 0: the DS's 4:3 picture stretched to the display.\n"
     "widescreen = 1\n"
+    "\n"
+    "# 1: the 3D moves at 60 fps (the game draws 30; a frame mixed from two is shown in\n"
+    "# between, one Vita frame later); 0: the DS's 30 fps.\n"
+    "frame_interpolation = 1\n"
     "\n"
     "# 3D textures: 0 sharp as on the DS, 1 smoothed (bilinear filtering).\n"
     "texture_filter = 0\n"
@@ -110,6 +114,8 @@ static void write_config(void)
             fprintf(f, "debug = %d\n", kh_config.debug ? 1 : 0);
         else if (!strncmp(line, "widescreen", 10))
             fprintf(f, "widescreen = %d\n", kh_config.widescreen ? 1 : 0);
+        else if (!strncmp(line, "frame_interpolation", 19))
+            fprintf(f, "frame_interpolation = %d\n", kh_config.frame_interpolation ? 1 : 0);
         else if (!strncmp(line, "texture_filter", 14))
             fprintf(f, "texture_filter = %d\n", kh_config.texture_filter ? 1 : 0);
         else if (!strncmp(line, "button_", 7)) {
@@ -153,6 +159,8 @@ void config_load(void)
             kh_config.debug = atoi(v) != 0;
         } else if (!strcmp(k, "widescreen")) {
             kh_config.widescreen = atoi(v) != 0;
+        } else if (!strcmp(k, "frame_interpolation")) {
+            kh_config.frame_interpolation = atoi(v) != 0;
         } else if (!strcmp(k, "texture_filter")) {
             kh_config.texture_filter = atoi(v) != 0;
         } else if (!strncmp(k, "button_", 7)) {
@@ -179,6 +187,7 @@ void config_load(void)
     }
     kh_log_verbose = kh_config.debug;
     LOG("config: render_scale %d, layout %d, inset_width %d, debug %d, widescreen %d, "
-        "texture_filter %d", kh_config.render_scale, kh_config.layout, kh_config.inset_width,
-        kh_config.debug, kh_config.widescreen, kh_config.texture_filter);
+        "frame_interpolation %d, texture_filter %d", kh_config.render_scale, kh_config.layout,
+        kh_config.inset_width, kh_config.debug, kh_config.widescreen,
+        kh_config.frame_interpolation, kh_config.texture_filter);
 }

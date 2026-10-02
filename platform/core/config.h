@@ -16,6 +16,7 @@ typedef struct {
     int debug;          /* debug hotkeys and the detailed log: 0 off (default), 1 on */
     int texture_filter; /* 3D textures: 0 sharp as on the DS, 1 smoothed (bilinear) */
     int widescreen;     /* 3D drawn for 16:9 when its screen fills the display: 0 off, 1 on */
+    int frame_interpolation; /* 3D at 60 fps with frames mixed in between: 0 off, 1 on */
     uint32_t button[KH_BTN_COUNT]; /* the Vita button (SCE_CTRL_*) for each DS button */
 } KhConfig;
 
