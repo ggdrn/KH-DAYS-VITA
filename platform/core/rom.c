@@ -24,22 +24,56 @@ static void stamp_key(const SceIoStat *st, char *out, size_t n)
              st->st_mtime.hour, st->st_mtime.minute, st->st_mtime.second);
 }
 
-static int stamp_matches(const char *stamp_path, const char *key)
+/* A copy of the same dump gets a new modification time: then a fingerprint of 64 slices of
+ * 64 KiB spread over the file (4 MiB, under a second) is compared with the one stored at the
+ * last full check, and the 44 s SHA-1 is skipped when they agree. */
+static void fingerprint(char out[41])
 {
-    char buf[160] = { 0 };
+    enum { SLICES = 64, SLICE = 64 * 1024 };
+    uint8_t *buf = malloc(SLICE), digest[20];
+    Sha1 sha;
+    int i;
+    out[0] = 0;
+    if (!buf)
+        return;
+    sha1_init(&sha);
+    for (i = 0; i < SLICES; i++) {
+        const uint32_t off = (uint32_t)(((uint64_t)(ROM_EXPECTED_SIZE - SLICE) * i) / (SLICES - 1));
+        const int n = sceIoPread(s_fd, buf, SLICE, off);
+        if (n > 0)
+            sha1_update(&sha, buf, n);
+    }
+    free(buf);
+    sha1_final(&sha, digest);
+    for (i = 0; i < 20; i++)
+        sprintf(out + i * 2, "%02x", digest[i]);
+}
+
+/* the stamp: the key line, then the fingerprint line */
+static int stamp_read(const char *stamp_path, char *key, size_t nkey, char fp[41])
+{
+    char buf[256] = { 0 }, *nl;
     SceUID fd = sceIoOpen(stamp_path, SCE_O_RDONLY, 0);
+    key[0] = fp[0] = 0;
     if (fd < 0)
         return 0;
     sceIoRead(fd, buf, sizeof(buf) - 1);
     sceIoClose(fd);
-    return strcmp(buf, key) == 0;
+    nl = strchr(buf, '\n');
+    if (nl) {
+        snprintf(key, nkey, "%.*s", (int)(nl - buf + 1), buf);
+        snprintf(fp, 41, "%.40s", nl + 1);
+    }
+    return 1;
 }
 
-static void stamp_write(const char *stamp_path, const char *key)
+static void stamp_write(const char *stamp_path, const char *key, const char *fp)
 {
     SceUID fd = sceIoOpen(stamp_path, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
     if (fd >= 0) {
         sceIoWrite(fd, key, strlen(key));
+        sceIoWrite(fd, fp, strlen(fp));
+        sceIoWrite(fd, "\n", 1);
         sceIoClose(fd);
     }
 }
@@ -92,13 +126,26 @@ RomStatus rom_open(const char *path, const char *stamp_path,
     }
 
     stamp_key(&st, key, sizeof(key));
-    if (!stamp_matches(stamp_path, key)) {
-        LOG("rom: verifying SHA-1 (first boot with this dump)");
-        if (hash_file(progress, hex) != 0 || strcmp(hex, ROM_EXPECTED_SHA1) != 0) {
-            LOG("rom: SHA-1 %s, expected %s", hex, ROM_EXPECTED_SHA1);
-            return ROM_WRONG_HASH;
+    {
+        char old_key[160], old_fp[41], fp[41];
+        stamp_read(stamp_path, old_key, sizeof(old_key), old_fp);
+        if (strcmp(old_key, key) != 0) {
+            fingerprint(fp);
+            if (fp[0] && strcmp(fp, old_fp) == 0) {
+                LOG("rom: same dump as verified before (fingerprint), SHA-1 skipped");
+            } else {
+                LOG("rom: verifying SHA-1 (first boot with this dump)");
+                if (hash_file(progress, hex) != 0 || strcmp(hex, ROM_EXPECTED_SHA1) != 0) {
+                    LOG("rom: SHA-1 %s, expected %s", hex, ROM_EXPECTED_SHA1);
+                    return ROM_WRONG_HASH;
+                }
+            }
+            stamp_write(stamp_path, key, fp);
+        } else if (!old_fp[0]) {
+            /* a stamp from before the fingerprint: add it */
+            fingerprint(fp);
+            stamp_write(stamp_path, key, fp);
         }
-        stamp_write(stamp_path, key);
     }
     s_lock = sceKernelCreateMutex("kh_rom", 0, 0, NULL);
     LOG("rom: ok (%.12s %.4s)", (const char *)s_header, (const char *)s_header + 0x0c);

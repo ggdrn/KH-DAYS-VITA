@@ -2,8 +2,14 @@
 
 #include "config.h"
 #include "log.h"
+#include "paths.h"
 
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <psp2/io/fcntl.h>
+#include <psp2/io/stat.h>
+#include <psp2/kernel/processmgr.h>
 #include <vitaGL.h>
 
 #define DISPLAY_W 960
@@ -93,33 +99,89 @@ static const char s_compose_fs[] =
     "    return float4(c, 1.0);\n"
     "}\n";
 
-unsigned video_build_program(const char *vs_src, const char *fs_src, const char *const *attribs,
-                             int nattribs)
+/* Compiled shaders are kept in ux0:data/khdays/shaders, named by a hash of their source: the
+ * CG compiler (libshacccg) took seconds of every boot. A cached binary that does not load or
+ * link is dropped and the source compiled again. */
+#define SHADER_DIR KH_DATA_DIR "/shaders"
+
+static uint32_t source_hash(const char *src, GLenum type)
 {
-    /* the CG types: vitaGL takes GL_VERTEX_SHADER/GL_FRAGMENT_SHADER source as GLSL and runs
-     * it through its translator (0.0.31 crashed in glLinkProgram on that) */
-    GLuint vs = glCreateShader(GL_CG_VERTEX_SHADER_EXT), fs = glCreateShader(GL_CG_FRAGMENT_SHADER_EXT), prog;
+    uint32_t h = 2166136261u ^ (uint32_t)type;
+    while (*src)
+        h = (h ^ (uint8_t)*src++) * 16777619u;
+    return h;
+}
+
+static void shader_path(char *out, size_t n, uint32_t h)
+{
+    snprintf(out, n, SHADER_DIR "/%08x.gxp", (unsigned)h);
+}
+
+/* the shader from the cache; 0 when it is not there */
+static GLuint shader_cached(GLenum type, uint32_t h)
+{
+    char path[96];
+    SceUID fd;
+    SceIoStat st;
+    void *bin;
+    GLuint sh;
+    shader_path(path, sizeof(path), h);
+    if (sceIoGetstat(path, &st) < 0 || st.st_size <= 0 || st.st_size > 256 * 1024)
+        return 0;
+    fd = sceIoOpen(path, SCE_O_RDONLY, 0);
+    if (fd < 0)
+        return 0;
+    bin = malloc((size_t)st.st_size);
+    if (!bin || sceIoRead(fd, bin, (SceSize)st.st_size) != (int)st.st_size) {
+        sceIoClose(fd);
+        free(bin);
+        return 0;
+    }
+    sceIoClose(fd);
+    sh = glCreateShader(type);
+    glShaderBinary(1, &sh, 0, bin, (GLsizei)st.st_size);
+    free(bin);
+    return sh;
+}
+
+static GLuint shader_compiled(GLenum type, const char *src, uint32_t h, const char *what)
+{
+    GLuint sh = glCreateShader(type);
     GLint ok = 0, len;
     char msg[512] = "";
-    int i;
+    glShaderSource(sh, 1, &src, NULL);
+    glCompileShader(sh);
+    glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
+    if (!ok) {
+        glGetShaderInfoLog(sh, sizeof(msg), &len, msg);
+        LOG("video: %s shader: %s", what, msg);
+        glDeleteShader(sh);
+        return 0;
+    }
+    {
+        static uint8_t bin[256 * 1024];
+        GLsizei n = 0;
+        vglGetShaderBinary(sh, sizeof(bin), &n, bin);
+        if (n > 0) {
+            char path[96];
+            SceUID fd;
+            sceIoMkdir(SHADER_DIR, 0777);
+            shader_path(path, sizeof(path), h);
+            fd = sceIoOpen(path, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
+            if (fd >= 0) {
+                sceIoWrite(fd, bin, (SceSize)n);
+                sceIoClose(fd);
+            }
+        }
+    }
+    return sh;
+}
 
-    glShaderSource(vs, 1, &vs_src, NULL);
-    glCompileShader(vs);
-    glGetShaderiv(vs, GL_COMPILE_STATUS, &ok);
-    if (!ok) {
-        glGetShaderInfoLog(vs, sizeof(msg), &len, msg);
-        LOG("video: vertex shader: %s", msg);
-        return 0;
-    }
-    glShaderSource(fs, 1, &fs_src, NULL);
-    glCompileShader(fs);
-    glGetShaderiv(fs, GL_COMPILE_STATUS, &ok);
-    if (!ok) {
-        glGetShaderInfoLog(fs, sizeof(msg), &len, msg);
-        LOG("video: fragment shader: %s", msg);
-        return 0;
-    }
-    prog = glCreateProgram();
+static GLuint link_program(GLuint vs, GLuint fs, const char *const *attribs, int nattribs)
+{
+    GLuint prog = glCreateProgram();
+    GLint ok = 0;
+    int i;
     glAttachShader(prog, vs);
     glAttachShader(prog, fs);
     for (i = 0; i < nattribs; i++)
@@ -127,9 +189,53 @@ unsigned video_build_program(const char *vs_src, const char *fs_src, const char 
     glLinkProgram(prog);
     glGetProgramiv(prog, GL_LINK_STATUS, &ok);
     if (!ok) {
-        LOG("video: program link failed");
+        glDeleteProgram(prog);
         return 0;
     }
+    return prog;
+}
+
+unsigned video_build_program(const char *vs_src, const char *fs_src, const char *const *attribs,
+                             int nattribs)
+{
+    /* the CG types: vitaGL takes GL_VERTEX_SHADER/GL_FRAGMENT_SHADER source as GLSL and runs
+     * it through its translator (0.0.31 crashed in glLinkProgram on that) */
+    const uint32_t hv = source_hash(vs_src, GL_CG_VERTEX_SHADER_EXT);
+    const uint32_t hf = source_hash(fs_src, GL_CG_FRAGMENT_SHADER_EXT);
+    const uint64_t t0 = sceKernelGetProcessTimeWide();
+    GLuint vs = shader_cached(GL_CG_VERTEX_SHADER_EXT, hv);
+    GLuint fs = shader_cached(GL_CG_FRAGMENT_SHADER_EXT, hf);
+    GLuint prog = 0;
+    const int cached = vs && fs;
+
+    if (cached)
+        prog = link_program(vs, fs, attribs, nattribs);
+    if (!prog) {
+        char path[96];
+        if (cached) {
+            LOG("video: cached shaders %08x/%08x did not link, compiling", (unsigned)hv, (unsigned)hf);
+            shader_path(path, sizeof(path), hv);
+            sceIoRemove(path);
+            shader_path(path, sizeof(path), hf);
+            sceIoRemove(path);
+        }
+        if (vs)
+            glDeleteShader(vs);
+        if (fs)
+            glDeleteShader(fs);
+        vs = shader_compiled(GL_CG_VERTEX_SHADER_EXT, vs_src, hv, "vertex");
+        fs = vs ? shader_compiled(GL_CG_FRAGMENT_SHADER_EXT, fs_src, hf, "fragment") : 0;
+        if (!vs || !fs)
+            return 0;
+        prog = link_program(vs, fs, attribs, nattribs);
+        if (!prog) {
+            LOG("video: program link failed");
+            return 0;
+        }
+    }
+    LOG("video: shaders %08x/%08x %s in %u ms", (unsigned)hv, (unsigned)hf,
+        prog && cached ? "from the cache" : "compiled",
+        (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000));
     return prog;
 }
 
@@ -372,7 +478,12 @@ void video_init(void)
     int i;
 
     /* A GPU pool > 0 is required; vitaGL's defaults for the rest. */
-    vglInitExtended(0, DISPLAY_W, DISPLAY_H, 16 * 1024 * 1024, SCE_GXM_MULTISAMPLE_NONE);
+    {
+        const uint64_t t0 = sceKernelGetProcessTimeWide();
+        vglInitExtended(0, DISPLAY_W, DISPLAY_H, 16 * 1024 * 1024, SCE_GXM_MULTISAMPLE_NONE);
+        LOG("video: vitaGL initialised in %u ms",
+            (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000));
+    }
 
     glGenTextures(2, s_tex);
     for (i = 0; i < 2; i++) {
