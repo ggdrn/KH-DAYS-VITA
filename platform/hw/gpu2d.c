@@ -754,20 +754,20 @@ void kh_gpu2d_init(void)
     init_rgba();
 }
 
-int kh_gpu2d_render_lines(int engine, uint32_t *fb, int y0, int y1)
+static int render_lines(int engine, uint32_t *fb, int y0, int y1, int graphics)
 {
     Engine e;
     Scratch sc;
-    int mode, line, x, mmode, mf;
+    int mode, line, x, mmode, mf = 0;
 
     engine_setup(&e, engine);
-    mode = (e.dispcnt >> 16) & (e.is_a ? 3 : 1);
+    mode = graphics ? 1 : (e.dispcnt >> 16) & (e.is_a ? 3 : 1);
     fb += y0 * W;
     if (mode == 0 || (e.dispcnt & 0x80)) { /* display off, or forced blank: white */
         memset(fb, 0xff, (size_t)(y1 - y0) * W * sizeof(*fb));
         return 0;
     }
-    mmode = master_mode(&e, &mf);
+    mmode = graphics ? 0 : master_mode(&e, &mf);
     if (mode == 2) { /* engine A shows a VRAM bank (A-D) as a 256x192 direct-colour bitmap */
         const uint8_t *bank = kh_vram_bank_home((e.dispcnt >> 18) & 3);
         for (line = y0; line < y1; line++, fb += W) {
@@ -796,6 +796,16 @@ int kh_gpu2d_render_lines(int engine, uint32_t *fb, int y0, int y1)
         }
     }
     return e.has3d;
+}
+
+int kh_gpu2d_render_lines(int engine, uint32_t *fb, int y0, int y1)
+{
+    return render_lines(engine, fb, y0, y1, 0);
+}
+
+int kh_gpu2d_render_graphics(int engine, uint32_t *fb)
+{
+    return render_lines(engine, fb, 0, 192, 1);
 }
 
 int kh_gpu2d_render(int engine, uint32_t *fb)

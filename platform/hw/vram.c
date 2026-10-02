@@ -153,6 +153,11 @@ void kh_vram_sync(void)
     }
 }
 
+void kh_vram_touch(void)
+{
+    s_tex_gen++;
+}
+
 uint32_t kh_vram_tex_generation(void)
 {
     return s_tex_gen;

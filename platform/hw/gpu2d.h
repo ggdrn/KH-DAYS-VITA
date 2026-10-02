@@ -38,4 +38,8 @@ int kh_gpu2d_render_lines(int engine, uint32_t *fb, int y0, int y1);
  * layer has a pixel). */
 void kh_gpu2d_dump_layers(int engine, uint32_t *bg[4], uint32_t *obj);
 
+/* The engine's graphics screen (BGs, sprites, 3D codes) whatever DISPCNT's display mode, before
+ * master brightness: what the display capture's source A sees. Returns 1 when it has 3D pixels. */
+int kh_gpu2d_render_graphics(int engine, uint32_t *fb);
+
 #endif

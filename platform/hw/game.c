@@ -10,6 +10,7 @@
 #include "hw/gpu2d.h"
 #include "hw/gpu3d.h"
 #include "hw/gx3d.h"
+#include "hw/capture.h"
 #include "hw/textures.h"
 #include "hw/io.h"
 #include "hw/memmap.h"
@@ -299,6 +300,9 @@ static void present(void)
         for (i = 0; i < 256 * 192; i++)
             fb[i] |= 0xff000000u;
     }
+    /* the display capture the game armed for this frame (dialogue screen blends) */
+    s_stage = "capture";
+    kh_capture_run();
     if (s_dump_2d) {
         s_dump_2d = 0;
         dump_2d(a_on_top);
@@ -561,10 +565,12 @@ void kh_game_run(void)
                         "present %uus", (unsigned)s_prep_max, (unsigned)s_t3d_max,
                         (unsigned)s_join_max, (unsigned)s_present_max);
                     s_prep_max = s_t3d_max = s_join_max = s_present_max = 0;
-                    LOG("display: effects A %04x/%02x mb %04x, B %04x/%02x mb %04x, 3D %04x",
+                    LOG("display: effects A %04x/%02x mb %04x, B %04x/%02x mb %04x, 3D %04x; "
+                        "%u captures (DISPCAPCNT %08x)",
                         KH_IO16(0x04000050), KH_IO16(0x04000054) & 31, KH_IO16(0x0400006c),
                         KH_IO16(0x04001050), KH_IO16(0x04001054) & 31, KH_IO16(0x0400106c),
-                        KH_IO16(0x04000060));
+                        KH_IO16(0x04000060), (unsigned)kh_capture_take_count(),
+                        (unsigned)KH_IO32(0x04000064));
                 }
                 s_2d_skipped = 0;
                 s_t3d_total = s_join_total = s_present_total = 0;

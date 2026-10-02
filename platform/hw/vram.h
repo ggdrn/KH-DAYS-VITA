@@ -17,4 +17,7 @@ uint32_t kh_vram_tex_generation(void);
 /* The VRAMCNT value in effect for a bank. */
 uint8_t kh_vram_bank_cnt(int bank);
 
+/* Bank contents changed outside a remap (the display capture): textures are checked again. */
+void kh_vram_touch(void);
+
 #endif
