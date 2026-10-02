@@ -182,6 +182,7 @@ typedef struct {
 
 /* per-stage display times since the last report, for the 10 s line */
 static uint64_t s_t3d_total, s_join_total, s_present_total;
+static uint32_t s_2d_async; /* 2D pictures drawn over two Vita frames (60 fps mode) */
 static uint32_t s_t3d_max, s_join_max, s_present_max, s_prep_max; /* the worst frame's */
 
 static inline void stage_max(uint32_t *max, uint64_t us)
@@ -212,6 +213,25 @@ static void present(void)
     static Frame2d f2d;
     static uint32_t seen_serial, serial_vb, drawn_vb, pending;
     static int last_a3d;
+    /* 60 fps mode: the 2D of a new game frame is drawn by the helper over this Vita frame and
+     * the next, and shown with the next one, where the new frame's 3D (after its halfway mix)
+     * is shown too; it no longer has to fit in one frame with everything else */
+    static int async_2d;
+    int upload2d = 0;
+
+    if (async_2d) {
+        uint64_t t = sceKernelGetProcessTimeWide(), d;
+        s_stage = "2d join";
+        workers_join();
+        async_2d = 0;
+        upload2d = 1;
+        last_a3d = 0;
+        for (i = 0; i < BANDS; i++)
+            last_a3d |= f2d.a3d[i];
+        d = sceKernelGetProcessTimeWide() - t;
+        s_join_total += d;
+        stage_max(&s_join_max, d);
+    }
 
     /* The 2D image only changes when the game has finished a frame (its SWAP_BUFFERS) and the
      * VBlank after it has applied the frame's OAM and register updates: at the game's 30 fps
@@ -270,7 +290,13 @@ static void present(void)
             stage_max(&s_prep_max, sceKernelGetProcessTimeWide() - t);
         }
         s_stage = "2d";
+        if (f2d.neng)
+            memset(f2d.a3d, 0, sizeof(f2d.a3d));
         workers_begin(render_chunk, BANDS * f2d.neng, &f2d);
+        if (f2d.neng && kh_config.frame_interpolation) {
+            async_2d = 1;
+            s_2d_async++;
+        }
         s_stage = "3d";
         {
             uint64_t t = sceKernelGetProcessTimeWide(), d;
@@ -280,18 +306,23 @@ static void present(void)
             s_t3d_total += d;
             stage_max(&s_t3d_max, d);
         }
-        s_stage = "2d join";
-        {
+        if (!async_2d) {
             uint64_t t = sceKernelGetProcessTimeWide(), d;
+            s_stage = "2d join";
             workers_join();
             d = sceKernelGetProcessTimeWide() - t;
             s_join_total += d;
             stage_max(&s_join_max, d);
+            if (f2d.neng) {
+                upload2d = 1;
+                last_a3d = 0;
+                for (i = 0; i < BANDS; i++)
+                    last_a3d |= f2d.a3d[i];
+            }
         }
     }
-    for (i = 0; i < BANDS; i++)
-        a3d |= f2d.a3d[i];
-    (void)last_a3d;
+    /* which pixels are 3D: from the last 2D picture finished */
+    a3d = last_a3d;
     s_render_us = (uint32_t)(sceKernelGetProcessTimeWide() - t0);
     s_render_total += s_render_us;
     if (s_render_us > s_render_max)
@@ -303,7 +334,7 @@ static void present(void)
                  /* BG0HOFS scrolls the 3D layer: 9 bits, signed */
                  (int)((int16_t)(KH_IO16(0x04000010) << 7) >> 7), KH_IO16(0x04000052),
                  (uint16_t)(kh_ds_palette[0] | kh_ds_palette[1] << 8));
-    if (a3d && !tex3d) {
+    if (a3d && !tex3d && upload2d) {
         /* no 3D to lay in: the 3D pixels show what is under them */
         uint32_t *fb = a_on_top ? s_top : s_bottom;
         int i;
@@ -329,7 +360,7 @@ static void present(void)
     {
         uint64_t t = sceKernelGetProcessTimeWide();
         /* unchanged screens are not uploaded again */
-        video_present(draw2d ? s_top : NULL, draw2d ? s_bottom : NULL);
+        video_present(upload2d ? s_top : NULL, upload2d ? s_bottom : NULL);
         t = sceKernelGetProcessTimeWide() - t;
         s_present_total += t;
         stage_max(&s_present_max, t);
@@ -592,9 +623,11 @@ void kh_game_run(void)
                     const unsigned busy = 1000 - (unsigned)((halt - halt_last) * 1000 / (now - s_window_start + 1));
                     halt_last = halt;
                     LOG("display: per frame 3d submit %uus, 2d after it %uus, present %uus; 2d "
-                        "reused in %u of 600; game core %u.%u%% busy",
+                        "reused in %u of 600, %u drawn over two frames; game core %u.%u%% busy",
                         (unsigned)(s_t3d_total / 600), (unsigned)(s_join_total / 600),
-                        (unsigned)(s_present_total / 600), (unsigned)s_2d_skipped, busy / 10, busy % 10);
+                        (unsigned)(s_present_total / 600), (unsigned)s_2d_skipped,
+                        (unsigned)s_2d_async, busy / 10, busy % 10);
+                    s_2d_async = 0;
                     LOG("display: worst frame: textures %uus, 3d submit %uus, 2d after it %uus, "
                         "present %uus", (unsigned)s_prep_max, (unsigned)s_t3d_max,
                         (unsigned)s_join_max, (unsigned)s_present_max);
