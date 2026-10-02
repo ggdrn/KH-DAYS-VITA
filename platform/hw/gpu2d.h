@@ -18,6 +18,10 @@ enum {
     KH_GPU2D_3D = 0x00,
     KH_GPU2D_3D_BRIGHTEN = 0x40,
     KH_GPU2D_3D_DARKEN = 0x80,
+    /* the pixel's colour is a 2D layer blended over the 3D one: OVER_3D | EVA (1-16, EVB the
+     * rest, a bitmap sprite's alpha), or BLEND_3D with BLDALPHA's EVA/EVB */
+    KH_GPU2D_OVER_3D = 0xc0,
+    KH_GPU2D_BLEND_3D = 0xe0,
 };
 
 /* Render one engine's whole frame into fb (256x192, RGBA8888 in memory order R, G, B, A).

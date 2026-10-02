@@ -15,7 +15,8 @@ static ScreenRect s_rect[2];
 static int s_inset = -1; /* the screen drawn small over the other one, -1 for none */
 static volatile int s_pending = -1; /* a layout asked for from another thread (input) */
 static GLuint s_compose, s_compose_vbo;
-static GLint u_c2d, u_c3d, u_bright, u_hofs;
+static GLint u_c2d, u_c3d, u_bright, u_hofs, u_blend, u_backdrop;
+static uint16_t s_3d_bldalpha, s_3d_backdrop;
 static float s_3d_hofs;
 static int s_3d_screen = -1;
 static GLuint s_3d_tex;
@@ -31,7 +32,8 @@ static const char s_compose_vs[] =
     "}\n";
 static const char s_compose_fs[] =
     "float4 main(float2 vUv : TEXCOORD0, uniform sampler2D u2d, uniform sampler2D u3d,\n"
-    "            uniform float2 uBright, uniform float uHofs) : COLOR\n"
+    "            uniform float2 uBright, uniform float uHofs, uniform float2 uBlend,\n"
+    "            uniform float3 uBackdrop) : COLOR\n"
     "{\n"
     "    float4 b = tex2D(u2d, vUv);\n"
     "    float3 c = b.rgb;\n"
@@ -41,13 +43,23 @@ static const char s_compose_fs[] =
     "        float4 t = tex2D(u3d, float2(u, 1.0 - vUv.y));\n"
     "        if (u < 0.0 || u > 1.0)\n"
     "            t = float4(0.0, 0.0, 0.0, 0.0);\n"
+    /* a 2D layer blended over the 3D one (gpu2d.h OVER_3D / BLEND_3D): b is the 2D colour,
+     * the 3D layer over the backdrop the second target */
+    "        if (code >= 192.0) {\n"
+    "            float2 ev = uBlend;\n"
+    "            if (code < 224.0)\n"
+    "                ev = float2((code - 192.0) / 16.0, 1.0 - (code - 192.0) / 16.0);\n"
+    "            float3 under = t.rgb + uBackdrop * (1.0 - t.a);\n"
+    "            c = min(b.rgb * ev.x + under * ev.y, 1.0);\n"
+    "        } else {\n"
     /* the 3D layer's brightness effect touches its own pixels only (t is premultiplied);
      * where it is clear, the layer behind shows as gpu2d left it */
-    "        if (code >= 128.0)\n"
-    "            t.rgb = t.rgb - t.rgb * ((code - 128.0) / 16.0);\n"
-    "        else if (code >= 64.0)\n"
-    "            t.rgb = t.rgb + (t.aaa - t.rgb) * ((code - 64.0) / 16.0);\n"
-    "        c = t.rgb + b.rgb * (1.0 - t.a);\n"
+    "            if (code >= 128.0)\n"
+    "                t.rgb = t.rgb - t.rgb * ((code - 128.0) / 16.0);\n"
+    "            else if (code >= 64.0)\n"
+    "                t.rgb = t.rgb + (t.aaa - t.rgb) * ((code - 64.0) / 16.0);\n"
+    "            c = t.rgb + b.rgb * (1.0 - t.a);\n"
+    "        }\n"
     "    }\n"
     "    if (uBright.x > 0.5 && uBright.x < 1.5)\n"
     "        c = c + (1.0 - c) * uBright.y;\n"
@@ -108,11 +120,16 @@ static void compose_init(void)
     u_c3d = glGetUniformLocation(s_compose, "u3d");
     u_bright = glGetUniformLocation(s_compose, "uBright");
     u_hofs = glGetUniformLocation(s_compose, "uHofs");
+    u_blend = glGetUniformLocation(s_compose, "uBlend");
+    u_backdrop = glGetUniformLocation(s_compose, "uBackdrop");
     glGenBuffers(1, &s_compose_vbo);
 }
 
-void video_set_3d(int screen, unsigned tex, uint16_t master_bright, int hofs)
+void video_set_3d(int screen, unsigned tex, uint16_t master_bright, int hofs, uint16_t bldalpha,
+                  uint16_t backdrop)
 {
+    s_3d_bldalpha = bldalpha;
+    s_3d_backdrop = backdrop;
     s_3d_hofs = (float)hofs / 256.0f;
     s_3d_screen = (s_compose && tex) ? screen : -1;
     s_3d_tex = tex;
@@ -140,6 +157,13 @@ static void draw_composed(int screen)
     glUniform1i(u_c2d, 0);
     glUniform1i(u_c3d, 1);
     glUniform1f(u_hofs, s_3d_hofs);
+    {
+        float eva = (float)(s_3d_bldalpha & 31), evb = (float)((s_3d_bldalpha >> 8) & 31);
+        const uint16_t bd = s_3d_backdrop;
+        glUniform2f(u_blend, (eva > 16 ? 16 : eva) / 16.0f, (evb > 16 ? 16 : evb) / 16.0f);
+        glUniform3f(u_backdrop, (float)(bd & 31) / 31.0f, (float)((bd >> 5) & 31) / 31.0f,
+                    (float)((bd >> 10) & 31) / 31.0f);
+    }
     glUniform2f(u_bright, (mode == 1 || mode == 2) ? (float)mode : 0.0f, (float)f / 16.0f);
     glBindBuffer(GL_ARRAY_BUFFER, s_compose_vbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(v), v, GL_DYNAMIC_DRAW);

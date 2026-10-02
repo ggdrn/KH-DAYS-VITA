@@ -687,8 +687,21 @@ static void compose_line(const Engine *e, int line, uint16_t *out, uint8_t *code
                 code[x] = (uint8_t)((effect == 2 ? KH_GPU2D_3D_BRIGHTEN : KH_GPU2D_3D_DARKEN) | evy);
             continue;
         }
-        if (id[1] == 0 && e->has3d)
-            id[1] = L_BD; /* 3D under a blended layer: not blended (its colour is on the GPU) */
+        if (id[1] == 0 && e->has3d) {
+            /* a 2D layer over the 3D one: an alpha blend with it happens on the GPU, which
+             * has the 3D colour (dialogue scenes dim the field with a translucent BG) */
+            if (id[0] == L_OBJ && obj.alpha[x] && (bldcnt & 0x100)) {
+                out[x] = c[0];
+                code[x] = obj.alpha[x] == 0x80 ? KH_GPU2D_BLEND_3D : (uint8_t)(KH_GPU2D_OVER_3D | obj.alpha[x]);
+                continue;
+            }
+            if (effect == 1 && (ctl[x] & 0x20) && (bldcnt & (1 << id[0])) && (bldcnt & 0x100)) {
+                out[x] = c[0];
+                code[x] = KH_GPU2D_BLEND_3D;
+                continue;
+            }
+            id[1] = L_BD; /* otherwise as over the backdrop: brighten/darken need no 3D */
+        }
         out_c = c[0];
         if (id[0] == L_OBJ && obj.alpha[x] && (bldcnt & (0x100 << id[1]))) {
             /* semi-transparent and bitmap sprites blend with what is under them */

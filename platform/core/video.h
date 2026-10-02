@@ -42,7 +42,10 @@ void video_set_overlay(const uint32_t *pixels);
  * (alpha codes from hw/gpu2d.h) to lay in from the GL texture tex, then the engine's master
  * brightness (its 0x0400006c value) applied after. */
 /* hofs: the 3D layer's horizontal scroll (BG0HOFS, G3X_SetHOffset), in DS pixels. */
-void video_set_3d(int screen, unsigned tex, uint16_t master_bright, int hofs);
+/* bldalpha: engine A's BLDALPHA, backdrop: its BGR555 backdrop colour, for 2D layers
+ * blended over the 3D one */
+void video_set_3d(int screen, unsigned tex, uint16_t master_bright, int hofs, uint16_t bldalpha,
+                  uint16_t backdrop);
 
 /* A CG shader program with attribs[i] at location i; 0 (logged) on failure. */
 unsigned video_build_program(const char *vs, const char *fs, const char *const *attribs,

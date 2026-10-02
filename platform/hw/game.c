@@ -286,7 +286,8 @@ static void present(void)
         tex3d = 0;
     video_set_3d(tex3d ? (a_on_top ? 0 : 1) : -1, tex3d, KH_IO16(0x0400006c),
                  /* BG0HOFS scrolls the 3D layer: 9 bits, signed */
-                 (int)((int16_t)(KH_IO16(0x04000010) << 7) >> 7));
+                 (int)((int16_t)(KH_IO16(0x04000010) << 7) >> 7), KH_IO16(0x04000052),
+                 (uint16_t)(kh_ds_palette[0] | kh_ds_palette[1] << 8));
     if (a3d && !tex3d) {
         /* no 3D to lay in: the 3D pixels show what is under them */
         uint32_t *fb = a_on_top ? s_top : s_bottom;
