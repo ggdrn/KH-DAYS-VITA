@@ -451,6 +451,7 @@ static void watch_registers(uint32_t frame)
         { "DISPCNT_B", 0x04001000, 4 }, { "POWCNT1", 0x04000304, 2 }, { "VRAMCNT_A-D", 0x04000240, 4 },
         { "VRAMCNT_E-G", 0x04000244, 4 }, { "VRAMCNT_H-I", 0x04000248, 2 },
         { "MASTER_BRIGHT_A", 0x0400006c, 2 }, { "MASTER_BRIGHT_B", 0x0400106c, 2 },
+        { "DISPCNT_A_MODE", 0x04000002, 2 },
     };
     static uint32_t last[sizeof(regs) / sizeof(regs[0])];
     static int logged;
@@ -461,7 +462,7 @@ static void watch_registers(uint32_t frame)
             v &= 0x00ffffff; /* 0x04000247 is WRAMCNT */
         if (v == last[i])
             continue;
-        if (logged++ < 400)
+        if (regs[i].name[0] == 'V' || regs[i].addr == 0x04000002 || logged++ < 400)
             LOGV("reg: f%u %s %0*x -> %0*x", (unsigned)frame, regs[i].name, regs[i].size * 2,
                 (unsigned)last[i], regs[i].size * 2, (unsigned)v);
         last[i] = v;

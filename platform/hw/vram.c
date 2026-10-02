@@ -147,6 +147,17 @@ void kh_vram_sync(void)
         view = view_ptr(placement(b, now[b]), s_banks[b].size);
         if (view)
             memcpy(view, kh_vram_bank_home(b), s_banks[b].size);
+        if (kh_log_verbose) {
+            static uint32_t logged;
+            if (logged++ < 3000) {
+                const uint32_t *w = (const uint32_t *)kh_vram_bank_home(b);
+                uint32_t i, nz = 0;
+                for (i = 0; i < s_banks[b].size / 4; i++)
+                    nz += w[i] != 0;
+                LOG("vram: bank %c %02x -> %02x, %u%% of it non-zero", 'A' + b, s_applied[b], now[b],
+                    (unsigned)(nz * 100 / (s_banks[b].size / 4)));
+            }
+        }
         s_applied[b] = now[b];
         if (b <= 6)
             s_tex_gen++;

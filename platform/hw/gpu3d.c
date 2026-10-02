@@ -136,8 +136,14 @@ static void tex_put(TexEntry *e, uint32_t teximage, const uint32_t *px)
     const int w = kh_tex_width(teximage), h = kh_tex_height(teximage);
     GLint ws, wt;
     s_stats.fmt[kh_tex_format(teximage)]++;
-    if (kh_tex_source_empty(teximage))
+    if (kh_tex_source_empty(teximage)) {
+        static uint32_t logged;
         s_stats.empty_src++;
+        if (kh_log_verbose && logged++ < 40)
+            LOG("gpu3d: frame %u: texture %08x (pltt %04x) from all-zero VRAM; VRAMCNT %08x %08x",
+                (unsigned)s_frame, (unsigned)teximage, (unsigned)0, (unsigned)KH_IO32(0x04000240),
+                (unsigned)KH_IO32(0x04000244));
+    }
     glBindTexture(GL_TEXTURE_2D, e->tex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -407,13 +413,15 @@ void kh_gpu3d_dump_tga(const char *path, const uint32_t *px, int w, int h)
     hdr[16] = 32;
     hdr[17] = 0x28; /* top-left origin, 8 alpha bits */
     fwrite(hdr, 1, sizeof(hdr), f);
-    for (y = 0; y < h; y++)
-        for (x = 0; x < w; x++) {
+    for (y = 0; y < h; y++) {
+        static uint8_t row[4096 * 4];
+        for (x = 0; x < w && x < 4096; x++) {
             const uint32_t c = px[y * w + x];
-            const uint8_t bgra[4] = { (uint8_t)(c >> 16), (uint8_t)(c >> 8), (uint8_t)c,
-                                      (uint8_t)(c >> 24) };
-            fwrite(bgra, 1, 4, f);
+            row[x * 4] = (uint8_t)(c >> 16), row[x * 4 + 1] = (uint8_t)(c >> 8);
+            row[x * 4 + 2] = (uint8_t)c, row[x * 4 + 3] = (uint8_t)(c >> 24);
         }
+        fwrite(row, 4, (size_t)x, f);
+    }
     fclose(f);
 }
 

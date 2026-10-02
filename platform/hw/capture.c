@@ -15,6 +15,7 @@
 #include "hw/io.h"
 #include "hw/memmap.h"
 #include "hw/vram.h"
+#include "log.h"
 #include "video.h"
 
 #include <string.h>
@@ -77,6 +78,13 @@ int kh_capture_run(unsigned tex3d)
         srcb = s_srcb;
     }
     video_capture(mode != 1 && !src_a_3d ? s_gfx : NULL, src_a_3d && mode != 1, tex3d, ka, kb, srcb);
+    if (kh_log_verbose) {
+        static uint32_t logged;
+        if (logged++ < 60)
+            LOG("capture: DISPCAPCNT %08x DISPCNT %08x VRAMCNT %08x, bank B %s", (unsigned)cnt,
+                (unsigned)dispcnt, (unsigned)KH_IO32(0x04000240),
+                kb > 0 ? (srcb ? "from its bytes" : "the last capture") : "unused");
+    }
     s_valid = 1;
     s_bank = dest;
     s_hash = bank_hash(dest);
