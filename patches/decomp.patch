@@ -16468,6 +16468,42 @@ index a0fa19632..4d0548363 100644
 -    G2x_SetBlendAlpha_((u32 *)0x04000050, 8, 0x21, 0x10, 0);
 +    G2x_SetBlendAlpha_((u32 *)KH_HW(0x04000050), 8, 0x21, 0x10, 0);
  }
+diff --git a/src/overlays/scenes/ov002_field/data/ov002_peer_limit.c b/src/overlays/scenes/ov002_field/data/ov002_peer_limit.c
+index b03b83c19..fceb0c59f 100644
+--- a/src/overlays/scenes/ov002_field/data/ov002_peer_limit.c
++++ b/src/overlays/scenes/ov002_field/data/ov002_peer_limit.c
+@@ -5,4 +5,6 @@
+ 
+ #include "nitro/types.h"
+ 
++#ifndef PLATFORM_VITA /* defined with 0207e678 in ov002_tier_values.c */
+ const u16 data_ov002_0207e67a[1] = { 100 };
++#endif
+diff --git a/src/overlays/scenes/ov002_field/data/ov002_tier_values.c b/src/overlays/scenes/ov002_field/data/ov002_tier_values.c
+index 27ea9c5be..7eb7143c3 100644
+--- a/src/overlays/scenes/ov002_field/data/ov002_tier_values.c
++++ b/src/overlays/scenes/ov002_field/data/ov002_tier_values.c
+@@ -3,4 +3,20 @@
+ 
+ #include "nitro/types.h"
+ 
++#ifdef PLATFORM_VITA
++/* Ov002_SpawnTieredDrop reads 100 at 0207e67a and then the two bytes before it, so the three
++ * have to touch. As two C objects the linker dropped this unreferenced one and aligned the
++ * other, the walk read 0 and Mission Mode's crystal drop never ended; here they are one block,
++ * both symbols in it (ov002_peer_limit.c leaves 0207e67a to this file). */
++__asm__(".section .rodata.data_ov002_0207e678,\"a\"\n"
++        "    .balign 2\n"
++        "    .global data_ov002_0207e678\n"
++        "    .global data_ov002_0207e67a\n"
++        "data_ov002_0207e678:\n"
++        "    .byte 1, 10\n"
++        "data_ov002_0207e67a:\n"
++        "    .hword 100\n"
++        "    .previous\n");
++#else
+ const u8 data_ov002_0207e678[2] = { 1, 10 };
++#endif
 diff --git a/src/overlays/scenes/ov002_field/func_ov002_0206d31c.c b/src/overlays/scenes/ov002_field/func_ov002_0206d31c.c
 index 18fb83be1..9d1c42366 100644
 --- a/src/overlays/scenes/ov002_field/func_ov002_0206d31c.c

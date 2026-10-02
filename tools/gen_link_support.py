@@ -227,13 +227,30 @@ def data_files(decomp, archives, by_addr):
     """module -> [(DS address, pattern)]: the data files (data/*_ADDRESS.c) as whole input
     files, and the module's other initialized objects (defined next to code) one by one."""
     out, in_files = {}, set()
+    # a file named for what it holds (data/ov002_tier_values.c) gets its DS address from the
+    # delinks: left out of the order, Ov002_SpawnTieredDrop's three adjacent tier bytes came
+    # apart and Mission Mode's crystal drop looped forever (0.0.71)
+    starts = {}
+    for dl in [decomp / "config" / "arm9" / "delinks.txt"] + sorted(
+            (decomp / "config" / "arm9" / "overlays").glob("*/delinks.txt")):
+        path = None
+        for line in dl.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line and not line[0].isspace() and line.rstrip().endswith(":"):
+                path = line.rstrip()[:-1]
+            elif path and "start:0x" in line:
+                a = int(line.split("start:0x")[1].split()[0], 16)
+                starts[path] = min(a, starts.get(path, a))
 
     def add_files(mod, arc, folder):
         for f in folder:
             m = DATA_FILE.search(f.name)
-            if not m:
-                continue
-            out.setdefault(mod, []).append((int(m.group(1), 16), f"*{arc}.a:{f.stem}.o"))
+            if m:
+                addr = int(m.group(1), 16)
+            else:
+                addr = starts.get(f.relative_to(decomp).as_posix())
+                if addr is None:
+                    continue
+            out.setdefault(mod, []).append((addr, f"*{arc}.a:{f.stem}.o"))
             in_files.update(DEFINED.findall(f.read_text(encoding="utf-8", errors="replace")))
 
     add_files("main", "main", (decomp / "src" / "engine" / "data").glob("*.c"))
