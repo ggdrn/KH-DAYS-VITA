@@ -34,6 +34,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <psp2/kernel/cpu.h>
+
+extern uint32_t kh_reset_parameter(void); /* nitro/asm_replacements.c */
 #include <psp2/display.h>
 
 static int s_gpu3d;          /* the GPU 3D renderer is up */
@@ -97,6 +99,9 @@ static void boot_state(void)
     /* the card ID the boot read, where CARDi_CheckPulledOutCore compares it */
     *(volatile uint32_t *)KH_SHARED(0x027ff800) = KH_CARD_ID;
     *(volatile uint32_t *)KH_SHARED(0x027ffc00) = KH_CARD_ID;
+    /* OS_ResetSystem's parameter survives the reset (asm_replacements.c): Boot_InitScene picks
+     * the first scene from it */
+    *(volatile uint32_t *)KH_SHARED(0x027ffc20) = kh_reset_parameter();
     kh_cpu_init();
     kh_arm7_init();
     kh_overlays_snapshot();

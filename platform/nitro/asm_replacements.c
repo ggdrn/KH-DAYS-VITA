@@ -12,8 +12,13 @@
 #include "hw/memmap.h"
 #include "hw/shared_area.h"
 #include "log.h"
+#include "nitro/backup.h"
+#include "paths.h"
 
+#include <psp2/appmgr.h>
+#include <psp2/io/fcntl.h>
 #include <psp2/kernel/processmgr.h>
+#include <stdio.h>
 #include <psp2/kernel/threadmgr.h>
 #include <stdint.h>
 #include <string.h>
@@ -563,12 +568,40 @@ void RtcWaitBusy(void)
 {
 }
 
+/* The DS reboots into the game with the parameter left at 0x027ffc20 (HW_RESET_PARAMETER_BUF):
+ * -2 is "back to the title" (the camp menu's Title Screen), others the connection-error screen.
+ * Here the eboot is started again, with the save written and the parameter in a file that the
+ * next boot puts back (kh_reset_parameter). */
 void OS_ResetSystem(uint32_t param)
 {
-    (void)param;
-    LOG("nitro: OS_ResetSystem, exiting");
+    FILE *f;
+    LOG("nitro: OS_ResetSystem(%08x): restarting", (unsigned)param);
+    kh_backup_flush();
+    f = fopen(KH_DATA_DIR "/reset.param", "wb");
+    if (f) {
+        fwrite(&param, 4, 1, f);
+        fclose(f);
+    }
     log_flush();
+    if (sceAppMgrLoadExec("app0:eboot.bin", NULL, NULL) < 0) {
+        LOG("nitro: restart failed, exiting");
+        log_flush();
+    }
     sceKernelExitProcess(0);
+}
+
+uint32_t kh_reset_parameter(void)
+{
+    uint32_t param = 0;
+    FILE *f = fopen(KH_DATA_DIR "/reset.param", "rb");
+    if (f) {
+        if (fread(&param, 4, 1, f) != 1)
+            param = 0;
+        fclose(f);
+        sceIoRemove(KH_DATA_DIR "/reset.param");
+        LOG("nitro: booting after a reset (parameter %08x)", (unsigned)param);
+    }
+    return param;
 }
 
 /* ---- ARM946E only: caches, protection unit, TCM ------------------------------------------- */
