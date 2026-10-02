@@ -3,6 +3,7 @@
 #include "config.h"
 #include "log.h"
 
+#include <string.h>
 #include <vitaGL.h>
 
 #define DISPLAY_W 960
@@ -15,7 +16,21 @@ static ScreenRect s_rect[2];
 static int s_inset = -1; /* the screen drawn small over the other one, -1 for none */
 static volatile int s_pending = -1; /* a layout asked for from another thread (input) */
 static GLuint s_compose, s_compose_vbo;
-static GLint u_c2d, u_c3d, u_bright, u_hofs, u_blend, u_backdrop;
+static GLint u_c2d, u_c3d, u_bright, u_hofs, u_blend, u_backdrop, u_prev, u_cap, u_flip;
+
+/* The display capture on the GPU (platform/hw/capture.c): two targets used in turn, the newest
+ * one holding the last capture (GL orientation, row 0 the bottom); the graphics screen to
+ * capture, source B when it is not the last capture, and a clear texture for "no 3D". */
+static GLuint s_cap_tex[2], s_cap_fbo[2], s_cap_gfx, s_cap_srcb, s_clear_tex;
+static int s_cap_cur = -1, s_cap_w, s_cap_h;
+static struct {
+    int pending, src3d;
+    const uint32_t *gfx, *srcb;
+    unsigned tex3d;
+    float ka, kb;
+} s_cap;
+static int s_show_cap = -1;     /* screen showing the last capture in the next present */
+static uint16_t s_show_cap_bright;
 static uint16_t s_3d_bldalpha, s_3d_backdrop;
 static float s_3d_hofs;
 static int s_3d_screen = -1;
@@ -33,16 +48,23 @@ static const char s_compose_vs[] =
 static const char s_compose_fs[] =
     "float4 main(float2 vUv : TEXCOORD0, uniform sampler2D u2d, uniform sampler2D u3d,\n"
     "            uniform float2 uBright, uniform float uHofs, uniform float2 uBlend,\n"
-    "            uniform float3 uBackdrop) : COLOR\n"
+    "            uniform float3 uBackdrop, uniform sampler2D uPrev, uniform float4 uCap,\n"
+    "            uniform float uFlip) : COLOR\n"
     "{\n"
-    "    float4 b = tex2D(u2d, vUv);\n"
+    "    float2 uv2 = vUv;\n"
+    "    if (uFlip > 0.5)\n"
+    "        uv2.y = 1.0 - vUv.y;\n"
+    "    float4 b = tex2D(u2d, uv2);\n"
     "    float3 c = b.rgb;\n"
-    "    if (b.a < 0.99) {\n"
+    "    float u = vUv.x + uHofs;\n"
+    "    float4 t = tex2D(u3d, float2(u, 1.0 - vUv.y));\n"
+    "    if (u < 0.0 || u > 1.0)\n"
+    "        t = float4(0.0, 0.0, 0.0, 0.0);\n"
+    /* uCap.z: a capture of the 3D layer alone */
+    "    if (uCap.z > 0.5) {\n"
+    "        c = t.rgb;\n"
+    "    } else if (b.a < 0.99) {\n"
     "        float code = floor(b.a * 255.0 + 0.5);\n"
-    "        float u = vUv.x + uHofs;\n"
-    "        float4 t = tex2D(u3d, float2(u, 1.0 - vUv.y));\n"
-    "        if (u < 0.0 || u > 1.0)\n"
-    "            t = float4(0.0, 0.0, 0.0, 0.0);\n"
     /* a 2D layer blended over the 3D one (gpu2d.h OVER_3D / BLEND_3D): b is the 2D colour,
      * the 3D layer over the backdrop the second target */
     "        if (code >= 192.0) {\n"
@@ -61,6 +83,9 @@ static const char s_compose_fs[] =
     "            c = t.rgb + b.rgb * (1.0 - t.a);\n"
     "        }\n"
     "    }\n"
+    /* a display capture: this picture times EVA plus the source B picture times EVB */
+    "    if (uCap.w > 0.5)\n"
+    "        c = min(c * uCap.x + tex2D(uPrev, float2(vUv.x, 1.0 - vUv.y)).rgb * uCap.y, 1.0);\n"
     "    if (uBright.x > 0.5 && uBright.x < 1.5)\n"
     "        c = c + (1.0 - c) * uBright.y;\n"
     "    else if (uBright.x > 1.5)\n"
@@ -122,6 +147,9 @@ static void compose_init(void)
     u_hofs = glGetUniformLocation(s_compose, "uHofs");
     u_blend = glGetUniformLocation(s_compose, "uBlend");
     u_backdrop = glGetUniformLocation(s_compose, "uBackdrop");
+    u_prev = glGetUniformLocation(s_compose, "uPrev");
+    u_cap = glGetUniformLocation(s_compose, "uCap");
+    u_flip = glGetUniformLocation(s_compose, "uFlip");
     glGenBuffers(1, &s_compose_vbo);
 }
 
@@ -136,27 +164,35 @@ void video_set_3d(int screen, unsigned tex, uint16_t master_bright, int hofs, ui
     s_3d_bright = master_bright;
 }
 
-static void draw_composed(int screen)
+/* One pass of the composition shader over the NDC rectangle v (x, y, u, v per corner).
+ * cap: 0 to the screen; 1 a capture pass (no master brightness, source B blended in). */
+static void compose_pass(const float *v, GLuint tex2d, int flip2d, GLuint tex3d, uint16_t bright,
+                         int cap)
 {
-    const ScreenRect *r = &s_rect[screen];
-    const float x0 = r->x / (DISPLAY_W / 2.0f) - 1.0f, x1 = (r->x + r->w) / (DISPLAY_W / 2.0f) - 1.0f;
-    const float y0 = 1.0f - r->y / (DISPLAY_H / 2.0f), y1 = 1.0f - (r->y + r->h) / (DISPLAY_H / 2.0f);
-    const float v[] = { x0, y0, 0, 0, x1, y0, 1, 0, x0, y1, 0, 1, x1, y1, 1, 1 };
-    const int mode = (s_3d_bright >> 14) & 3;
-    int f = s_3d_bright & 31;
+    const int mode = (bright >> 14) & 3;
+    int f = bright & 31;
 
     if (f > 16)
         f = 16;
     glUseProgram(s_compose);
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, cap && !s_cap.srcb && s_cap_cur >= 0 ? s_cap_tex[s_cap_cur]
+                                 : cap && s_cap.srcb ? s_cap_srcb : s_clear_tex);
     glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, s_3d_tex);
+    glBindTexture(GL_TEXTURE_2D, tex3d ? tex3d : s_clear_tex);
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, s_tex[screen]);
+    glBindTexture(GL_TEXTURE_2D, tex2d);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glUniform1i(u_c2d, 0);
     glUniform1i(u_c3d, 1);
+    glUniform1i(u_prev, 2);
     glUniform1f(u_hofs, s_3d_hofs);
+    glUniform1f(u_flip, flip2d ? 1.0f : 0.0f);
+    if (cap)
+        glUniform4f(u_cap, s_cap.ka, s_cap.kb, s_cap.src3d ? 1.0f : 0.0f, 1.0f);
+    else
+        glUniform4f(u_cap, 1.0f, 0.0f, 0.0f, 0.0f);
     {
         float eva = (float)(s_3d_bldalpha & 31), evb = (float)((s_3d_bldalpha >> 8) & 31);
         const uint16_t bd = s_3d_backdrop;
@@ -164,9 +200,9 @@ static void draw_composed(int screen)
         glUniform3f(u_backdrop, (float)(bd & 31) / 31.0f, (float)((bd >> 5) & 31) / 31.0f,
                     (float)((bd >> 10) & 31) / 31.0f);
     }
-    glUniform2f(u_bright, (mode == 1 || mode == 2) ? (float)mode : 0.0f, (float)f / 16.0f);
+    glUniform2f(u_bright, (!cap && (mode == 1 || mode == 2)) ? (float)mode : 0.0f, (float)f / 16.0f);
     glBindBuffer(GL_ARRAY_BUFFER, s_compose_vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(v), v, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, 16 * sizeof(float), v, GL_DYNAMIC_DRAW);
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, (void *)0);
@@ -178,6 +214,96 @@ static void draw_composed(int screen)
     glUseProgram(0);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+}
+
+static void screen_quad(int screen, float *v)
+{
+    const ScreenRect *r = &s_rect[screen];
+    const float x0 = r->x / (DISPLAY_W / 2.0f) - 1.0f, x1 = (r->x + r->w) / (DISPLAY_W / 2.0f) - 1.0f;
+    const float y0 = 1.0f - r->y / (DISPLAY_H / 2.0f), y1 = 1.0f - (r->y + r->h) / (DISPLAY_H / 2.0f);
+    const float q[] = { x0, y0, 0, 0, x1, y0, 1, 0, x0, y1, 0, 1, x1, y1, 1, 1 };
+    memcpy(v, q, sizeof(q));
+}
+
+static void draw_composed(int screen)
+{
+    float v[16];
+    screen_quad(screen, v);
+    compose_pass(v, s_tex[screen], 0, s_3d_tex, s_3d_bright, 0);
+}
+
+static GLuint new_texture(int w, int h, GLint filter)
+{
+    GLuint t;
+    glGenTextures(1, &t);
+    glBindTexture(GL_TEXTURE_2D, t);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    return t;
+}
+
+static void capture_init(void)
+{
+    static const uint32_t clear = 0;
+    int i;
+    s_cap_w = DS_SCREEN_W * kh_config.render_scale;
+    s_cap_h = DS_SCREEN_H * kh_config.render_scale;
+    for (i = 0; i < 2; i++) {
+        s_cap_tex[i] = new_texture(s_cap_w, s_cap_h, GL_LINEAR);
+        glGenFramebuffers(1, &s_cap_fbo[i]);
+        glBindFramebuffer(GL_FRAMEBUFFER, s_cap_fbo[i]);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s_cap_tex[i], 0);
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    s_cap_gfx = new_texture(DS_SCREEN_W, DS_SCREEN_H, GL_NEAREST);
+    s_cap_srcb = new_texture(DS_SCREEN_W, DS_SCREEN_H, GL_NEAREST);
+    s_clear_tex = new_texture(1, 1, GL_NEAREST);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, &clear);
+}
+
+void video_capture(const uint32_t *gfx, int src3d, unsigned tex3d, float ka, float kb,
+                   const uint32_t *srcb)
+{
+    s_cap.gfx = gfx;
+    s_cap.src3d = src3d;
+    s_cap.tex3d = tex3d;
+    s_cap.ka = ka;
+    s_cap.kb = kb;
+    s_cap.srcb = srcb;
+    s_cap.pending = 1;
+}
+
+void video_show_capture(int screen, uint16_t master_bright)
+{
+    s_show_cap = s_cap_cur >= 0 ? screen : -1;
+    s_show_cap_bright = master_bright;
+}
+
+static void run_capture(void)
+{
+    static const float full[] = { -1, 1, 0, 0, 1, 1, 1, 0, -1, -1, 0, 1, 1, -1, 1, 1 };
+    const int next = s_cap_cur < 0 ? 0 : 1 - s_cap_cur;
+    s_cap.pending = 0;
+    if (!s_compose)
+        return;
+    if (s_cap.gfx) {
+        glBindTexture(GL_TEXTURE_2D, s_cap_gfx);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, DS_SCREEN_W, DS_SCREEN_H, GL_RGBA, GL_UNSIGNED_BYTE,
+                        s_cap.gfx);
+    }
+    if (s_cap.srcb) {
+        glBindTexture(GL_TEXTURE_2D, s_cap_srcb);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, DS_SCREEN_W, DS_SCREEN_H, GL_RGBA, GL_UNSIGNED_BYTE,
+                        s_cap.srcb);
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, s_cap_fbo[next]);
+    glViewport(0, 0, s_cap_w, s_cap_h);
+    compose_pass(full, s_cap.gfx ? s_cap_gfx : s_clear_tex, 0, s_cap.tex3d, 0, 1);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    s_cap_cur = next;
 }
 
 /* The small screen: 4:3, inset_width wide (config.ini), in the top-right corner. */
@@ -275,6 +401,7 @@ void video_init(void)
     s_layout = (ScreenLayout)(kh_config.layout % LAYOUT_COUNT);
     compute_layout();
     compose_init();
+    capture_init();
     LOG("video: vitaGL up, layout %d", s_layout);
 }
 
@@ -323,6 +450,8 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
         s_pending = -1;
         compute_layout();
     }
+    if (s_cap.pending)
+        run_capture();
     glViewport(0, 0, DISPLAY_W, DISPLAY_H);
     glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -333,7 +462,12 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
         if (src[i])
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, DS_SCREEN_W, DS_SCREEN_H, GL_RGBA,
                             GL_UNSIGNED_BYTE, src[i]);
-        if (i == s_3d_screen)
+        if (i == s_show_cap && s_compose) {
+            /* the screen shows the VRAM bank the last capture went to */
+            float v[16];
+            screen_quad(i, v);
+            compose_pass(v, s_cap_tex[s_cap_cur], 1, 0, s_show_cap_bright, 0);
+        } else if (i == s_3d_screen)
             draw_composed(i);
         else
             draw_quad(&s_rect[i]);

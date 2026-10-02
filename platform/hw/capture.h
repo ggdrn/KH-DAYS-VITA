@@ -5,8 +5,12 @@
 #include <stdint.h>
 
 /* With DISPCAPCNT's enable bit set: capture this frame into its VRAM bank and clear the bit.
- * From the display loop, after the 3D layer is drawn; returns 1 when it captured. */
-int kh_capture_run(void);
+ * From the display loop, with tex3d the 3D layer drawn for it; returns 1 when it captured. */
+int kh_capture_run(unsigned tex3d);
+
+/* Whether the last capture went to bank and is still what it holds: engine A showing that bank
+ * (display mode 2) shows the capture (video_show_capture). */
+int kh_capture_shown(int bank);
 
 /* captures since the last call, for the statistics */
 uint32_t kh_capture_take_count(void);

@@ -736,26 +736,6 @@ done:
     return s_color;
 }
 
-int kh_gpu3d_read_layer(uint32_t *out)
-{
-    static uint32_t *px;
-    int x, y;
-    if (!s_prog || !s_last_serial)
-        return 0;
-    if (!px && !(px = malloc((size_t)s_w * s_h * 4)))
-        return 0;
-    glBindFramebuffer(GL_FRAMEBUFFER, s_fbo);
-    glReadPixels(0, 0, s_w, s_h, GL_RGBA, GL_UNSIGNED_BYTE, px);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    /* the centre texel of each DS pixel; GL's row 0 is the bottom */
-    for (y = 0; y < 192; y++) {
-        const uint32_t *row = px + (size_t)(s_h - 1 - (y * s_scale + s_scale / 2)) * s_w;
-        for (x = 0; x < 256; x++)
-            out[y * 256 + x] = row[x * s_scale + s_scale / 2];
-    }
-    return 1;
-}
-
 void kh_gpu3d_take_stats(KhGpu3dStats *out)
 {
     *out = s_stats;

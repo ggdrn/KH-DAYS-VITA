@@ -27,9 +27,6 @@ extern volatile int kh_gpu3d_debug;
  * ux0:data/khdays/dump/, for diagnosis. Any thread. */
 void kh_gpu3d_request_dump(void);
 
-/* The last drawn 3D layer at the DS's 256x192 (premultiplied RGBA in memory order, top row
- * first), read back from the GPU: for the display capture. 0 when there is none. */
-int kh_gpu3d_read_layer(uint32_t *out);
 /* a 32-bit TGA, px as RGBA in memory order, top row first */
 void kh_gpu3d_dump_tga(const char *path, const uint32_t *px, int w, int h);
 

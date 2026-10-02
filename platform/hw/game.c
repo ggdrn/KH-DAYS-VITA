@@ -205,7 +205,7 @@ static void present(void)
     /* POWCNT1 bit 15: engine A on the top screen */
     int a_on_top = (KH_IO16(0x04000304) >> 15) & 1;
     uint64_t t0 = sceKernelGetProcessTimeWide();
-    unsigned tex3d = 0;
+    unsigned tex3d = 0, raw3d;
     int a3d = 0, i, draw2d;
     static Frame2d f2d;
     static uint32_t seen_serial, serial_vb, drawn_vb, pending;
@@ -287,6 +287,7 @@ static void present(void)
     s_render_total += s_render_us;
     if (s_render_us > s_render_max)
         s_render_max = s_render_us;
+    raw3d = tex3d; /* for the capture, which sees the 3D layer whatever is displayed */
     if (!a3d)
         tex3d = 0;
     video_set_3d(tex3d ? (a_on_top ? 0 : 1) : -1, tex3d, KH_IO16(0x0400006c),
@@ -302,7 +303,15 @@ static void present(void)
     }
     /* the display capture the game armed for this frame (dialogue screen blends) */
     s_stage = "capture";
-    kh_capture_run();
+    kh_capture_run(raw3d);
+    {
+        /* engine A showing the VRAM bank the last capture went to: the capture */
+        const uint32_t dc = KH_IO32(0x04000000);
+        if (((dc >> 16) & 3) == 2 && kh_capture_shown((int)((dc >> 18) & 3)))
+            video_show_capture(a_on_top ? 0 : 1, KH_IO16(0x0400006c));
+        else
+            video_show_capture(-1, 0);
+    }
     if (s_dump_2d) {
         s_dump_2d = 0;
         dump_2d(a_on_top);
