@@ -394,45 +394,74 @@ static void hw_stop(Channel *c)
     c->hw_on = 0;
 }
 
+/* one IMA-ADPCM nibble into the decoder state */
+static inline void adpcm_step(int *pred, int *index, int nib)
+{
+    int st = s_adpcm_step[*index], diff = st >> 3;
+    if (nib & 1) diff += st >> 2;
+    if (nib & 2) diff += st >> 1;
+    if (nib & 4) diff += st;
+    if (nib & 8) {
+        *pred -= diff;
+        if (*pred < -0x7fff) *pred = -0x7fff;
+    } else {
+        *pred += diff;
+        if (*pred > 0x7fff) *pred = 0x7fff;
+    }
+    *index += s_adpcm_index[nib & 7];
+    if (*index < 0) *index = 0;
+    if (*index > 88) *index = 88;
+}
+
 /* One output sample of a channel at its current position; advances it. */
 static inline float hw_sample(Channel *c, double step)
 {
     float s = 0;
     switch (c->format) {
-    case FMT_PCM8: {
-        uint32_t i = (uint32_t)c->pos;
-        if (i >= c->end) {
-            if (c->repeat == 1 && c->end > c->loop_start) {
-                c->pos -= (double)(c->end - c->loop_start);
-                i = (uint32_t)c->pos;
-            } else {
-                c->hw_on = 0;
-                return 0;
-            }
-        }
-        s = (float)(int8_t)c->data[i] / 128.0f;
-        break;
-    }
+    case FMT_PCM8:
     case FMT_PCM16: {
-        uint32_t i = (uint32_t)c->pos, n = c->end / 2, ls = c->loop_start / 2;
+        /* linear interpolation between the two samples around the position: the DS plays the
+         * nearest one at its own 32 kHz, which resampled to 48 kHz turns into grain */
+        const int b16 = c->format == FMT_PCM16;
+        const uint32_t n = b16 ? c->end / 2 : c->end, ls = b16 ? c->loop_start / 2 : c->loop_start;
+        uint32_t i = (uint32_t)c->pos, j;
+        float s0, s1, frac;
         if (i >= n) {
             if (c->repeat == 1 && n > ls) {
-                c->pos -= (double)(n - ls);
+                while ((uint32_t)c->pos >= n)
+                    c->pos -= (double)(n - ls);
                 i = (uint32_t)c->pos;
             } else {
                 c->hw_on = 0;
                 return 0;
             }
         }
-        s = (float)(int16_t)(c->data[i * 2] | c->data[i * 2 + 1] << 8) / 32768.0f;
+        j = i + 1;
+        if (j >= n)
+            j = (c->repeat == 1 && n > ls) ? ls : i;
+        if (b16) {
+            s0 = (float)(int16_t)(c->data[i * 2] | c->data[i * 2 + 1] << 8);
+            s1 = (float)(int16_t)(c->data[j * 2] | c->data[j * 2 + 1] << 8);
+            s0 *= 1.0f / 32768.0f;
+            s1 *= 1.0f / 32768.0f;
+        } else {
+            s0 = (float)(int8_t)c->data[i] * (1.0f / 128.0f);
+            s1 = (float)(int8_t)c->data[j] * (1.0f / 128.0f);
+        }
+        frac = (float)(c->pos - (double)i);
+        s = s0 + (s1 - s0) * frac;
         break;
     }
     case FMT_ADPCM: {
-        /* samples after the 4-byte header: 2 per byte */
-        uint32_t want = (uint32_t)c->pos, n = (c->end - 4) * 2, ls = (c->loop_start > 4 ? c->loop_start - 4 : 0) * 2;
+        /* nibbles after the 4-byte header, 2 a byte; adpcm_pos nibbles decoded leave
+         * adpcm_pred holding sample adpcm_pos - 1 (the header's value before the first) */
+        const uint32_t n = (c->end - 4) * 2, ls = (c->loop_start > 4 ? c->loop_start - 4 : 0) * 2;
+        uint32_t want = (uint32_t)c->pos;
+        float s0, s1;
         if (want >= n) {
             if (c->repeat == 1 && n > ls) {
-                c->pos -= (double)(n - ls);
+                while ((uint32_t)c->pos >= n)
+                    c->pos -= (double)(n - ls);
                 want = (uint32_t)c->pos;
                 if (c->adpcm_loop_saved) {
                     c->adpcm_pred = c->adpcm_loop_pred;
@@ -444,27 +473,14 @@ static inline float hw_sample(Channel *c, double step)
                 return 0;
             }
         }
-        if ((int)want < c->adpcm_pos) { /* went back without a saved state: restart */
+        if ((int)want + 1 < c->adpcm_pos) { /* went back without a saved state: restart */
             c->adpcm_pred = (int16_t)(c->data[0] | c->data[1] << 8);
             c->adpcm_index = c->data[2] > 88 ? 88 : c->data[2];
             c->adpcm_pos = 0;
         }
-        while ((uint32_t)c->adpcm_pos < want) {
-            int nib = (c->data[4 + c->adpcm_pos / 2] >> ((c->adpcm_pos & 1) * 4)) & 15;
-            int st = s_adpcm_step[c->adpcm_index], diff = st >> 3;
-            if (nib & 1) diff += st >> 2;
-            if (nib & 2) diff += st >> 1;
-            if (nib & 4) diff += st;
-            if (nib & 8) {
-                c->adpcm_pred -= diff;
-                if (c->adpcm_pred < -0x7fff) c->adpcm_pred = -0x7fff;
-            } else {
-                c->adpcm_pred += diff;
-                if (c->adpcm_pred > 0x7fff) c->adpcm_pred = 0x7fff;
-            }
-            c->adpcm_index += s_adpcm_index[nib & 7];
-            if (c->adpcm_index < 0) c->adpcm_index = 0;
-            if (c->adpcm_index > 88) c->adpcm_index = 88;
+        while ((uint32_t)c->adpcm_pos <= want) {
+            adpcm_step(&c->adpcm_pred, &c->adpcm_index,
+                       (c->data[4 + c->adpcm_pos / 2] >> ((c->adpcm_pos & 1) * 4)) & 15);
             c->adpcm_pos++;
             if ((uint32_t)c->adpcm_pos == ls && !c->adpcm_loop_saved) {
                 c->adpcm_loop_pred = c->adpcm_pred;
@@ -472,7 +488,15 @@ static inline float hw_sample(Channel *c, double step)
                 c->adpcm_loop_saved = 1;
             }
         }
-        s = (float)c->adpcm_pred / 32768.0f;
+        s0 = (float)c->adpcm_pred * (1.0f / 32768.0f);
+        if (want + 1 < n) { /* the next sample, decoded on a copy of the state */
+            int pred = c->adpcm_pred, index = c->adpcm_index;
+            adpcm_step(&pred, &index, (c->data[4 + (want + 1) / 2] >> (((want + 1) & 1) * 4)) & 15);
+            s1 = (float)pred * (1.0f / 32768.0f);
+        } else {
+            s1 = s0;
+        }
+        s = s0 + (s1 - s0) * (float)(c->pos - (double)want);
         break;
     }
     default: /* PSG (channels 8-13) or noise (14-15) */
@@ -1474,6 +1498,22 @@ static void alarms_run(void)
     }
 }
 
+/* Mixer level: a full-volume channel panned centre gives half scale on each side, as on the
+ * DS; past 0.75 the sum is bent smoothly towards full scale instead of clipped, so that busy
+ * scenes neither crackle nor have to be mixed quieter. */
+#define MIX_GAIN 1.0f
+#define KNEE 0.75f
+
+static inline float soft_limit(float x)
+{
+    const float a = x < 0 ? -x : x;
+    float y;
+    if (a <= KNEE)
+        return x;
+    y = KNEE + (1.0f - KNEE) * tanhf((a - KNEE) / (1.0f - KNEE));
+    return x < 0 ? -y : y;
+}
+
 void snd7_render(int16_t *out, int frames)
 {
     const double dt = 1.0 / SND7_RATE;
@@ -1507,14 +1547,10 @@ void snd7_render(int16_t *out, int frames)
                 r += s * c->gain_r;
             }
             {
-                const float mv = (float)s_master_volume / 127.0f * 0.9f;
+                const float mv = (float)s_master_volume / 127.0f * MIX_GAIN;
                 int sl, sr;
-                l *= mv;
-                r *= mv;
-                if (l > 1.0f) l = 1.0f;
-                if (l < -1.0f) l = -1.0f;
-                if (r > 1.0f) r = 1.0f;
-                if (r < -1.0f) r = -1.0f;
+                l = soft_limit(l * mv);
+                r = soft_limit(r * mv);
                 sl = (int)(l * 32767.0f);
                 sr = (int)(r * 32767.0f);
                 out[(n + k) * 2] = (int16_t)sl;
