@@ -377,10 +377,10 @@ index 54d1b93a3..ab5f0d8a9 100644
  
 diff --git a/include/nitro/kh_hw.h b/include/nitro/kh_hw.h
 new file mode 100644
-index 000000000..ce767ded3
+index 000000000..b97820984
 --- /dev/null
 +++ b/include/nitro/kh_hw.h
-@@ -0,0 +1,66 @@
+@@ -0,0 +1,75 @@
 +/* KH_HW(addr): a fixed hardware address of the DS, as the code uses it.
 + *
 + * On the DS this is the address itself, so every source compiles to the same bytes as before.
@@ -415,6 +415,11 @@ index 000000000..ce767ded3
 +#ifdef PLATFORM_VITA
 +int kh_is_packed_handle(unsigned long v);
 +#define KH_IS_PACKED(v) kh_is_packed_handle((unsigned long)(v))
++
++/* KH_IS_CODE(v): whether v is an address in the port's code, for game code about to call a value
++ * it computed (Obj_UpdateAll). */
++int kh_is_code(unsigned long a);
++#define KH_IS_CODE(v) kh_is_code((unsigned long)(v))
 +#else
 +#define KH_IS_PACKED(v) ((u32)(v) & 0x80000000)
 +#endif
@@ -432,9 +437,13 @@ index 000000000..ce767ded3
 +/* KH_TRACE("..."): a boot milestone in the port's log (printf format). Nothing on the DS. */
 +#ifdef PLATFORM_VITA
 +void kh_trace(const char *fmt, ...);
++void kh_trace_always(const char *fmt, ...);
 +#define KH_TRACE(...) kh_trace(__VA_ARGS__)
++/* KH_TRACE_ALWAYS: also with debug = 0, for the port's safety nets */
++#define KH_TRACE_ALWAYS(...) kh_trace_always(__VA_ARGS__)
 +#else
 +#define KH_TRACE(...) ((void)0)
++#define KH_TRACE_ALWAYS(...) ((void)0)
 +#endif
 +
 +/* KH_ALIGN64 after a struct member declared as a plain `long long`: mwcc aligns 64-bit
@@ -9222,6 +9231,34 @@ index 0df393d7c..7a5744b80 100644
          }
      }
      if (((struct Flags *)(entry + 0x78))->f2) {
+diff --git a/src/engine/Obj_UpdateAll.c b/src/engine/Obj_UpdateAll.c
+index b793da177..e1fc1f69d 100644
+--- a/src/engine/Obj_UpdateAll.c
++++ b/src/engine/Obj_UpdateAll.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_IS_CODE */
+ /*
+  * Obj_UpdateAll - run one frame of the object registry (gObjSystem, head at [3]). Each object
+  * is published as the current one ([1]) while it runs. An update callback of -2 marks an object
+@@ -36,6 +37,18 @@ void Obj_UpdateAll(int paused)
+                 int cb = ((int (*)(void))((int *)gObjSystem[1])[5])();
+ 
+                 Heap_SetCurrent(arena);
++#ifdef PLATFORM_VITA
++                /* a callback that returned something other than code (a value left in r0
++                 * on the DS): keep the running one rather than call it next frame */
++                if (cb != 0 && cb != -1 && cb != -2 && !KH_IS_CODE(cb)) {
++                    static int logged;
++                    if (logged++ < 8)
++                        KH_TRACE_ALWAYS("obj: callback %08x of object %08x returned %08x, kept",
++                                        (unsigned)((int *)gObjSystem[1])[5],
++                                        (unsigned)gObjSystem[1], (unsigned)cb);
++                    cb = 0;
++                }
++#endif
+                 if (cb != 0) {
+                     ((int *)gObjSystem[1])[5] = cb;
+                 }
 diff --git a/src/engine/Overlay105_Load.c b/src/engine/Overlay105_Load.c
 index 2e48c97f4..f01d7fa00 100644
 --- a/src/engine/Overlay105_Load.c

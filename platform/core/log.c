@@ -94,6 +94,14 @@ void kh_trace(const char *fmt, ...)
     va_end(ap);
 }
 
+void kh_trace_always(const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    log_vprintf("trace: ", fmt, ap);
+    va_end(ap);
+}
+
 void log_flush(void)
 {
     if (s_lock >= 0)

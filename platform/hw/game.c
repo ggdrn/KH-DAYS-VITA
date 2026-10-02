@@ -12,6 +12,7 @@
 #include "hw/gx3d.h"
 #include "hw/capture.h"
 #include "hw/textures.h"
+#include "hw/vram.h"
 #include "hw/io.h"
 #include "hw/memmap.h"
 #include "hw/overlays.h"
@@ -369,6 +370,20 @@ static void dump_2d(int a_on_top)
                 KH_IO16(0x04000304), (unsigned)KH_IO32(0x04000240), (unsigned)KH_IO32(0x04000244));
         fprintf(f, "backdrop A %04x B %04x\n", kh_ds_palette[0] | kh_ds_palette[1] << 8,
                 kh_ds_palette[0x400] | kh_ds_palette[0x401] << 8);
+        {
+            /* every bank: what it is mapped as and how much of it holds data */
+            static const uint32_t size[9] = { 0x20000, 0x20000, 0x20000, 0x20000, 0x10000,
+                                              0x4000, 0x4000, 0x8000, 0x4000 };
+            int b;
+            for (b = 0; b < 9; b++) {
+                const uint32_t *w = (const uint32_t *)kh_vram_bank_home(b);
+                uint32_t k, nz = 0;
+                for (k = 0; k < size[b] / 4; k++)
+                    nz += w[k] != 0;
+                fprintf(f, "bank %c: cnt %02x, %u%% non-zero\n", 'A' + b, kh_vram_bank_cnt(b),
+                        (unsigned)(nz * 100 / (size[b] / 4)));
+            }
+        }
         fclose(f);
     }
     LOG("display: dumped the 2D layers to %s", dir);

@@ -285,6 +285,7 @@ def overlay_script(archives, files):
             lines += ds_ordered(files, ov, kind)
             lines.append(f"    *{arc}.a:*({inputs})")
             lines.append(f"    kh_{ov}_{kind}_end = .;")
+        lines.append(f"    kh_ov_{kind}_all_end = .;")
         lines.append("  }")
         lines.append(f"}}\nINSERT AFTER {after};\n")
     # the main module's objects, in their own output sections in front of the rest

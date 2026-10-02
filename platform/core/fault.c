@@ -6,6 +6,7 @@
  * loads: tools/symbolize.py uses it to map PC/LR back to the ELF and to file and line.
  * Without the plugin kuKernelRegisterExceptionHandler resolves to a weak stub and this is a
  * no-op. */
+#include <stdint.h>
 #include "fault.h"
 
 #include "log.h"
@@ -110,4 +111,12 @@ void fault_init(void)
         ok += kuKernelRegisterExceptionHandler(i, h[i], &s_prev[i], NULL) >= 0;
     LOG("fault: %s (main=%08x)", ok == 3 ? "kubridge handlers installed" : "kubridge not available",
         (unsigned)(uintptr_t)main);
+}
+
+/* Whether a is an address in the eboot's code (the main module's .text through the overlays'),
+ * for game code that is about to call a value it computed. */
+extern char _init[], kh_ov_text_all_end[];
+int kh_is_code(unsigned long a)
+{
+    return a >= (uintptr_t)_init && a < (uintptr_t)kh_ov_text_all_end && !(a & 3);
 }
