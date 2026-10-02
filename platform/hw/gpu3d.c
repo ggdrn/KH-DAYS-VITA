@@ -774,13 +774,15 @@ static KhGxVertex *s_prev_vtx, *s_mix_vtx;
 static int s_prev_nvtx = -1;
 static uint32_t s_prev_disp3dcnt;
 static int s_shown_count;  /* renders of the current serial so far */
-static int s_final_pending; /* the mix was shown: B itself next */
+static int s_final_pending; /* the mix (or A again) was shown: B itself next */
+static int s_was_mixed;     /* that was a mix, for the statistics */
 
 /* How many vertices from the start of the frame are the previous frame's again (same tag in
  * the same place): the scene is sent in the same order every frame -- the field, the
  * characters, then effects that come and go -- so this keeps the field and the characters
  * interpolated when the tail differs. Their halfway mix goes to s_mix_vtx, the rest is the
- * new frame's; 0 when too little matches or a quarter of it jumps (a camera cut). */
+ * new frame's; 0 when too little matches or half of it jumps half the screen (a camera cut:
+ * a camera turning fast moves everything a good way, 0.0.74 took that for a cut). */
 static int mix_vertices(const KhGxFrame *f)
 {
     const int n = f->nvtx < s_prev_nvtx ? f->nvtx : s_prev_nvtx;
@@ -796,7 +798,7 @@ static int mix_vertices(const KhGxFrame *f)
         KhGxVertex *m = &s_mix_vtx[i];
         if (a->w > 0 && b->w > 0) {
             const float dx = a->x / a->w - b->x / b->w, dy = a->y / a->w - b->y / b->w;
-            if (dx * dx + dy * dy > 0.09f)
+            if (dx * dx + dy * dy > 1.0f) /* half the screen in one game frame */
                 jumps++;
         }
         m->x = (a->x + b->x) * 0.5f;
@@ -811,7 +813,7 @@ static int mix_vertices(const KhGxFrame *f)
         m->a = b->a;
         m->tag = b->tag;
     }
-    if (jumps * 4 >= p)
+    if (jumps * 2 >= p)
         return 0;
     memcpy(s_mix_vtx + p, f->vtx + p, sizeof(KhGxVertex) * (size_t)(f->nvtx - p));
     return 1;
@@ -839,7 +841,7 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
         if (s_final_pending) {
             /* the frame itself, after its halfway mix */
             s_final_pending = 0;
-            s_stats.interpolated++;
+            s_stats.interpolated += (uint32_t)s_was_mixed;
             return draw_frame(f, f->vtx);
         }
         return s_color; /* same frame as last time: the target still holds it */
@@ -849,9 +851,15 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
         const int was_shown = s_shown_count;
         unsigned tex;
         s_shown_count = 0;
-        if (kh_config.frame_interpolation && s_prev_vtx && was_shown >= 1 && !s_final_pending &&
-            mix_vertices(f)) {
-            tex = draw_frame(f, s_mix_vtx);
+        if (kh_config.frame_interpolation && s_prev_vtx && was_shown >= 1 && !s_final_pending) {
+            /* B one Vita frame from now either way, after the mix or after A once more: shown
+             * at once when no mix is possible, B would come a frame early and the motion
+             * stutter (0.0.74 alternated between the two in the field) */
+            s_was_mixed = mix_vertices(f);
+            if (s_was_mixed)
+                tex = draw_frame(f, s_mix_vtx);
+            else
+                tex = s_color; /* the target still holds A */
             s_final_pending = 1;
         } else {
             s_final_pending = 0;
