@@ -1,12 +1,17 @@
 /* VRAM banks A-I and their mapping (VRAMCNT, 0x04000240-0x04000249).
  *
- * Every bank lives in its LCDC slot (kh_vram_lcdc), its home. The CPU-visible views the game
- * writes through (engine A/B BG, engine A/B OBJ) are separate buffers (platform/compat/
- * kh_hw_map.h). When a bank is mapped into a view, its contents are copied there; when it
- * leaves the view, they are copied back home. Banks mapped to texture, texture-palette,
+ * Every bank has its own storage, its home. The CPU-visible views the game writes through (the
+ * LCDC window kh_vram_lcdc, engine A/B BG, engine A/B OBJ) are separate buffers (platform/
+ * compat/kh_hw_map.h). When a bank is mapped into a view, its contents are copied there; when
+ * it leaves the view, they are copied back home. Banks mapped to texture, texture-palette,
  * extended-palette or ARM7 slots are not CPU-visible on the DS either: they stay home and the
  * renderer reads them there (kh_vram_bank_home). Remaps are rare (scene changes, texture
  * uploads), and this keeps the game's pointer arithmetic within a view valid.
+ *
+ * The LCDC window is a view like the others: on the DS, writes to the LCDC address of a bank
+ * that is not in LCDC go nowhere. The game clears the whole window (0xa4000 bytes) with only
+ * bank D in LCDC at the end of an event (Ov023_Teardown): with the banks living in the window,
+ * that wiped the field's textures and dialogue scenes showed a black field (0.0.37-0.0.65).
  *
  * kh_vram_sync() applies what VRAMCNT says. The NitroSDK functions that write VRAMCNT call it
  * on exit (KH_VRAM_SYNC_ON_EXIT in the decomp patch). */
@@ -39,6 +44,12 @@ static const Bank s_banks[KH_VRAM_BANKS] = {
 };
 
 static uint8_t s_applied[KH_VRAM_BANKS]; /* VRAMCNT values in effect; 0 = disabled, home */
+static uint8_t s_store[0xa4000] __attribute__((aligned(32))); /* the homes, at their LCDC offsets */
+
+static uint8_t *store_ptr(int b)
+{
+    return s_store + s_banks[b].lcdc;
+}
 
 typedef struct {
     int view;
@@ -101,7 +112,8 @@ static uint8_t *view_ptr(Placement p, uint32_t size)
     case VIEW_BG_B: base = kh_vram_bg_b, len = sizeof(kh_vram_bg_b); break;
     case VIEW_OBJ_A: base = kh_vram_obj_a, len = sizeof(kh_vram_obj_a); break;
     case VIEW_OBJ_B: base = kh_vram_obj_b, len = sizeof(kh_vram_obj_b); break;
-    default: return NULL; /* LCDC is the home itself; the rest is not CPU-visible */
+    case VIEW_LCDC: base = kh_vram_lcdc, len = sizeof(kh_vram_lcdc); break;
+    default: return NULL; /* not CPU-visible */
     }
     if (p.off + size > len)
         return NULL;
@@ -110,7 +122,11 @@ static uint8_t *view_ptr(Placement p, uint32_t size)
 
 uint8_t *kh_vram_bank_home(int bank)
 {
-    return kh_vram_lcdc + s_banks[bank].lcdc;
+    /* a bank in LCDC is current in the window, where the CPU writes it */
+    const uint8_t cnt = s_applied[bank];
+    if ((cnt & 0x80) && (cnt & 7) == 0)
+        return kh_vram_lcdc + s_banks[bank].lcdc;
+    return store_ptr(bank);
 }
 
 uint8_t kh_vram_bank_cnt(int bank)
@@ -138,7 +154,7 @@ void kh_vram_sync(void)
             continue;
         view = view_ptr(placement(b, s_applied[b]), s_banks[b].size);
         if (view)
-            memcpy(kh_vram_bank_home(b), view, s_banks[b].size);
+            memcpy(store_ptr(b), view, s_banks[b].size);
     }
     for (b = 0; b < KH_VRAM_BANKS; b++) {
         uint8_t *view;
@@ -146,11 +162,11 @@ void kh_vram_sync(void)
             continue;
         view = view_ptr(placement(b, now[b]), s_banks[b].size);
         if (view)
-            memcpy(view, kh_vram_bank_home(b), s_banks[b].size);
+            memcpy(view, store_ptr(b), s_banks[b].size);
         if (kh_log_verbose) {
             static uint32_t logged;
             if (logged++ < 3000) {
-                const uint32_t *w = (const uint32_t *)kh_vram_bank_home(b);
+                const uint32_t *w = (const uint32_t *)store_ptr(b);
                 uint32_t i, nz = 0;
                 for (i = 0; i < s_banks[b].size / 4; i++)
                     nz += w[i] != 0;
