@@ -387,13 +387,14 @@ static void upload_toon(const KhGxFrame *f)
 /* ---- diagnosis dump -------------------------------------------------------------------- */
 
 static volatile int s_dump_request;
+static int s_dump_color; /* write the drawn 3D layer at the end of this frame */
 
 void kh_gpu3d_request_dump(void)
 {
     s_dump_request = 1;
 }
 
-static void dump_tga(const char *path, const uint32_t *px, int w, int h)
+void kh_gpu3d_dump_tga(const char *path, const uint32_t *px, int w, int h)
 {
     FILE *f = fopen(path, "wb");
     uint8_t hdr[18] = { 0 };
@@ -457,7 +458,7 @@ static void dump_frame(const KhGxFrame *f)
                     kh_tex_decode(img, pal, px);
                     snprintf(path, sizeof(path), "%s/tex_%08x_%04x.tga", dir, (unsigned)img,
                              (unsigned)pal);
-                    dump_tga(path, px, w, h);
+                    kh_gpu3d_dump_tga(path, px, w, h);
                     free(px);
                 }
             }
@@ -538,6 +539,7 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
     frame_setup(f);
     if (s_dump_request) {
         s_dump_request = 0;
+        s_dump_color = 1;
         dump_frame(f);
     }
 
@@ -712,6 +714,23 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
     glDisable(GL_BLEND);
     glDepthMask(GL_TRUE);
 done:
+    if (s_dump_color) {
+        /* the 3D layer as drawn, top row first */
+        uint32_t *px = malloc((size_t)s_w * s_h * 4), *row = malloc((size_t)s_w * 4);
+        s_dump_color = 0;
+        if (px && row) {
+            int y;
+            glReadPixels(0, 0, s_w, s_h, GL_RGBA, GL_UNSIGNED_BYTE, px);
+            for (y = 0; y < s_h / 2; y++) {
+                memcpy(row, px + y * s_w, (size_t)s_w * 4);
+                memcpy(px + y * s_w, px + (s_h - 1 - y) * s_w, (size_t)s_w * 4);
+                memcpy(px + (s_h - 1 - y) * s_w, row, (size_t)s_w * 4);
+            }
+            kh_gpu3d_dump_tga("ux0:data/khdays/dump/layer_3d.tga", px, s_w, s_h);
+        }
+        free(px);
+        free(row);
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     s_stats.render_us += (uint32_t)(sceKernelGetProcessTimeWide() - t0);
     return s_color;

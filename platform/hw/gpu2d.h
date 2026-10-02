@@ -34,4 +34,8 @@ int kh_gpu2d_render(int engine, uint32_t *fb);
 void kh_gpu2d_init(void);
 int kh_gpu2d_render_lines(int engine, uint32_t *fb, int y0, int y1);
 
+/* Diagnosis: one engine's BGs and sprites, each on its own (256x192 RGBA, alpha 255 where the
+ * layer has a pixel). */
+void kh_gpu2d_dump_layers(int engine, uint32_t *bg[4], uint32_t *obj);
+
 #endif

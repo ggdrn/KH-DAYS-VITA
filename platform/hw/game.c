@@ -32,6 +32,7 @@
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/power.h>
+#include <psp2/io/stat.h>
 #include <stdio.h>
 #include <string.h>
 #include <psp2/kernel/cpu.h>
@@ -195,6 +196,9 @@ static void render_chunk(int chunk, void *arg)
         f->a3d[band] = r;
 }
 
+static volatile int s_dump_2d; /* L+R+Triangle: the 2D side of the frame too */
+static void dump_2d(int a_on_top);
+
 static void present(void)
 {
     /* POWCNT1 bit 15: engine A on the top screen */
@@ -295,6 +299,10 @@ static void present(void)
         for (i = 0; i < 256 * 192; i++)
             fb[i] |= 0xff000000u;
     }
+    if (s_dump_2d) {
+        s_dump_2d = 0;
+        dump_2d(a_on_top);
+    }
     s_stage = "present";
     {
         uint64_t t = sceKernelGetProcessTimeWide();
@@ -309,6 +317,49 @@ static void present(void)
 }
 
 static void sample_input(void);
+
+/* Diagnosis dump of the displayed frame's 2D side: both screens as composed (alpha = the
+ * gpu2d.h code per pixel), engine A's layers one by one, and the display registers. */
+static void dump_2d(int a_on_top)
+{
+    static const char dir[] = "ux0:data/khdays/dump";
+    static uint32_t layer[5][256 * 192];
+    uint32_t *bg[4] = { layer[0], layer[1], layer[2], layer[3] };
+    char path[96];
+    FILE *f;
+    int i, e;
+
+    sceIoMkdir(dir, 0777);
+    kh_gpu3d_dump_tga("ux0:data/khdays/dump/screen_a.tga", a_on_top ? s_top : s_bottom, 256, 192);
+    kh_gpu3d_dump_tga("ux0:data/khdays/dump/screen_b.tga", a_on_top ? s_bottom : s_top, 256, 192);
+    for (e = 0; e < 2; e++) {
+        kh_gpu2d_dump_layers(e, bg, layer[4]);
+        for (i = 0; i < 5; i++) {
+            snprintf(path, sizeof(path), "%s/%c_%s%d.tga", dir, e ? 'b' : 'a', i < 4 ? "bg" : "obj",
+                     i < 4 ? i : 0);
+            kh_gpu3d_dump_tga(path, layer[i], 256, 192);
+        }
+    }
+    f = fopen("ux0:data/khdays/dump/registers.txt", "w");
+    if (f) {
+        for (e = 0; e < 2; e++) {
+            const uint32_t base = e ? 0x04001000u : 0x04000000u;
+            fprintf(f, "engine %c:", e ? 'B' : 'A');
+            for (i = 0; i < 0x70; i += 2) {
+                if (i % 32 == 0)
+                    fprintf(f, "\n  %03x:", i);
+                fprintf(f, " %04x", KH_IO16(base + i));
+            }
+            fprintf(f, "\n");
+        }
+        fprintf(f, "DISP3DCNT %04x POWCNT1 %04x VRAMCNT %08x %08x\n", KH_IO16(0x04000060),
+                KH_IO16(0x04000304), (unsigned)KH_IO32(0x04000240), (unsigned)KH_IO32(0x04000244));
+        fprintf(f, "backdrop A %04x B %04x\n", kh_ds_palette[0] | kh_ds_palette[1] << 8,
+                kh_ds_palette[0x400] | kh_ds_palette[0x401] << 8);
+        fclose(f);
+    }
+    LOG("display: dumped the 2D layers to %s", dir);
+}
 
 /* VBlank at the Vita's own 60 Hz, whatever the rendering costs: the game counts time in
  * VBlanks, so tying them to the display loop slowed the whole game down with every frame
@@ -346,8 +397,10 @@ static void sample_input(void)
         s_debug_shown = s_vblanks;
         LOG("debug: 3D mode %d (%s)", kh_gpu3d_debug, names[kh_gpu3d_debug]);
     }
-    if (in.dump_3d)
+    if (in.dump_3d) {
         kh_gpu3d_request_dump();
+        s_dump_2d = 1;
+    }
     if (in.toggle_console)
         s_console = !s_console;
     KH_IO16(0x04000130) = in.keyinput;

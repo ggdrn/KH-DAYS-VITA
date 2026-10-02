@@ -803,3 +803,25 @@ int kh_gpu2d_render(int engine, uint32_t *fb)
     init_rgba();
     return kh_gpu2d_render_lines(engine, fb, 0, H);
 }
+
+/* Diagnosis: each BG (bg[0..3]) and the sprites (obj) of one engine on their own, RGBA with
+ * alpha 255 where the layer has a pixel; a BG that is off stays clear. */
+void kh_gpu2d_dump_layers(int engine, uint32_t *bg[4], uint32_t *obj)
+{
+    Engine e;
+    ObjLine o;
+    uint16_t row[W];
+    int b, line, x;
+
+    engine_setup(&e, engine);
+    for (line = 0; line < 192; line++) {
+        for (b = 0; b < 4; b++) {
+            const int on = render_bg(&e, b, line, row);
+            for (x = 0; x < W; x++)
+                bg[b][line * W + x] = on && (row[x] & OPAQUE) ? to_rgba(row[x] & 0x7fff) | 0xff000000u : 0;
+        }
+        render_obj(&e, line, &o);
+        for (x = 0; x < W; x++)
+            obj[line * W + x] = (o.col[x] & OPAQUE) ? to_rgba(o.col[x] & 0x7fff) | 0xff000000u : 0;
+    }
+}

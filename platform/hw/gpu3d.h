@@ -26,6 +26,8 @@ extern volatile int kh_gpu3d_debug;
 /* Write the next rendered frame's textures (TGA) and polygons (text) to
  * ux0:data/khdays/dump/, for diagnosis. Any thread. */
 void kh_gpu3d_request_dump(void);
+/* a 32-bit TGA, px as RGBA in memory order, top row first */
+void kh_gpu3d_dump_tga(const char *path, const uint32_t *px, int w, int h);
 
 typedef struct {
     uint32_t render_us, batches, textures_decoded, textures_live, skipped;
