@@ -5,6 +5,8 @@
  *
  * What the boot ROM and the ARM7 leave in memory before the ARM9 starts is set up here: the
  * cartridge header in the shared area and the ARM7's PXI handlers. */
+#include "audio/audio_out.h"
+#include "audio/snd7.h"
 #include "hw/gpu2d.h"
 #include "hw/gpu3d.h"
 #include "hw/gx3d.h"
@@ -74,6 +76,7 @@ static void boot_state(void)
 {
     kh_romfs_init();
     kh_gx3d_init();
+    audio_out_init();
     s_gpu3d = kh_gpu3d_init(kh_config.render_scale);
     kh_gpu2d_init();
     workers_init();
@@ -461,6 +464,15 @@ void kh_game_run(void)
                         (unsigned)rs.flat_st, (unsigned)rs.tex_none, (unsigned)rs.tex_wanted,
                         (unsigned)rs.depth_equal);
                 }
+            }
+            {
+                Snd7Stats ss;
+                snd7_take_stats(&ss);
+                if (ss.lists)
+                    LOG("snd: 10 s: %u command lists (%u commands), %u sequences started, %u notes, "
+                        "%u alarms, %u unknown commands, %u unknown sequence ops", (unsigned)ss.lists,
+                        (unsigned)ss.commands, (unsigned)ss.seq_starts, (unsigned)ss.notes,
+                        (unsigned)ss.alarms, (unsigned)ss.unknown_cmd, (unsigned)ss.unknown_seq);
             }
             if (gs.commands)
                 LOG("gx3d: 10 s: %u swaps, %u cmds, %u polys (%u culled), %u verts, %u unknown, "

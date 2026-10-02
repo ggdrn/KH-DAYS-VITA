@@ -14,6 +14,7 @@
  *            panel (kh_arm7_touch)
  * Other tags are logged but not answered yet (backup, wireless). */
 #include "nitro/arm7.h"
+#include "audio/snd7.h"
 #include "nitro/backup.h"
 
 #include "hw/shared_area.h"
@@ -58,36 +59,12 @@ void kh_arm7_init(void)
 }
 
 /* ---- SOUND (tag 7) ----------------------------------------------------------------------
- * The ARM9 sends the head of a linked list of SNDCommand {next, id, arg[4]}; 0 asks the ARM7
- * to process what it has. After each list the ARM7 advances the finished-command tag at the
- * start of SNDSharedWork, whose address a SHARED_WORK command gave it. The commands themselves
- * are counted until the sound engine exists. */
-
-enum { SND_COMMAND_SHARED_WORK = 29, SND_COMMAND_COUNT = 34 };
-
-typedef struct SNDCommand {
-    struct SNDCommand *next;
-    uint32_t id;
-    uint32_t arg[4];
-} SNDCommand;
-
-static volatile uint32_t *s_snd_work;
-static uint32_t s_snd_counts[SND_COMMAND_COUNT + 1];
+ * The ARM9 sends the head of a linked list of SNDCommand {next, id, arg[4]} (0: "process
+ * now"); the ARM7's sound driver (platform/audio/snd7.c) takes it from here. */
 
 static void sound(uint32_t data)
 {
-    const SNDCommand *c;
-    if (!data)
-        return;
-    for (c = (const SNDCommand *)(uintptr_t)data; c; c = c->next) {
-        s_snd_counts[c->id < SND_COMMAND_COUNT ? c->id : SND_COMMAND_COUNT]++;
-        if (c->id == SND_COMMAND_SHARED_WORK) {
-            s_snd_work = (volatile uint32_t *)(uintptr_t)c->arg[0];
-            LOG("arm7: sound shared work at %p", (void *)s_snd_work);
-        }
-    }
-    if (s_snd_work)
-        s_snd_work[0]++; /* finishCommandTag */
+    snd7_pxi(data);
 }
 
 /* ---- RTC (tag 5): command in bits 8-14, reply command << 8 | result ------------------------ */
