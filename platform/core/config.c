@@ -7,13 +7,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-KhConfig kh_config = { .render_scale = 3, .layout = 0, .inset_width = 224 };
+KhConfig kh_config = { .render_scale = 3, .layout = 0, .inset_width = 224, .debug = 0 };
 
-#define CONFIG_VERSION 3
+#define CONFIG_VERSION 4
 
 static const char s_default[] =
     "# khdays-vita settings\n"
-    "config_version = 3\n"
+    "config_version = 4\n"
     "\n"
     "# 3D internal resolution, as a multiple of the DS's 256x192: 1, 2, 3 or 4.\n"
     "# 3 (768x576) covers the Vita's 544 lines; 4 (1024x768) is above the screen both ways,\n"
@@ -26,7 +26,12 @@ static const char s_default[] =
     "layout = top\n"
     "\n"
     "# Width in pixels of the small screen (it keeps the DS's 4:3), 128 to 480.\n"
-    "inset_width = 224\n";
+    "inset_width = 224\n"
+    "\n"
+    "# Diagnostics: 1 turns on the debug hotkeys (L+R+Start on-screen log, L+R+Triangle 3D frame\n"
+    "# dump, L+R+Circle 3D debug modes) and the detailed log (card reads, the game's traces,\n"
+    "# per-subsystem statistics). 0 for normal play.\n"
+    "debug = 0\n";
 
 static char *trim(char *s)
 {
@@ -56,6 +61,8 @@ static void write_config(void)
             fprintf(f, "layout = %s\n", layouts[kh_config.layout % 3]);
         else if (!strncmp(line, "inset_width", 11))
             fprintf(f, "inset_width = %d\n", kh_config.inset_width);
+        else if (!strncmp(line, "debug", 5))
+            fprintf(f, "debug = %d\n", kh_config.debug ? 1 : 0);
         else
             fprintf(f, "%.*s\n", (int)n, line);
         line += n + (end != NULL);
@@ -87,6 +94,8 @@ void config_load(void)
         } else if (!strcmp(k, "inset_width")) {
             int w = atoi(v);
             kh_config.inset_width = w < 128 ? 128 : w > 480 ? 480 : w;
+        } else if (!strcmp(k, "debug")) {
+            kh_config.debug = atoi(v) != 0;
         } else if (!strcmp(k, "render_scale")) {
             int s = atoi(v);
             kh_config.render_scale = s < 1 ? 1 : s > 4 ? 4 : s;
@@ -101,6 +110,7 @@ void config_load(void)
         write_config();
         LOG("config: upgraded from version %d", version);
     }
-    LOG("config: render_scale %d, layout %d, inset_width %d", kh_config.render_scale,
-        kh_config.layout, kh_config.inset_width);
+    kh_log_verbose = kh_config.debug;
+    LOG("config: render_scale %d, layout %d, inset_width %d, debug %d", kh_config.render_scale,
+        kh_config.layout, kh_config.inset_width, kh_config.debug);
 }

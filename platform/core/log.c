@@ -82,13 +82,16 @@ void log_printf(const char *fmt, ...)
 
 /* KH_TRACE in the decomp (nitro/kh_hw.h): boot milestones, synced at once so that the last
  * one reached survives a freeze or a crash. */
+int kh_log_verbose;
+
 void kh_trace(const char *fmt, ...)
 {
     va_list ap;
+    if (!kh_log_verbose)
+        return;
     va_start(ap, fmt);
     log_vprintf("trace: ", fmt, ap);
     va_end(ap);
-    log_flush();
 }
 
 void log_flush(void)

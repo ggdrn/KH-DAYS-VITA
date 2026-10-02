@@ -270,11 +270,15 @@ void kh_cpu_init(void)
 }
 
 /* The idle thread's OS_Halt: sleep until something can be delivered. */
+volatile uint64_t kh_cpu_halt_us; /* time the game core spent idle in OS_Halt */
+
 void OS_Halt(void)
 {
+    const uint64_t t0 = sceKernelGetProcessTimeWide();
     for (;;) {
         uint32_t timeout = kh_timers_next_event_us();
         if (deliverable() || data_02044330.isNeedRescheduling) {
+            kh_cpu_halt_us += sceKernelGetProcessTimeWide() - t0;
             kh_cpu_poll();
             return;
         }
@@ -606,7 +610,7 @@ void OS_LoadContext(void *ctx)
             return;
         }
         sceKernelStartThread(next->host, sizeof(arg), &arg);
-        LOG("cpu: thread %p started (entry %08x)", next->ctx, (unsigned)(ctx_word(next->ctx, CTX_PC4) - 4));
+        LOGV("cpu: thread %p started (entry %08x)", next->ctx, (unsigned)(ctx_word(next->ctx, CTX_PC4) - 4));
     }
     /* saved before the baton moves: the next thread writes its own state as soon as it runs */
     if (me)

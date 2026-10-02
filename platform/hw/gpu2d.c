@@ -673,8 +673,15 @@ static void compose_line(const Engine *e, int line, uint16_t *out, uint8_t *code
             c[n] = obj.col[x] & 0x7fff, id[n] = L_OBJ, n++;
         code[x] = KH_GPU2D_2D;
         if (id[0] == 0 && e->has3d) {
-            /* the 3D layer in front: the GPU blends it over c[1] */
+            /* the 3D layer in front: the GPU blends it over c[1], which is what shows
+             * where the 3D is clear, and then the frontmost layer for the colour effect */
             out[x] = c[1];
+            if ((ctl[x] & 0x20) && (bldcnt & (1 << id[1]))) {
+                if (effect == 2)
+                    out[x] = brighten(c[1], evy);
+                else if (effect == 3)
+                    out[x] = darken(c[1], evy);
+            }
             code[x] = KH_GPU2D_3D;
             if ((ctl[x] & 0x20) && (bldcnt & 1) && (effect == 2 || effect == 3))
                 code[x] = (uint8_t)((effect == 2 ? KH_GPU2D_3D_BRIGHTEN : KH_GPU2D_3D_DARKEN) | evy);

@@ -1,5 +1,7 @@
 #include "input.h"
 
+#include "config.h"
+
 #include "log.h"
 #include "video.h"
 
@@ -165,23 +167,26 @@ void input_poll(InputState *out)
         out->swap_layout = (s_prev_buttons & SCE_CTRL_SELECT) == 0;
         held &= ~(DS_KEY_L | DS_KEY_R | DS_KEY_SELECT);
     }
-    /* L+R+Start toggles the on-screen console; the combination is swallowed. */
-    if ((pad.buttons & (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_START)) ==
-        (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_START)) {
-        out->toggle_console = (s_prev_buttons & SCE_CTRL_START) == 0;
-        held &= ~(DS_KEY_L | DS_KEY_R | DS_KEY_START);
-    }
-    /* L+R+Triangle dumps the 3D frame (textures, polygons) for diagnosis; swallowed. */
-    if ((pad.buttons & (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_TRIANGLE)) ==
-        (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_TRIANGLE)) {
-        out->dump_3d = (s_prev_buttons & SCE_CTRL_TRIANGLE) == 0;
-        held &= ~(DS_KEY_L | DS_KEY_R | DS_KEY_X);
-    }
-    /* L+R+Circle cycles the 3D debug modes (hw/gpu3d.h); swallowed. */
-    if ((pad.buttons & (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_CIRCLE)) ==
-        (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_CIRCLE)) {
-        out->debug_cycle = (s_prev_buttons & SCE_CTRL_CIRCLE) == 0;
-        held &= ~(DS_KEY_L | DS_KEY_R | DS_KEY_A);
+    /* the debug hotkeys, with debug = 1 in config.ini */
+    if (kh_config.debug) {
+        /* L+R+Start toggles the on-screen console; the combination is swallowed. */
+        if ((pad.buttons & (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_START)) ==
+            (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_START)) {
+            out->toggle_console = (s_prev_buttons & SCE_CTRL_START) == 0;
+            held &= ~(DS_KEY_L | DS_KEY_R | DS_KEY_START);
+        }
+        /* L+R+Triangle dumps the 3D frame (textures, polygons) for diagnosis; swallowed. */
+        if ((pad.buttons & (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_TRIANGLE)) ==
+            (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_TRIANGLE)) {
+            out->dump_3d = (s_prev_buttons & SCE_CTRL_TRIANGLE) == 0;
+            held &= ~(DS_KEY_L | DS_KEY_R | DS_KEY_X);
+        }
+        /* L+R+Circle cycles the 3D debug modes (hw/gpu3d.h); swallowed. */
+        if ((pad.buttons & (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_CIRCLE)) ==
+            (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_CIRCLE)) {
+            out->debug_cycle = (s_prev_buttons & SCE_CTRL_CIRCLE) == 0;
+            held &= ~(DS_KEY_L | DS_KEY_R | DS_KEY_A);
+        }
     }
     s_prev_buttons = pad.buttons;
 

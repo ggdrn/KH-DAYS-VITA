@@ -31,6 +31,7 @@
 
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
+#include <psp2/power.h>
 #include <stdio.h>
 #include <string.h>
 #include <psp2/kernel/cpu.h>
@@ -135,6 +136,35 @@ static int stall_monitor(SceSize args, void *argp)
     return 0;
 }
 
+/* The Vita going to sleep (power button, low battery): the save and the log are written out
+ * first, so nothing waits on the second the save flush normally lets pass, in case the system
+ * then closes the app. Callbacks run on the thread that sleeps in a ...CB call. */
+static int power_callback(int notify_id, int count, int arg, void *common)
+{
+    (void)notify_id;
+    (void)count;
+    (void)common;
+    if (arg & (SCE_POWER_CB_SYSTEM_SUSPEND | SCE_POWER_CB_APP_SUSPEND |
+               SCE_POWER_CB_LOW_BATTERY_SUSPEND | SCE_POWER_CB_THERMAL_SUSPEND)) {
+        kh_backup_flush();
+        LOG("power: suspending (%08x), save written", (unsigned)arg);
+        log_flush();
+    }
+    return 0;
+}
+
+static int power_thread(SceSize args, void *argp)
+{
+    SceUID cb = sceKernelCreateCallback("kh_power_cb", 0, power_callback, NULL);
+    (void)args;
+    (void)argp;
+    if (cb < 0 || scePowerRegisterCallback(cb) < 0)
+        LOG("power: no suspend callback (%08x)", (unsigned)cb);
+    for (;;)
+        sceKernelDelayThreadCB(1000000);
+    return 0;
+}
+
 /* The 2D frame as chunks of lines, both engines, shared by the display thread and the
  * helper core (platform/core/workers.c). */
 #define BANDS 8
@@ -148,6 +178,13 @@ typedef struct {
 
 /* per-stage display times since the last report, for the 10 s line */
 static uint64_t s_t3d_total, s_join_total, s_present_total;
+static uint32_t s_t3d_max, s_join_max, s_present_max, s_prep_max; /* the worst frame's */
+
+static inline void stage_max(uint32_t *max, uint64_t us)
+{
+    if (us > *max)
+        *max = (uint32_t)us;
+}
 
 static void render_chunk(int chunk, void *arg)
 {
@@ -207,20 +244,36 @@ static void present(void)
             parity++;
         }
     }
-    s_stage = "2d";
-    workers_begin(render_chunk, BANDS * f2d.neng, &f2d);
-    s_stage = "3d";
     {
-        uint64_t t = sceKernelGetProcessTimeWide();
-        if ((KH_IO32(0x04000000) & 0x108) == 0x108 && s_gpu3d)
-            tex3d = kh_gpu3d_render(kh_gx3d_acquire());
-        s_t3d_total += sceKernelGetProcessTimeWide() - t;
-    }
-    s_stage = "2d join";
-    {
-        uint64_t t = sceKernelGetProcessTimeWide();
-        workers_join();
-        s_join_total += sceKernelGetProcessTimeWide() - t;
+        const KhGxFrame *frame3d = NULL;
+        const int on3d = (KH_IO32(0x04000000) & 0x108) == 0x108 && s_gpu3d;
+        if (on3d) {
+            /* new textures first, decoded on both cores while the helper is free */
+            uint64_t t = sceKernelGetProcessTimeWide();
+            s_stage = "3d textures";
+            frame3d = kh_gx3d_acquire();
+            kh_gpu3d_prepare(frame3d);
+            stage_max(&s_prep_max, sceKernelGetProcessTimeWide() - t);
+        }
+        s_stage = "2d";
+        workers_begin(render_chunk, BANDS * f2d.neng, &f2d);
+        s_stage = "3d";
+        {
+            uint64_t t = sceKernelGetProcessTimeWide(), d;
+            if (on3d)
+                tex3d = kh_gpu3d_render(frame3d);
+            d = sceKernelGetProcessTimeWide() - t;
+            s_t3d_total += d;
+            stage_max(&s_t3d_max, d);
+        }
+        s_stage = "2d join";
+        {
+            uint64_t t = sceKernelGetProcessTimeWide(), d;
+            workers_join();
+            d = sceKernelGetProcessTimeWide() - t;
+            s_join_total += d;
+            stage_max(&s_join_max, d);
+        }
     }
     for (i = 0; i < BANDS; i++)
         a3d |= f2d.a3d[i];
@@ -246,7 +299,9 @@ static void present(void)
         uint64_t t = sceKernelGetProcessTimeWide();
         /* unchanged screens are not uploaded again */
         video_present(draw2d ? s_top : NULL, draw2d ? s_bottom : NULL);
-        s_present_total += sceKernelGetProcessTimeWide() - t;
+        t = sceKernelGetProcessTimeWide() - t;
+        s_present_total += t;
+        stage_max(&s_present_max, t);
     }
     s_stage = "loop";
     s_beats++;
@@ -340,7 +395,7 @@ static void watch_registers(uint32_t frame)
         if (v == last[i])
             continue;
         if (logged++ < 400)
-            LOG("reg: f%u %s %0*x -> %0*x", (unsigned)frame, regs[i].name, regs[i].size * 2,
+            LOGV("reg: f%u %s %0*x -> %0*x", (unsigned)frame, regs[i].name, regs[i].size * 2,
                 (unsigned)last[i], regs[i].size * 2, (unsigned)v);
         last[i] = v;
     }
@@ -369,6 +424,10 @@ void kh_game_run(void)
     }
     sceKernelStartThread(th, 0, NULL);
     th = sceKernelCreateThread("kh_vblank", vblank_thread, 0x10000100 - 30, 0x4000, 0,
+                               SCE_KERNEL_CPU_MASK_USER_2, NULL);
+    if (th >= 0)
+        sceKernelStartThread(th, 0, NULL);
+    th = sceKernelCreateThread("kh_power", power_thread, 0x10000100 - 20, 0x4000, 0,
                                SCE_KERNEL_CPU_MASK_USER_2, NULL);
     if (th >= 0)
         sceKernelStartThread(th, 0, NULL);
@@ -433,9 +492,26 @@ void kh_game_run(void)
                     (unsigned)(s_vblanks - vb_last),
                     (unsigned)(6000000000ull / (now - s_window_start)) / 10,
                     (unsigned)(6000000000ull / (now - s_window_start)) % 10);
-                LOG("display: per frame 3d submit %uus, 2d after it %uus, present %uus; 2d reused "
-                    "in %u of 600", (unsigned)(s_t3d_total / 600), (unsigned)(s_join_total / 600),
-                    (unsigned)(s_present_total / 600), (unsigned)s_2d_skipped);
+                {
+                    /* the game core's load (time not idle in OS_Halt), and the colour effects
+                     * of both engines: a screen that turns dark or bright shows here */
+                    static uint64_t halt_last;
+                    const uint64_t halt = kh_cpu_halt_us;
+                    const unsigned busy = 1000 - (unsigned)((halt - halt_last) * 1000 / (now - s_window_start + 1));
+                    halt_last = halt;
+                    LOG("display: per frame 3d submit %uus, 2d after it %uus, present %uus; 2d "
+                        "reused in %u of 600; game core %u.%u%% busy",
+                        (unsigned)(s_t3d_total / 600), (unsigned)(s_join_total / 600),
+                        (unsigned)(s_present_total / 600), (unsigned)s_2d_skipped, busy / 10, busy % 10);
+                    LOG("display: worst frame: textures %uus, 3d submit %uus, 2d after it %uus, "
+                        "present %uus", (unsigned)s_prep_max, (unsigned)s_t3d_max,
+                        (unsigned)s_join_max, (unsigned)s_present_max);
+                    s_prep_max = s_t3d_max = s_join_max = s_present_max = 0;
+                    LOG("display: effects A %04x/%02x mb %04x, B %04x/%02x mb %04x, 3D %04x",
+                        KH_IO16(0x04000050), KH_IO16(0x04000054) & 31, KH_IO16(0x0400006c),
+                        KH_IO16(0x04001050), KH_IO16(0x04001054) & 31, KH_IO16(0x0400106c),
+                        KH_IO16(0x04000060));
+                }
                 s_2d_skipped = 0;
                 s_t3d_total = s_join_total = s_present_total = 0;
                 s_window_start = now;
@@ -447,7 +523,12 @@ void kh_game_run(void)
             {
                 KhGpu3dStats rs;
                 kh_gpu3d_take_stats(&rs);
-                if (rs.batches || rs.textures_decoded) {
+                if (rs.textures_decoded)
+                    LOG("gpu3d: 10 s: %u textures decoded (%u live), %u ms decoding in parallel, "
+                        "at most %u in one frame", (unsigned)rs.textures_decoded,
+                        (unsigned)rs.textures_live, (unsigned)(rs.prepare_us / 1000),
+                        (unsigned)rs.burst_max);
+                if (kh_log_verbose && (rs.batches || rs.textures_decoded)) {
                     LOG("gpu3d: 10 s: %u us drawing, %u batches, %u textures decoded (%u live), "
                         "%u polys skipped", (unsigned)rs.render_us, (unsigned)rs.batches,
                         (unsigned)rs.textures_decoded, (unsigned)rs.textures_live,
@@ -482,13 +563,13 @@ void kh_game_run(void)
                 Snd7Stats ss;
                 snd7_take_stats(&ss);
                 if (ss.lists)
-                    LOG("snd: 10 s: %u command lists (%u commands), %u sequences started, %u notes, "
+                    LOGV("snd: 10 s: %u command lists (%u commands), %u sequences started, %u notes, "
                         "%u alarms, %u unknown commands, %u unknown sequence ops", (unsigned)ss.lists,
                         (unsigned)ss.commands, (unsigned)ss.seq_starts, (unsigned)ss.notes,
                         (unsigned)ss.alarms, (unsigned)ss.unknown_cmd, (unsigned)ss.unknown_seq);
             }
             if (gs.commands)
-                LOG("gx3d: 10 s: %u swaps, %u cmds, %u polys (%u culled), %u verts, %u unknown, "
+                LOGV("gx3d: 10 s: %u swaps, %u cmds, %u polys (%u culled), %u verts, %u unknown, "
                     "%u over RAM", (unsigned)gs.frames, (unsigned)gs.commands, (unsigned)gs.polygons,
                     (unsigned)gs.culled, (unsigned)gs.vertices, (unsigned)gs.unknown,
                     (unsigned)gs.overflows);

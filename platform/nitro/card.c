@@ -41,9 +41,9 @@ void CARDi_ReadRom(uint32_t dma, const void *src, void *dst, uint32_t len, CARDC
 
     n = rom_read(off, dst, len);
     /* every read of the boot by file name, then every 100th */
-    if (kh_card_reads < 500 || kh_card_reads % 100 == 0) {
+    if (kh_log_verbose && (kh_card_reads < 500 || kh_card_reads % 100 == 0)) {
         char name[160];
-        LOG("card: read %s, %x bytes%s (#%u)", kh_romfs_describe(off, name, sizeof(name)), len,
+        LOGV("card: read %s, %x bytes%s (#%u)", kh_romfs_describe(off, name, sizeof(name)), len,
             async ? " async" : "", (unsigned)kh_card_reads);
     }
     kh_card_reads++;

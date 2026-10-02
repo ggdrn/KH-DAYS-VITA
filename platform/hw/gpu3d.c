@@ -16,6 +16,7 @@
 #include "hw/vram.h"
 #include "log.h"
 #include "video.h"
+#include "workers.h"
 
 #include <psp2/kernel/processmgr.h>
 #include <stdio.h>
@@ -79,6 +80,7 @@ volatile int kh_gpu3d_debug;
 typedef struct {
     uint32_t key_img, key_pltt; /* key_img 0: empty */
     uint32_t hash, gen, used; /* gen: the texture-VRAM generation hash was taken at */
+    uint32_t checked;         /* the frame it was last hashed in */
     GLuint tex;
     float sx, sy;
 } TexEntry;
@@ -128,24 +130,16 @@ static void tex_evict_old(void)
     }
 }
 
-static void tex_upload(TexEntry *e, uint32_t teximage, uint32_t pltt)
+/* the decoded texels into the entry's GL texture */
+static void tex_put(TexEntry *e, uint32_t teximage, const uint32_t *px)
 {
     const int w = kh_tex_width(teximage), h = kh_tex_height(teximage);
-    const size_t need = (size_t)w * h * 4;
     GLint ws, wt;
-    if (need > s_decode_size) {
-        free(s_decode);
-        s_decode = malloc(need);
-        s_decode_size = s_decode ? need : 0;
-        if (!s_decode)
-            return;
-    }
-    kh_tex_decode(teximage, pltt, s_decode);
     s_stats.fmt[kh_tex_format(teximage)]++;
     if (kh_tex_source_empty(teximage))
         s_stats.empty_src++;
     glBindTexture(GL_TEXTURE_2D, e->tex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, s_decode);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     ws = !(teximage & (1u << 16)) ? GL_CLAMP_TO_EDGE : (teximage & (1u << 18)) ? GL_MIRRORED_REPEAT : GL_REPEAT;
@@ -155,6 +149,59 @@ static void tex_upload(TexEntry *e, uint32_t teximage, uint32_t pltt)
     e->sx = 1.0f / (float)w;
     e->sy = 1.0f / (float)h;
     s_stats.textures_decoded++;
+}
+
+static void tex_upload(TexEntry *e, uint32_t teximage, uint32_t pltt)
+{
+    const size_t need = (size_t)kh_tex_width(teximage) * kh_tex_height(teximage) * 4;
+    if (need > s_decode_size) {
+        free(s_decode);
+        s_decode = malloc(need);
+        s_decode_size = s_decode ? need : 0;
+        if (!s_decode)
+            return;
+    }
+    kh_tex_decode(teximage, pltt, s_decode);
+    tex_put(e, teximage, s_decode);
+}
+
+/* Textures to decode before the frame is drawn (kh_gpu3d_prepare): a burst of new ones (a
+ * scene's models, an enemy appearing) is decoded on two cores, the helper's and this one,
+ * instead of one after the other inside the draw. The GL uploads stay on this thread. */
+#define DEFER_MAX 96
+#define DEFER_ARENA (4u * 1024 * 1024)
+
+typedef struct {
+    TexEntry *e;
+    uint32_t teximage, pltt;
+    uint32_t *px; /* in the arena */
+} TexJob;
+
+static TexJob s_jobs[DEFER_MAX];
+static int s_njobs, s_deferring;
+static uint32_t *s_arena;
+static size_t s_arena_used;
+
+static void decode_job(int i, void *arg)
+{
+    (void)arg;
+    kh_tex_decode(s_jobs[i].teximage, s_jobs[i].pltt, s_jobs[i].px);
+}
+
+/* the upload, or a place in the batch decoded by kh_gpu3d_prepare */
+static void tex_refresh(TexEntry *e, uint32_t teximage, uint32_t pltt)
+{
+    if (s_deferring && s_njobs < DEFER_MAX) {
+        const size_t words = (size_t)kh_tex_width(teximage) * kh_tex_height(teximage);
+        if (s_arena && s_arena_used + words <= DEFER_ARENA / 4) {
+            TexJob *j = &s_jobs[s_njobs++];
+            j->e = e, j->teximage = teximage, j->pltt = pltt;
+            j->px = s_arena + s_arena_used;
+            s_arena_used += words;
+            return;
+        }
+    }
+    tex_upload(e, teximage, pltt);
 }
 
 /* The cache entry for a polygon's texture, decoded or re-decoded when its VRAM changed. */
@@ -181,14 +228,16 @@ static TexEntry *tex_get(uint32_t teximage, uint32_t pltt)
     e->used = s_frame;
     /* the VRAM generation says when bytes can have changed; besides, every entry is checked
      * again every 32 frames in turn, in case some path writes texture VRAM unseen */
-    if (e->gen != s_tex_gen || ((uint32_t)(e - s_tex) & 31) == (s_frame & 31) ||
-        kh_gpu3d_debug == 2) {
+    if (e->checked != s_frame &&
+        (e->gen != s_tex_gen || ((uint32_t)(e - s_tex) & 31) == (s_frame & 31) ||
+         kh_gpu3d_debug == 2)) {
         /* only after a bank A-G was remapped can the bytes have changed */
         uint32_t hv = kh_tex_hash(teximage, kp);
         e->gen = s_tex_gen;
+        e->checked = s_frame;
         if (hv != e->hash || !e->sx) {
             e->hash = hv;
-            tex_upload(e, teximage, kp);
+            tex_refresh(e, teximage, kp);
         }
     }
     return e;
@@ -419,6 +468,58 @@ static void dump_frame(const KhGxFrame *f)
         f->npoly, ntex, dir);
 }
 
+static uint32_t s_setup_serial;
+
+/* once per new frame, by kh_gpu3d_prepare or else kh_gpu3d_render */
+static void frame_setup(const KhGxFrame *f)
+{
+    if (f->serial == s_setup_serial)
+        return;
+    s_setup_serial = f->serial;
+    s_frame++;
+    if ((s_frame & 63) == 0 || s_tex_live >= TEX_MAX_LIVE)
+        tex_evict_old();
+    s_tex_gen = kh_vram_tex_generation() + kh_tex_map_slots();
+}
+
+void kh_gpu3d_prepare(const KhGxFrame *f)
+{
+    const int textures_on = f && (f->disp3dcnt & 1);
+    int i;
+
+    if (!s_prog || !f || !textures_on || f->serial == s_last_serial || f->serial == s_setup_serial)
+        return;
+    frame_setup(f);
+    if (!s_arena)
+        s_arena = malloc(DEFER_ARENA);
+    s_njobs = 0;
+    s_arena_used = 0;
+    s_deferring = 1;
+    for (i = 0; i < f->npoly; i++) {
+        const KhGxPolygon *p = &f->poly[i];
+        if (((p->attr >> 16) & 31) && kh_tex_format(p->teximage))
+            tex_get(p->teximage, p->pltt);
+    }
+    s_deferring = 0;
+    if (!s_njobs)
+        return;
+    {
+        const uint64_t t = sceKernelGetProcessTimeWide();
+        if (s_njobs > 1) {
+            workers_begin(decode_job, s_njobs, NULL);
+            workers_join();
+        } else {
+            decode_job(0, NULL);
+        }
+        for (i = 0; i < s_njobs; i++)
+            tex_put(s_jobs[i].e, s_jobs[i].teximage, s_jobs[i].px);
+        s_stats.prepare_us += (uint32_t)(sceKernelGetProcessTimeWide() - t);
+        if ((uint32_t)s_njobs > s_stats.burst_max)
+            s_stats.burst_max = (uint32_t)s_njobs;
+    }
+    s_njobs = 0;
+}
+
 unsigned kh_gpu3d_render(const KhGxFrame *f)
 {
     uint64_t t0;
@@ -434,10 +535,7 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
     s_last_serial = f->serial;
     s_stats.disp3dcnt = f->disp3dcnt;
     t0 = sceKernelGetProcessTimeWide();
-    s_frame++;
-    if ((s_frame & 63) == 0 || s_tex_live >= TEX_MAX_LIVE)
-        tex_evict_old();
-    s_tex_gen = kh_vram_tex_generation() + kh_tex_map_slots();
+    frame_setup(f);
     if (s_dump_request) {
         s_dump_request = 0;
         dump_frame(f);

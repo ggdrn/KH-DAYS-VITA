@@ -242,7 +242,7 @@ void kh_backup_pxi(uint32_t data)
     result = run((int)data);
     unlock();
     if (logged++ < 64 || result != RESULT_SUCCESS)
-        LOG("backup: request %u src %08x dst %08x len %x -> %d", (unsigned)data,
+        LOGV("backup: request %u src %08x dst %08x len %x -> %d", (unsigned)data,
             (unsigned)s_cmd->src, (unsigned)s_cmd->dst, (unsigned)s_cmd->len, result);
     s_cmd->result = result;
     kh_arm7_reply(TAG_FS, data, 1);

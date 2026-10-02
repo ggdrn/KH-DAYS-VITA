@@ -153,7 +153,7 @@ static void receive(int tag, uint32_t data, int err)
 {
     static uint32_t logged[32];
     if (logged[tag]++ < 8)
-        LOG("arm7: %s(%d) <- %08x%s", s_tag_names[tag] ? s_tag_names[tag] : "?", tag, data,
+        LOGV("arm7: %s(%d) <- %08x%s", s_tag_names[tag] ? s_tag_names[tag] : "?", tag, data,
             err ? " err" : "");
     switch (tag) {
     case 7: sound(data); break;

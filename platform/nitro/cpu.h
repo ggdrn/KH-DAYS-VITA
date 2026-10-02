@@ -13,6 +13,7 @@
 
 /* Counters for the watchdog and the on-screen status. */
 extern volatile uint32_t kh_cpu_irqs_delivered, kh_cpu_preempted, kh_cpu_switches;
+extern volatile uint64_t kh_cpu_halt_us; /* game core idle time (OS_Halt), for the stats */
 
 void kh_cpu_init(void);
 /* The calling Vita thread becomes the one running NitroSDK code (the launcher thread). */

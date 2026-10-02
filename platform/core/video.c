@@ -41,11 +41,13 @@ static const char s_compose_fs[] =
     "        float4 t = tex2D(u3d, float2(u, 1.0 - vUv.y));\n"
     "        if (u < 0.0 || u > 1.0)\n"
     "            t = float4(0.0, 0.0, 0.0, 0.0);\n"
-    "        c = t.rgb + b.rgb * (1.0 - t.a);\n"
+    /* the 3D layer's brightness effect touches its own pixels only (t is premultiplied);
+     * where it is clear, the layer behind shows as gpu2d left it */
     "        if (code >= 128.0)\n"
-    "            c = c - c * ((code - 128.0) / 16.0);\n"
+    "            t.rgb = t.rgb - t.rgb * ((code - 128.0) / 16.0);\n"
     "        else if (code >= 64.0)\n"
-    "            c = c + (1.0 - c) * ((code - 64.0) / 16.0);\n"
+    "            t.rgb = t.rgb + (t.aaa - t.rgb) * ((code - 64.0) / 16.0);\n"
+    "        c = t.rgb + b.rgb * (1.0 - t.a);\n"
     "    }\n"
     "    if (uBright.x > 0.5 && uBright.x < 1.5)\n"
     "        c = c + (1.0 - c) * uBright.y;\n"
@@ -223,9 +225,7 @@ void video_init(void)
     vglInitExtended(0, DISPLAY_W, DISPLAY_H, 16 * 1024 * 1024, SCE_GXM_MULTISAMPLE_NONE);
 
     glGenTextures(2, s_tex);
-    for (int k = 0; k < 2; k++) {
-        /* the large screen first, the inset over it */
-        i = s_inset == 0 ? 1 - k : k;
+    for (i = 0; i < 2; i++) {
         glBindTexture(GL_TEXTURE_2D, s_tex[i]);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, DS_SCREEN_W, DS_SCREEN_H, 0, GL_RGBA,
                      GL_UNSIGNED_BYTE, NULL);
@@ -292,7 +292,7 @@ static void draw_quad(const ScreenRect *r)
 void video_present(const uint32_t *top, const uint32_t *bottom)
 {
     const uint32_t *src[2] = { top, bottom };
-    int i;
+    int k;
 
     if (s_pending >= 0) {
         s_layout = (ScreenLayout)s_pending;
@@ -302,7 +302,9 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
     glViewport(0, 0, DISPLAY_W, DISPLAY_H);
     glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
-    for (i = 0; i < 2; i++) {
+    for (k = 0; k < 2; k++) {
+        /* the large screen first, the inset over it */
+        const int i = s_inset == 0 ? 1 - k : k;
         glBindTexture(GL_TEXTURE_2D, s_tex[i]);
         if (src[i])
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, DS_SCREEN_W, DS_SCREEN_H, GL_RGBA,
