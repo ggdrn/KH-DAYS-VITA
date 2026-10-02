@@ -61,7 +61,10 @@ unsigned int kh_vita_camera_bits(void)
 {
     static int acc_x, acc_y;
     unsigned int bits = 0;
-    const int rx = s_rx, ry = s_ry;
+    /* full speed (a turn every tick, even) from about 70% of the stick's travel: below it the
+     * turns are spread over the ticks, which shows as an uneven camera at 60 fps */
+    const int rx = s_rx * 127 / 90 > 127 ? 127 : s_rx * 127 / 90 < -127 ? -127 : s_rx * 127 / 90;
+    const int ry = s_ry * 127 / 90 > 127 ? 127 : s_ry * 127 / 90 < -127 ? -127 : s_ry * 127 / 90;
     if (rx) {
         acc_x += rx < 0 ? -rx : rx;
         if (acc_x >= 127) {
