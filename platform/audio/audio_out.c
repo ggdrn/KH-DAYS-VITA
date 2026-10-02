@@ -45,7 +45,7 @@ void audio_out_init(void)
         int vol[2] = { SCE_AUDIO_VOLUME_0DB, SCE_AUDIO_VOLUME_0DB };
         sceAudioOutSetVolume(s_port, SCE_AUDIO_VOLUME_FLAG_L_CH | SCE_AUDIO_VOLUME_FLAG_R_CH, vol);
     }
-    th = sceKernelCreateThread("kh_audio", audio_thread, 0x10000100 - 40, 0x8000, 0,
+    th = sceKernelCreateThread("kh_audio", audio_thread, 0x10000100 - 30, 0x8000, 0,
                                SCE_KERNEL_CPU_MASK_USER_2, NULL);
     if (th < 0 || sceKernelStartThread(th, 0, NULL) < 0) {
         LOG("audio: no thread (%08x): silent", th);
