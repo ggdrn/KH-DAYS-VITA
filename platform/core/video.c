@@ -28,16 +28,19 @@ static float s_hud_scale = 1.0f; /* < 1: the 2D kept 4:3 over a widescreen 3D (c
 /* The display capture on the GPU (platform/hw/capture.c): two targets used in turn, the newest
  * one holding the last capture (GL orientation, row 0 the bottom); the graphics screen to
  * capture, source B when it is not the last capture, and a clear texture for "no 3D". */
-static GLuint s_cap_tex[2], s_cap_fbo[2], s_cap_gfx, s_cap_srcb, s_clear_tex;
-static int s_cap_cur = -1, s_cap_w, s_cap_h;
+/* one target per VRAM bank A-D that can receive a capture, plus a spare drawn into and then
+ * traded with the bank's (a capture can blend the bank's last one in) */
+static GLuint s_cap_tex[5], s_cap_fbo[5], s_cap_gfx, s_cap_srcb, s_clear_tex;
+static int s_bank_slot[4] = { 0, 1, 2, 3 }, s_spare_slot = 4, s_bank_valid[4];
+static int s_cap_w, s_cap_h;
 static struct {
-    int pending, src3d;
+    int pending, src3d, dest, srcb_bank;
     const uint32_t *gfx, *srcb;
     unsigned tex3d;
     float ka, kb;
 } s_cap;
-static int s_show_cap = -1;     /* screen showing the last capture in the next present */
-static uint16_t s_show_cap_bright;
+static int s_show_bank[2] = { -1, -1 }; /* per screen: the bank whose capture it shows */
+static uint16_t s_show_bright[2];
 static uint16_t s_3d_bldalpha, s_3d_backdrop;
 static float s_3d_hofs;
 static int s_3d_screen = -1;
@@ -298,8 +301,11 @@ static void compose_pass(const float *v, GLuint tex2d, int flip2d, GLuint tex3d,
         f = 16;
     glUseProgram(s_compose);
     glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_2D, cap && !s_cap.srcb && s_cap_cur >= 0 ? s_cap_tex[s_cap_cur]
-                                 : cap && s_cap.srcb ? s_cap_srcb : s_clear_tex);
+    glBindTexture(GL_TEXTURE_2D,
+                  !cap ? s_clear_tex
+                  : s_cap.srcb ? s_cap_srcb
+                  : s_cap.srcb_bank >= 0 && s_bank_valid[s_cap.srcb_bank]
+                      ? s_cap_tex[s_bank_slot[s_cap.srcb_bank]] : s_clear_tex);
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, tex3d ? tex3d : s_clear_tex);
     glActiveTexture(GL_TEXTURE0);
@@ -391,7 +397,7 @@ static void capture_init(void)
     int i;
     s_cap_w = DS_SCREEN_W * kh_config.render_scale;
     s_cap_h = DS_SCREEN_H * kh_config.render_scale;
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < 5; i++) {
         s_cap_tex[i] = new_texture(s_cap_w, s_cap_h, GL_LINEAR);
         glGenFramebuffers(1, &s_cap_fbo[i]);
         glBindFramebuffer(GL_FRAMEBUFFER, s_cap_fbo[i]);
@@ -405,8 +411,10 @@ static void capture_init(void)
 }
 
 void video_capture(const uint32_t *gfx, int src3d, unsigned tex3d, float ka, float kb,
-                   const uint32_t *srcb)
+                   const uint32_t *srcb, int srcb_bank, int dest)
 {
+    s_cap.dest = dest & 3;
+    s_cap.srcb_bank = srcb_bank;
     s_cap.gfx = gfx;
     s_cap.src3d = src3d;
     s_cap.tex3d = tex3d;
@@ -416,16 +424,16 @@ void video_capture(const uint32_t *gfx, int src3d, unsigned tex3d, float ka, flo
     s_cap.pending = 1;
 }
 
-void video_show_capture(int screen, uint16_t master_bright)
+void video_show_capture(int screen, int bank, uint16_t master_bright)
 {
-    s_show_cap = s_cap_cur >= 0 ? screen : -1;
-    s_show_cap_bright = master_bright;
+    s_show_bank[screen & 1] = bank >= 0 && s_bank_valid[bank & 3] ? (bank & 3) : -1;
+    s_show_bright[screen & 1] = master_bright;
 }
 
 static void run_capture(void)
 {
     static const float full[] = { -1, 1, 0, 0, 1, 1, 1, 0, -1, -1, 0, 1, 1, -1, 1, 1 };
-    const int next = s_cap_cur < 0 ? 0 : 1 - s_cap_cur;
+    const int next = s_spare_slot;
     s_cap.pending = 0;
     if (!s_compose)
         return;
@@ -443,7 +451,10 @@ static void run_capture(void)
     glViewport(0, 0, s_cap_w, s_cap_h);
     compose_pass(full, s_cap.gfx ? s_cap_gfx : s_clear_tex, 0, s_cap.tex3d, 0, 1, 1.0f, 1.0f, 0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    s_cap_cur = next;
+    /* the spare now holds the bank's capture: trade the two */
+    s_spare_slot = s_bank_slot[s_cap.dest];
+    s_bank_slot[s_cap.dest] = next;
+    s_bank_valid[s_cap.dest] = 1;
 }
 
 /* The small screen: 4:3, inset_width wide, in the corner config inset_corner names. */
@@ -632,12 +643,13 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
         if (src[i])
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, DS_SCREEN_W, DS_SCREEN_H, GL_RGBA,
                             GL_UNSIGNED_BYTE, src[i]);
-        if (i == s_show_cap && s_compose) {
-            /* the screen shows the VRAM bank the last capture went to */
+        if (s_show_bank[i] >= 0 && s_compose) {
+            /* the screen shows a VRAM bank a capture went to (engine A's VRAM display, or
+             * engine B's bitmap BG or sprites in the dual-3D scenes) */
             float v[16];
             screen_quad(i, v);
-            compose_pass(v, s_cap_tex[s_cap_cur], 1, 0, s_show_cap_bright, 0, 1.0f,
-                         screen_alpha(i), 1);
+            compose_pass(v, s_cap_tex[s_bank_slot[s_show_bank[i]]], 1, 0, s_show_bright[i], 0,
+                         1.0f, screen_alpha(i), 1);
         } else if (i == s_3d_screen) {
             draw_composed(i);
         } else if (s_compose) {

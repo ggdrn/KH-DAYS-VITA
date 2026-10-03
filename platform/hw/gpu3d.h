@@ -13,6 +13,11 @@ int kh_gpu3d_init(int scale);
  * (after the filter changed). Applied at the next kh_gpu3d_render. */
 void kh_gpu3d_set_scale(int scale);
 void kh_gpu3d_reload_textures(void);
+/* The next frame is not to be mixed with the last (60 fps mode): a different picture. */
+void kh_gpu3d_forget_previous(void);
+/* Each frame drawn as it comes, nothing held back for the 60 fps mix (the display loop sets it
+ * while the screens trade places frame by frame). */
+extern volatile int kh_gpu3d_direct;
 
 /* Draw the frame; returns the GL texture holding the 3D layer (premultiplied RGBA, GL
  * orientation: row 0 is the bottom of the screen), 0 when there is nothing to show. */

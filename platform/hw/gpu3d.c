@@ -863,6 +863,13 @@ static int mix_vertices(const KhGxFrame *f)
     return 1;
 }
 
+volatile int kh_gpu3d_direct;
+
+void kh_gpu3d_forget_previous(void)
+{
+    s_prev_nvtx = -1;
+}
+
 static void keep_as_previous(const KhGxFrame *f)
 {
     if (!s_prev_vtx) {
@@ -896,7 +903,10 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
         const int was_shown = s_shown_count;
         unsigned tex;
         s_shown_count = 0;
-        if (kh_config.frame_interpolation && s_prev_vtx && was_shown >= 1 && !s_final_pending) {
+        if (kh_gpu3d_direct)
+            s_prev_nvtx = -1; /* frames for the two screens in turn: none to mix with */
+        if (kh_config.frame_interpolation && !kh_gpu3d_direct && s_prev_vtx && was_shown >= 1 &&
+            !s_final_pending) {
             /* B one Vita frame from now either way, after the mix or after A once more: shown
              * at once when no mix is possible, B would come a frame early and the motion
              * stutter (0.0.74 alternated between the two in the field) */

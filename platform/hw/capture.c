@@ -22,8 +22,9 @@
 
 static uint32_t s_gfx[256 * 192], s_srcb[256 * 192];
 static uint32_t s_captures;
-static int s_valid = 0, s_bank;
-static uint32_t s_hash;
+/* per VRAM bank A-D: a capture is held on the GPU for it, and the bank's bytes then */
+static int s_valid[4];
+static uint32_t s_hash[4];
 
 /* the bank's first 256x192 pixels, to see whether the CPU wrote it after the capture */
 static uint32_t bank_hash(int bank)
@@ -38,7 +39,7 @@ static uint32_t bank_hash(int bank)
 
 int kh_capture_shown(int bank)
 {
-    return s_valid && s_bank == bank && bank_hash(bank) == s_hash;
+    return bank >= 0 && bank < 4 && s_valid[bank] && bank_hash(bank) == s_hash[bank];
 }
 
 int kh_capture_run(unsigned tex3d)
@@ -77,7 +78,8 @@ int kh_capture_run(unsigned tex3d)
         memset(s_srcb, 0, sizeof(s_srcb));
         srcb = s_srcb;
     }
-    video_capture(mode != 1 && !src_a_3d ? s_gfx : NULL, src_a_3d && mode != 1, tex3d, ka, kb, srcb);
+    video_capture(mode != 1 && !src_a_3d ? s_gfx : NULL, src_a_3d && mode != 1, tex3d, ka, kb, srcb,
+                  kb > 0 && !srcb ? bank_b : -1, dest);
     if (kh_log_verbose) {
         static uint32_t logged;
         if (logged++ < 60)
@@ -85,9 +87,8 @@ int kh_capture_run(unsigned tex3d)
                 (unsigned)dispcnt, (unsigned)KH_IO32(0x04000240),
                 kb > 0 ? (srcb ? "from its bytes" : "the last capture") : "unused");
     }
-    s_valid = 1;
-    s_bank = dest;
-    s_hash = bank_hash(dest);
+    s_valid[dest] = 1;
+    s_hash[dest] = bank_hash(dest);
     s_captures++;
     /* done: the enable bit clears, as the hardware's does at the end of the frame */
     __atomic_and_fetch((volatile uint32_t *)&KH_IO32(0x04000064), ~0x80000000u, __ATOMIC_SEQ_CST);

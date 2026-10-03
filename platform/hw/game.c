@@ -231,6 +231,20 @@ static void present(void)
     static int async_2d;
     int upload2d = 0;
 
+    /* the screens trading places frame by frame (dual 3D): consecutive 3D frames are for
+     * different screens. While that goes on, nothing is held back a frame (the 60 fps mix,
+     * the 2D drawn over two frames): each screen's picture goes with the frame it was made
+     * for */
+    int dual;
+    {
+        static int last_on_top = -1;
+        static uint32_t last_swap_vb = 0x80000000u;
+        if (a_on_top != last_on_top && last_on_top >= 0)
+            last_swap_vb = s_vblanks;
+        last_on_top = a_on_top;
+        dual = s_vblanks - last_swap_vb < 16;
+        kh_gpu3d_direct = dual;
+    }
     if (async_2d) {
         uint64_t t = sceKernelGetProcessTimeWide(), d;
         s_stage = "2d join";
@@ -309,7 +323,7 @@ static void present(void)
         if (f2d.neng)
             memset(f2d.a3d, 0, sizeof(f2d.a3d));
         workers_begin(render_chunk, BANDS * f2d.neng, &f2d);
-        if (f2d.neng && kh_config.frame_interpolation) {
+        if (f2d.neng && kh_config.frame_interpolation && !dual) {
             async_2d = 1;
             s_2d_async++;
         }
@@ -365,12 +379,22 @@ static void present(void)
     s_stage = "capture";
     kh_capture_run(raw3d);
     {
-        /* engine A showing the VRAM bank the last capture went to: the capture */
-        const uint32_t dc = KH_IO32(0x04000000);
-        if (((dc >> 16) & 3) == 2 && kh_capture_shown((int)((dc >> 18) & 3)))
-            video_show_capture(a_on_top ? 0 : 1, KH_IO16(0x0400006c));
-        else
-            video_show_capture(-1, 0);
+        /* a screen showing a VRAM bank a capture went to shows the capture: engine A in VRAM
+         * display mode (dialogue blends), or engine B with nothing but a bitmap BG3 from bank C
+         * or bitmap sprites from bank D (the dual-3D scenes: 3D on both screens, one frame each,
+         * the other screen showing the last capture) */
+        const uint32_t dc = KH_IO32(0x04000000), db = KH_IO32(0x04001000);
+        const uint8_t cnt_c = kh_ds_io[0x242], cnt_d = kh_ds_io[0x243];
+        const int bank_a = ((dc >> 16) & 3) == 2 ? (int)((dc >> 18) & 3) : -1;
+        int bank_b = -1;
+        if (((db >> 16) & 1) && ((db >> 8) & 0x1f) == 0x08 && (cnt_c & 0x87) == 0x84)
+            bank_b = 2; /* sub BG3 alone, from bank C */
+        else if (((db >> 16) & 1) && ((db >> 8) & 0x1f) == 0x10 && (cnt_d & 0x87) == 0x84)
+            bank_b = 3; /* sub sprites alone, from bank D */
+        video_show_capture(a_on_top ? 0 : 1, kh_capture_shown(bank_a) ? bank_a : -1,
+                           KH_IO16(0x0400006c));
+        video_show_capture(a_on_top ? 1 : 0, kh_capture_shown(bank_b) ? bank_b : -1,
+                           KH_IO16(0x0400106c));
     }
     if (s_dump_2d) {
         s_dump_2d = 0;
