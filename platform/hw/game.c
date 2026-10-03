@@ -218,8 +218,8 @@ static void dump_2d(int a_on_top);
 /* the last screen toggle of a dual-3D scene (kh_dual3d_toggled), with the display registers
  * as the game set them for that frame: read later, they were sometimes the next frame's */
 static volatile uint32_t s_toggle_seq, s_toggle_vb = 0x80000000u, s_toggle_serial;
-/* the last toggle the display finished showing */
-static volatile uint32_t s_toggle_done;
+/* the last toggle the display finished showing, and the last whose 2D it has drawn */
+static volatile uint32_t s_toggle_done, s_toggle_drawn;
 static volatile int s_toggle_top;
 static struct {
     uint32_t dispcnt_a, dispcnt_b, vramcnt, dispcapcnt;
@@ -272,6 +272,11 @@ static void present(void)
         while (s_toggle_seq == s_toggle_done && sceKernelGetProcessTimeWide() < until)
             sceKernelDelayThread(200);
         trace_wait = (uint32_t)(sceKernelGetProcessTimeWide() - t);
+        if (s_toggle_seq == s_toggle_done) {
+            /* no new toggle: the screens stay as shown. Drawn again, they mixed this toggle's
+             * registers with the next frame's VRAM, which the VBlank had already brought */
+            return;
+        }
         toggle_seq = s_toggle_seq;
         a_on_top = s_toggle_top;
     }
@@ -394,6 +399,8 @@ static void present(void)
             d = sceKernelGetProcessTimeWide() - t;
             s_join_total += d;
             stage_max(&s_join_max, d);
+            if (dual)
+                s_toggle_drawn = toggle_seq;
             if (f2d.neng) {
                 upload2d = 1;
                 /* engine A on the small screen is drawn every other time: when only the
@@ -614,6 +621,15 @@ static int vblank_thread(SceSize args, void *argp)
         /* the port menu holds the game: no VBlank reaches it, so nothing advances */
         if (portmenu_is_open())
             continue;
+        /* dual 3D: the VBlank brings the next frame's VRAM and sprites (the game's transfers
+         * run in its handler), so it waits for the display to have drawn the 2D of the last
+         * toggle (25 ms at most); before, a screen was now and then drawn with half of the
+         * next frame (0.0.91) */
+        if (s_vblanks - s_toggle_vb < 8) {
+            const uint64_t until = sceKernelGetProcessTimeWide() + 25000;
+            while (s_toggle_drawn != s_toggle_seq && sceKernelGetProcessTimeWide() < until)
+                sceKernelDelayThread(100);
+        }
         {
             /* fast-forward (L+R+Square): two or three DS VBlanks per Vita frame, spread over
              * it; the game runs as fast as its core allows, the sound keeps its own pace */
