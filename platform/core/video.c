@@ -30,8 +30,10 @@ static float s_hud_scale = 1.0f; /* < 1: the 2D kept 4:3 over a widescreen 3D (c
  * capture, source B when it is not the last capture, and a clear texture for "no 3D". */
 /* one target per VRAM bank A-D that can receive a capture, plus a spare drawn into and then
  * traded with the bank's (a capture can blend the bank's last one in) */
-static GLuint s_cap_tex[5], s_cap_fbo[5], s_cap_gfx, s_cap_srcb, s_clear_tex;
-static int s_bank_slot[4] = { 0, 1, 2, 3 }, s_spare_slot = 4, s_bank_valid[4];
+/* banks 4 and 5 are not VRAM: the last picture engine A gave the top and the bottom screen
+ * (VIDEO_SCREEN_MEMORY), for the dual-3D scenes */
+static GLuint s_cap_tex[7], s_cap_fbo[7], s_cap_gfx, s_cap_srcb, s_clear_tex;
+static int s_bank_slot[6] = { 0, 1, 2, 3, 4, 5 }, s_spare_slot = 6, s_bank_valid[6];
 static int s_cap_w, s_cap_h;
 static struct {
     int pending, src3d, dest, srcb_bank;
@@ -397,7 +399,7 @@ static void capture_init(void)
     int i;
     s_cap_w = DS_SCREEN_W * kh_config.render_scale;
     s_cap_h = DS_SCREEN_H * kh_config.render_scale;
-    for (i = 0; i < 5; i++) {
+    for (i = 0; i < 7; i++) {
         s_cap_tex[i] = new_texture(s_cap_w, s_cap_h, GL_LINEAR);
         glGenFramebuffers(1, &s_cap_fbo[i]);
         glBindFramebuffer(GL_FRAMEBUFFER, s_cap_fbo[i]);
@@ -413,7 +415,7 @@ static void capture_init(void)
 void video_capture(const uint32_t *gfx, int src3d, unsigned tex3d, float ka, float kb,
                    const uint32_t *srcb, int srcb_bank, int dest)
 {
-    s_cap.dest = dest & 3;
+    s_cap.dest = dest >= 0 && dest < 6 ? dest : (dest & 3);
     s_cap.srcb_bank = srcb_bank;
     s_cap.gfx = gfx;
     s_cap.src3d = src3d;
@@ -431,7 +433,7 @@ int video_shown_bank(int screen)
 
 void video_show_capture(int screen, int bank, uint16_t master_bright)
 {
-    s_show_bank[screen & 1] = bank >= 0 && s_bank_valid[bank & 3] ? (bank & 3) : -1;
+    s_show_bank[screen & 1] = bank >= 0 && bank < 6 && s_bank_valid[bank] ? bank : -1;
     s_show_bright[screen & 1] = master_bright;
 }
 

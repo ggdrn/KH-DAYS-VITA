@@ -421,8 +421,13 @@ static void present(void)
         if (!dual) {
             kh_capture_run(raw3d);
         } else if (captured_seq != s_toggle_seq) {
+            /* not the game's own capture into bank C or D: what engine A drew is kept for the
+             * screen it was on, and that screen shows it while engine B has it. The banks'
+             * roles did not follow a fixed two-frame turn (the Sora video on the bottom screen
+             * takes three toggles in four VBlanks), and a screen showed the other one's
+             * picture now and then (0.0.80 to 0.0.87). */
             captured_seq = s_toggle_seq;
-            kh_capture_run_regs(raw3d, s_toggle_regs.dispcapcnt, s_toggle_regs.dispcnt_a);
+            kh_capture_screen(raw3d, a_on_top ? 0 : 1);
             KH_IO32(0x04000064) &= ~0x80000000u;
         }
     }
@@ -441,11 +446,14 @@ static void present(void)
             bank_b = 2; /* sub BG3 alone, from bank C */
         else if (((db >> 16) & 1) && ((db >> 8) & 0x1f) == 0x10 && (cnt_d & 0x87) == 0x84)
             bank_b = 3; /* sub sprites alone, from bank D */
-        /* dual 3D: the banks swap roles every frame, trust the captures (their bytes are not
-         * written meanwhile; the check failed now and then there and blanked a screen) */
+        /* dual 3D: engine B's screen shows the last picture engine A gave it */
         video_show_capture(a_on_top ? 0 : 1, kh_capture_shown(bank_a, !dual) ? bank_a : -1,
                            dual ? s_toggle_regs.bright_a : KH_IO16(0x0400006c));
-        video_show_capture(a_on_top ? 1 : 0, kh_capture_shown(bank_b, !dual) ? bank_b : -1,
+        if (dual && bank_b >= 0)
+            bank_b = VIDEO_SCREEN_MEMORY + (a_on_top ? 1 : 0);
+        else if (!kh_capture_shown(bank_b, !dual))
+            bank_b = -1;
+        video_show_capture(a_on_top ? 1 : 0, bank_b,
                            dual ? s_toggle_regs.bright_b : KH_IO16(0x0400106c));
     }
     if (kh_log_verbose && dual) {

@@ -99,6 +99,12 @@ int kh_capture_run_regs(unsigned tex3d, uint32_t cnt, uint32_t dispcnt)
     return 1;
 }
 
+void kh_capture_screen(unsigned tex3d, int screen)
+{
+    kh_gpu2d_render_graphics(KH_ENGINE_A, s_gfx);
+    video_capture(s_gfx, 0, tex3d, 1.0f, 0.0f, NULL, -1, VIDEO_SCREEN_MEMORY + (screen & 1));
+}
+
 uint32_t kh_capture_take_count(void)
 {
     const uint32_t n = s_captures;

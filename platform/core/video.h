@@ -60,11 +60,13 @@ void video_set_3d(int screen, unsigned tex, uint16_t master_bright, int hofs, ui
  * gfx is engine A's graphics screen (256x192, alpha = gpu2d.h codes; NULL with src3d, the 3D
  * layer alone), tex3d the 3D layer, srcb source B (256x192 RGBA, bottom row first) or NULL
  * and srcb_bank the bank whose capture is source B (-1 none). The result, ka * source A + kb *
- * source B, is held for VRAM bank dest (0-3). */
+ * source B, is held for VRAM bank dest (0-3), or for VIDEO_SCREEN_MEMORY + screen. */
+/* not a VRAM bank: the last picture engine A gave a screen (0 top, 1 bottom) */
+#define VIDEO_SCREEN_MEMORY 4
 void video_capture(const uint32_t *gfx, int src3d, unsigned tex3d, float ka, float kb,
                    const uint32_t *srcb, int srcb_bank, int dest);
 /* For the next video_present: screen (0 top, 1 bottom) shows the capture held for VRAM bank
- * bank (0-3; -1 none), with its engine's master brightness (its 0x0400006c value). */
+ * bank (0-3, VIDEO_SCREEN_MEMORY + 0/1; -1 none), with its engine's master brightness (its 0x0400006c value). */
 void video_show_capture(int screen, int bank, uint16_t master_bright);
 /* the bank a screen shows the capture of, -1 none (diagnosis) */
 int video_shown_bank(int screen);
