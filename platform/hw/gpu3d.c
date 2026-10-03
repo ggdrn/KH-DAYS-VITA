@@ -40,12 +40,23 @@ static const char s_vs[] =
 static const char s_fs[] =
     "float4 main(float4 vCol : COLOR, float2 vTex : TEXCOORD0,\n"
     "            uniform sampler2D uTex, uniform sampler2D uToon,\n"
-    "            uniform float uMode, uniform float uTextured, uniform float uAlphaRef) : COLOR\n"
+    "            uniform float uMode, uniform float uTextured, uniform float uAlphaRef,\n"
+    "            uniform float uCutout) : COLOR\n"
     "{\n"
     "    float4 t = float4(1.0, 1.0, 1.0, 1.0);\n"
     "    float4 r;\n"
     "    if (uTextured > 0.5)\n"
     "        t = tex2D(uTex, vTex);\n"
+    /* a filtered cut-out's edge (uCutout): on an opaque polygon, where the DS's own texel
+     * edge is (drawn wherever alpha was above 0, the edge was half a texel too thick and
+     * dark); blended, a third of a texel wide instead of a whole one */
+    "    if (uCutout > 1.5) {\n"
+    "        if (t.a < 0.5)\n"
+    "            discard;\n"
+    "        t.a = 1.0;\n"
+    "    } else if (uCutout > 0.5) {\n"
+    "        t.a = saturate((t.a - 0.5) * 3.0 + 0.5);\n"
+    "    }\n"
     "    if (uMode < 0.5) {\n"
     "        r = vCol * t;\n"
     "    } else if (uMode < 1.5) {\n"
@@ -67,7 +78,7 @@ enum { A_POS, A_TEX, A_COL };
 
 static int s_scale, s_w, s_h;
 static GLuint s_prog, s_fbo, s_color, s_depth, s_vbo, s_toon_tex;
-static GLint u_tex_scale, u_mode, u_textured, u_alpha_ref, u_tex, u_toon;
+static GLint u_tex_scale, u_mode, u_textured, u_alpha_ref, u_tex, u_toon, u_cutout;
 static uint32_t s_frame;
 static uint32_t s_last_serial;
 static KhGpu3dStats s_stats;
@@ -85,6 +96,7 @@ typedef struct {
     uint32_t checked;         /* the frame it was last hashed in */
     GLuint tex;
     float sx, sy;
+    float cutout; /* 1: every texel opaque or clear (no partial alpha), see texels_smooth */
 } TexEntry;
 
 static TexEntry s_tex[TEX_SLOTS];
@@ -132,8 +144,45 @@ static void tex_evict_old(void)
     }
 }
 
+/* For the smoothed filter (config texture_filter): a clear texel's colour is black, and a
+ * bilinear sample between it and its opaque neighbour came out half dark, the dark outline
+ * round every cut-out (leaves, hair, sprites' edges). Clear texels next to opaque ones take
+ * their neighbours' average colour (their alpha stays 0). Returns 1 when the texture has no
+ * partial alpha: its edges are then sharpened in the shader, not left a texel wide. */
+static int texels_smooth(uint32_t *px, int w, int h)
+{
+    int x, y, cutout = 1;
+    for (y = 0; y < h; y++)
+        for (x = 0; x < w; x++) {
+            const uint32_t a = px[y * w + x] >> 24;
+            if (a && a != 0xff)
+                cutout = 0;
+        }
+    for (y = 0; y < h; y++)
+        for (x = 0; x < w; x++) {
+            uint32_t *p = &px[y * w + x], r = 0, g = 0, b = 0, n = 0;
+            int dx, dy;
+            if (*p >> 24)
+                continue;
+            for (dy = -1; dy <= 1; dy++)
+                for (dx = -1; dx <= 1; dx++) {
+                    const int xx = x + dx, yy = y + dy;
+                    uint32_t q;
+                    if (xx < 0 || yy < 0 || xx >= w || yy >= h)
+                        continue;
+                    q = px[yy * w + xx];
+                    if (!(q >> 24))
+                        continue;
+                    r += q & 0xff, g += (q >> 8) & 0xff, b += (q >> 16) & 0xff, n++;
+                }
+            if (n)
+                *p = r / n | (g / n) << 8 | (b / n) << 16;
+        }
+    return cutout;
+}
+
 /* the decoded texels into the entry's GL texture */
-static void tex_put(TexEntry *e, uint32_t teximage, const uint32_t *px)
+static void tex_put(TexEntry *e, uint32_t teximage, const uint32_t *px, int cutout)
 {
     const int w = kh_tex_width(teximage), h = kh_tex_height(teximage);
     GLint ws, wt;
@@ -154,6 +203,7 @@ static void tex_put(TexEntry *e, uint32_t teximage, const uint32_t *px)
     wt = !(teximage & (1u << 17)) ? GL_CLAMP_TO_EDGE : (teximage & (1u << 19)) ? GL_MIRRORED_REPEAT : GL_REPEAT;
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, ws);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wt);
+    e->cutout = cutout ? 1.0f : 0.0f;
     e->sx = 1.0f / (float)w;
     e->sy = 1.0f / (float)h;
     s_stats.textures_decoded++;
@@ -170,7 +220,9 @@ static void tex_upload(TexEntry *e, uint32_t teximage, uint32_t pltt)
             return;
     }
     kh_tex_decode(teximage, pltt, s_decode);
-    tex_put(e, teximage, s_decode);
+    tex_put(e, teximage, s_decode,
+            kh_config.texture_filter
+                ? texels_smooth(s_decode, kh_tex_width(teximage), kh_tex_height(teximage)) : 0);
 }
 
 /* Textures to decode before the frame is drawn (kh_gpu3d_prepare): a burst of new ones (a
@@ -183,6 +235,7 @@ typedef struct {
     TexEntry *e;
     uint32_t teximage, pltt;
     uint32_t *px; /* in the arena */
+    int cutout;
 } TexJob;
 
 static TexJob s_jobs[DEFER_MAX];
@@ -193,7 +246,10 @@ static size_t s_arena_used;
 static void decode_job(int i, void *arg)
 {
     (void)arg;
-    kh_tex_decode(s_jobs[i].teximage, s_jobs[i].pltt, s_jobs[i].px);
+    TexJob *j = &s_jobs[i];
+    kh_tex_decode(j->teximage, j->pltt, j->px);
+    j->cutout = kh_config.texture_filter
+                    ? texels_smooth(j->px, kh_tex_width(j->teximage), kh_tex_height(j->teximage)) : 0;
 }
 
 /* the upload, or a place in the batch decoded by kh_gpu3d_prepare */
@@ -330,6 +386,7 @@ int kh_gpu3d_init(int scale)
     u_tex_scale = glGetUniformLocation(s_prog, "uTexScale");
     u_mode = glGetUniformLocation(s_prog, "uMode");
     u_textured = glGetUniformLocation(s_prog, "uTextured");
+    u_cutout = glGetUniformLocation(s_prog, "uCutout");
     u_alpha_ref = glGetUniformLocation(s_prog, "uAlphaRef");
     u_tex = glGetUniformLocation(s_prog, "uTex");
     u_toon = glGetUniformLocation(s_prog, "uToon");
@@ -371,8 +428,10 @@ static void apply_state(const DrawState *st)
         glBindTexture(GL_TEXTURE_2D, st->tex->tex);
         glUniform2f(u_tex_scale, st->tex->sx, st->tex->sy);
         glUniform1f(u_textured, 1.0f);
+        glUniform1f(u_cutout, st->tex->cutout > 0.5f ? (st->blend ? 1.0f : 2.0f) : 0.0f);
     } else {
         glUniform1f(u_textured, 0.0f);
+        glUniform1f(u_cutout, 0.0f);
     }
     glUniform1f(u_mode, st->mode == 3 ? 0.0f : (float)st->mode);
     if (st->blend)
@@ -587,7 +646,7 @@ void kh_gpu3d_prepare(const KhGxFrame *f)
             decode_job(0, NULL);
         }
         for (i = 0; i < s_njobs; i++)
-            tex_put(s_jobs[i].e, s_jobs[i].teximage, s_jobs[i].px);
+            tex_put(s_jobs[i].e, s_jobs[i].teximage, s_jobs[i].px, s_jobs[i].cutout);
         s_stats.prepare_us += (uint32_t)(sceKernelGetProcessTimeWide() - t);
         if ((uint32_t)s_njobs > s_stats.burst_max)
             s_stats.burst_max = (uint32_t)s_njobs;
