@@ -468,6 +468,16 @@ int video_shown_bank(int screen)
 
 static uint16_t s_memory_bright[2];
 
+void video_forget_screen_memory(void)
+{
+    s_bank_valid[VIDEO_SCREEN_MEMORY] = s_bank_valid[VIDEO_SCREEN_MEMORY + 1] = 0;
+}
+
+int video_screen_memory_valid(int screen)
+{
+    return s_bank_valid[VIDEO_SCREEN_MEMORY + (screen & 1)];
+}
+
 void video_screen_memory_bright(int screen, uint16_t master_bright)
 {
     s_memory_bright[screen & 1] = master_bright;

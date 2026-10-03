@@ -8,11 +8,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define CONFIG_VERSION 9
+#define CONFIG_VERSION 10
 
 static const KhConfig s_defaults = {
     .render_scale = 3, .layout = 0, .inset_width = 224, .aspect = KH_ASPECT_WIDE,
-    .frame_interpolation = 1, .texture_filter = 1, .filter_2d = 1, .hud = 0, .screen_effect = 0,
+    .frame_interpolation = 1, .texture_filter = 1, .filter_2d = 2, .hud = 0, .screen_effect = 0,
     .inset_corner = 0, .inset_opacity = 100, .rear_touch = 0, .stick_deadzone = 2, .r_toggle = 0,
     .fast_forward = 2, .camera_stick = 1, .camera_speed = 2,
     .camera_invert_x = 0, .camera_invert_y = 0, .dpad_deck = 1, .show_fps = 0, .volume = 100,
@@ -240,6 +240,9 @@ void config_load(void)
             /* the smooth texture filter became the default with the port menu's tabs */
             if (version < 8)
                 kh_config.texture_filter = 1;
+            /* and the smooth 2D filter with 0.0.97 */
+            if (version < 10)
+                kh_config.filter_2d = 2;
             config_save();
             LOG("config: upgraded from version %d", version);
         }

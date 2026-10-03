@@ -68,6 +68,10 @@ void video_capture(const uint32_t *gfx, int src3d, unsigned tex3d, float ka, flo
 /* For the next video_present: screen (0 top, 1 bottom) shows the capture held for VRAM bank
  * bank (0-3, VIDEO_SCREEN_MEMORY + 0/1; -1 none), with its engine's master brightness (its 0x0400006c value). */
 void video_show_capture(int screen, int bank, uint16_t master_bright);
+/* The screen memories (VIDEO_SCREEN_MEMORY) dropped, at the start of a dual-3D scene: they
+ * held the last one's pictures (0.0.96 showed one for a frame); whether a screen has one. */
+void video_forget_screen_memory(void);
+int video_screen_memory_valid(int screen);
 /* the master brightness a screen memory is shown with (VIDEO_SCREEN_MEMORY) */
 void video_screen_memory_bright(int screen, uint16_t master_bright);
 /* the bank a screen shows the capture of, -1 none (diagnosis) */

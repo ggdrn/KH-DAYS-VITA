@@ -304,6 +304,13 @@ static void present(void)
         a_on_top = s_toggle_top;
     }
     kh_gpu3d_direct = dual;
+    {
+        /* a new dual-3D scene: the screen memories are the last scene's */
+        static int was_dual;
+        if (dual && !was_dual)
+            video_forget_screen_memory();
+        was_dual = dual;
+    }
     /* the 2D drawn with the frame's own layers: the game changes engine A's visible layers
      * (and B's) with every screen it draws for */
     kh_gpu2d_dispcnt_override[KH_ENGINE_A] = dual ? s_toggle_regs.dispcnt_a : 0;
@@ -375,7 +382,8 @@ static void present(void)
         const int skip_b = dual && engine_b_bank(s_toggle_regs.dispcnt_b,
                                                  (uint8_t)(s_toggle_regs.vramcnt >> 16),
                                                  (uint8_t)(s_toggle_regs.vramcnt >> 24)) >= 0 &&
-                           ((s_toggle_regs.dispcnt_a >> 16) & 3) != 2;
+                           ((s_toggle_regs.dispcnt_a >> 16) & 3) != 2 &&
+                           video_screen_memory_valid(a_on_top ? 1 : 0);
         f2d.neng = 0;
         if (draw2d) {
             for (i = 0; i < 2; i++)

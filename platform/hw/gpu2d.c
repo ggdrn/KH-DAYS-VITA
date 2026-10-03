@@ -657,6 +657,7 @@ typedef struct {
     ObjLine obj;
     uint16_t c0[W], c1[W];  /* the frontmost layer's colour and the one under it */
     int prof; /* this line is timed (kh_gpu2d_profiling) */
+    uint16_t code16[W]; /* the output codes, before they are narrowed to bytes */
     uint16_t id0[W], id1[W]; /* their layers (L_*); 16 bits like the colours, so that the
                               * passes below vectorise (NEON selects, 8 pixels at a time) */
 } Scratch; /* one per thread rendering lines */
@@ -780,6 +781,36 @@ static void compose_line(const Engine *e, int line, uint16_t *out, uint8_t *code
             memcpy(out, c0, W * sizeof(*out));
             memset(code, KH_GPU2D_2D, W);
         }
+        return;
+    }
+
+    if (!ctl && effect == 1 && !(objs & 2)) {
+        /* the field's case (the alpha blend set up, no window, no blending sprite): the
+         * general loop below, worked out for all pixels with masks and selected (NEON) */
+        const uint16_t a3 = (uint16_t)(e->has3d ? 1 : 0), bit8 = (uint16_t)((bldcnt >> 8) & 1);
+        uint16_t *const code16 = sc->code16;
+        for (x = 0; x < W; x++) {
+            const uint16_t i0 = id0[x], i1 = id1[x], a = c0[x], b = c1[x];
+            const uint16_t z0 = a3 & (i0 == L_BG0);
+            const uint16_t z1 = a3 & (i1 == L_BG0) & (uint16_t)!z0;
+            const uint16_t f0 = (uint16_t)((bldcnt >> i0) & 1);
+            const uint16_t b3 = z1 & f0 & bit8;
+            const uint16_t i1e = z1 ? (uint16_t)L_BD : i1;
+            const uint16_t s1 = (uint16_t)((bldcnt >> (8 + i1e)) & 1);
+            const uint16_t bl = (uint16_t)!z0 & (uint16_t)!b3 & f0 & s1;
+            uint16_t r = (uint16_t)(((a & 31) * eva + (b & 31) * evb) >> 4);
+            uint16_t g = (uint16_t)((((a >> 5) & 31) * eva + ((b >> 5) & 31) * evb) >> 4);
+            uint16_t bb = (uint16_t)((((a >> 10) & 31) * eva + ((b >> 10) & 31) * evb) >> 4);
+            uint16_t mixed;
+            r = r > 31 ? 31 : r;
+            g = g > 31 ? 31 : g;
+            bb = bb > 31 ? 31 : bb;
+            mixed = (uint16_t)(r | g << 5 | bb << 10);
+            out[x] = z0 ? b : bl ? mixed : a;
+            code16[x] = z0 ? (uint16_t)KH_GPU2D_3D : b3 ? (uint16_t)KH_GPU2D_BLEND_3D : (uint16_t)KH_GPU2D_2D;
+        }
+        for (x = 0; x < W; x++)
+            code[x] = (uint8_t)code16[x];
         return;
     }
 
