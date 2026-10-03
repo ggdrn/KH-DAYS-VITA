@@ -557,12 +557,14 @@ static void present(void)
         /* a display frame over 20 ms (a VBlank missed): its stages, to find the hitches */
         const uint32_t total = (uint32_t)(sceKernelGetProcessTimeWide() - t0);
         static uint32_t logged;
-        if (kh_log_verbose && total > 20000 && logged < 200) {
+        if (kh_log_verbose && total > 20000 && logged < 400) {
             logged++;
+            uint32_t up, sw;
+            video_present_times(&up, &sw);
             LOG("slow frame: %uus at vb %u: textures %uus, 3d submit %uus, 2d wait %uus, "
-                "present %uus%s", (unsigned)total, (unsigned)s_vblanks, (unsigned)s_cur.prep,
-                (unsigned)s_cur.t3d, (unsigned)s_cur.join, (unsigned)s_cur.present,
-                dual ? " (dual 3D)" : "");
+                "present %uus (uploads %uus, swap %uus)%s", (unsigned)total, (unsigned)s_vblanks,
+                (unsigned)s_cur.prep, (unsigned)s_cur.t3d, (unsigned)s_cur.join,
+                (unsigned)s_cur.present, (unsigned)up, (unsigned)sw, dual ? " (dual 3D)" : "");
         }
         memset(&s_cur, 0, sizeof(s_cur));
     }

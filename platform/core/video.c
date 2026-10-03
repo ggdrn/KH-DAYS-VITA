@@ -16,7 +16,14 @@
 #define DISPLAY_W 960
 #define DISPLAY_H 544
 
-static GLuint s_tex[2], s_overlay_tex;
+/* The two DS screens' 2D, three textures each used in turn: a texture the GPU may still be
+ * reading for a frame not yet shown is not written (vitaGL could wait for it in the upload) */
+#define TEX_RING 3
+static GLuint s_tex_ring[2][TEX_RING], s_overlay_tex;
+static int s_tex_at[2];
+#define s_tex_cur(i) (s_tex_ring[i][s_tex_at[i]])
+/* the last video_present's time in its uploads and in vglSwapBuffers (us), for the log */
+static uint32_t s_upload_us, s_swap_us;
 static const uint32_t *s_overlay;
 static ScreenLayout s_layout = LAYOUT_TOP_MAIN;
 static ScreenRect s_rect[2];
@@ -406,7 +413,7 @@ static void draw_composed(int screen)
 {
     float v[16];
     screen_quad(screen, v);
-    compose_pass(v, s_tex[screen], 0, s_3d_tex, s_3d_bright, 0,
+    compose_pass(v, s_tex_cur(screen), 0, s_3d_tex, s_3d_bright, 0,
                  screen == s_inset ? 1.0f : s_hud_scale, screen_alpha(screen), FILTER_2D);
 }
 
@@ -608,13 +615,16 @@ void video_init(void)
             (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000));
     }
 
-    glGenTextures(2, s_tex);
-    for (i = 0; i < 2; i++) {
-        glBindTexture(GL_TEXTURE_2D, s_tex[i]);
+    for (i = 0; i < 2 * TEX_RING; i++) {
+        GLuint *t = &s_tex_ring[i / TEX_RING][i % TEX_RING];
+        glGenTextures(1, t);
+        glBindTexture(GL_TEXTURE_2D, *t);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, DS_SCREEN_W, DS_SCREEN_H, 0, GL_RGBA,
                      GL_UNSIGNED_BYTE, NULL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
 
     glGenTextures(1, &s_overlay_tex);
@@ -687,7 +697,9 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
 {
     const uint32_t *src[2] = { top, bottom };
     int k;
+    uint64_t t_swap;
 
+    s_upload_us = 0;
     if (s_pending >= 0) {
         s_layout = (ScreenLayout)s_pending;
         s_pending = -1;
@@ -701,10 +713,15 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
     for (k = 0; k < 2; k++) {
         /* the large screen first, the inset over it */
         const int i = s_inset == 0 ? 1 - k : k;
-        glBindTexture(GL_TEXTURE_2D, s_tex[i]);
-        if (src[i])
+        if (src[i]) {
+            const uint64_t t = sceKernelGetProcessTimeWide();
+            s_tex_at[i] = (s_tex_at[i] + 1) % TEX_RING;
+            glBindTexture(GL_TEXTURE_2D, s_tex_cur(i));
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, DS_SCREEN_W, DS_SCREEN_H, GL_RGBA,
                             GL_UNSIGNED_BYTE, src[i]);
+            s_upload_us += (uint32_t)(sceKernelGetProcessTimeWide() - t);
+        }
+        glBindTexture(GL_TEXTURE_2D, s_tex_cur(i));
         if (s_show_bank[i] >= 0 && s_compose) {
             /* the screen shows a VRAM bank a capture went to (engine A's VRAM display, or
              * engine B's bitmap BG or sprites in the dual-3D scenes) */
@@ -718,7 +735,7 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
             /* a plain 2D screen, through the same pass for the effect and the opacity */
             float v[16];
             screen_quad(i, v);
-            compose_pass(v, s_tex[i], 0, 0, 0, 0, 1.0f, screen_alpha(i), FILTER_2D);
+            compose_pass(v, s_tex_cur(i), 0, 0, 0, 0, 1.0f, screen_alpha(i), FILTER_2D);
         } else {
             draw_quad(&s_rect[i]);
         }
@@ -736,5 +753,13 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
         draw_quad(&full);
         glDisable(GL_BLEND);
     }
+    t_swap = sceKernelGetProcessTimeWide();
     vglSwapBuffers(GL_FALSE);
+    s_swap_us = (uint32_t)(sceKernelGetProcessTimeWide() - t_swap);
+}
+
+void video_present_times(uint32_t *upload_us, uint32_t *swap_us)
+{
+    *upload_us = s_upload_us;
+    *swap_us = s_swap_us;
 }

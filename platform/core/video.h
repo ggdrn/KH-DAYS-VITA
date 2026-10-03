@@ -68,6 +68,8 @@ void video_capture(const uint32_t *gfx, int src3d, unsigned tex3d, float ka, flo
 /* For the next video_present: screen (0 top, 1 bottom) shows the capture held for VRAM bank
  * bank (0-3, VIDEO_SCREEN_MEMORY + 0/1; -1 none), with its engine's master brightness (its 0x0400006c value). */
 void video_show_capture(int screen, int bank, uint16_t master_bright);
+/* The last video_present's time in its texture uploads and in the buffer swap (us). */
+void video_present_times(uint32_t *upload_us, uint32_t *swap_us);
 /* The screen memories (VIDEO_SCREEN_MEMORY) dropped, at the start of a dual-3D scene: they
  * held the last one's pictures (0.0.96 showed one for a frame); whether a screen has one. */
 void video_forget_screen_memory(void);

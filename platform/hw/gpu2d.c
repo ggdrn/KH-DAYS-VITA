@@ -626,23 +626,30 @@ static int window_line(const Engine *e, int line, const ObjLine *o, uint8_t *ctl
 {
     const uint32_t dc = e->dispcnt;
     const uint16_t winin = io16(e, 0x48), winout = io16(e, 0x4a);
-    int x, win_on[2];
+    const uint8_t out_c = winout & 0x3f, in0 = winin & 0x3f, in1 = (winin >> 8) & 0x3f;
+    const uint8_t obj_c = (winout >> 8) & 0x3f;
+    int x, w, win_on[2];
 
     if (!(dc & 0xe000))
         return 0;
-    for (x = 0; x < 2; x++) {
-        const uint16_t v = io16(e, 0x44 + 2 * x);
-        win_on[x] = (dc & (0x2000u << x)) && in_span(line, v >> 8, v & 0xff);
+    for (w = 0; w < 2; w++) {
+        const uint16_t v = io16(e, 0x44 + 2 * w);
+        win_on[w] = (dc & (0x2000u << w)) && in_span(line, v >> 8, v & 0xff);
     }
-    for (x = 0; x < W; x++) {
-        uint8_t c = winout & 0x3f;
-        if (win_on[0] && in_span(x, io16(e, 0x40) >> 8, io16(e, 0x40) & 0xff))
-            c = winin & 0x3f;
-        else if (win_on[1] && in_span(x, io16(e, 0x42) >> 8, io16(e, 0x42) & 0xff))
-            c = (winin >> 8) & 0x3f;
-        else if ((dc & 0x8000) && o->win[x])
-            c = (winout >> 8) & 0x3f;
-        ctl[x] = c;
+    /* back to front: outside, the OBJ window, window 1, window 0 */
+    memset(ctl, out_c, W);
+    if (dc & 0x8000)
+        for (x = 0; x < W; x++)
+            ctl[x] = o->win[x] ? obj_c : ctl[x];
+    for (w = 1; w >= 0; w--) {
+        const uint16_t h = io16(e, 0x40 + 2 * w);
+        const int lo = h >> 8, hi = h & 0xff;
+        const uint8_t c = w ? in1 : in0;
+        if (!win_on[w])
+            continue;
+        for (x = 0; x < W; x++)
+            if (in_span(x, lo, hi))
+                ctl[x] = c;
     }
     return 1;
 }
@@ -784,16 +791,18 @@ static void compose_line(const Engine *e, int line, uint16_t *out, uint8_t *code
         return;
     }
 
-    if (!ctl && effect == 1 && !(objs & 2)) {
-        /* the field's case (the alpha blend set up, no window, no blending sprite): the
-         * general loop below, worked out for all pixels with masks and selected (NEON) */
+    if (effect == 1 && !(objs & 2)) {
+        /* the field's case (the alpha blend set up, no blending sprite; with or without a
+         * window, which can turn the effect off per pixel): the general loop below, worked out
+         * for all pixels with masks and selected (NEON) */
         const uint16_t a3 = (uint16_t)(e->has3d ? 1 : 0), bit8 = (uint16_t)((bldcnt >> 8) & 1);
         uint16_t *const code16 = sc->code16;
         for (x = 0; x < W; x++) {
             const uint16_t i0 = id0[x], i1 = id1[x], a = c0[x], b = c1[x];
             const uint16_t z0 = a3 & (i0 == L_BG0);
             const uint16_t z1 = a3 & (i1 == L_BG0) & (uint16_t)!z0;
-            const uint16_t f0 = (uint16_t)((bldcnt >> i0) & 1);
+            const uint16_t fx = ctl ? (uint16_t)((ctl[x] >> 5) & 1) : 1; /* effects here */
+            const uint16_t f0 = (uint16_t)((bldcnt >> i0) & 1) & fx;
             const uint16_t b3 = z1 & f0 & bit8;
             const uint16_t i1e = z1 ? (uint16_t)L_BD : i1;
             const uint16_t s1 = (uint16_t)((bldcnt >> (8 + i1e)) & 1);
