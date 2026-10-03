@@ -431,8 +431,17 @@ int video_shown_bank(int screen)
     return s_show_bank[screen & 1];
 }
 
+static uint16_t s_memory_bright[2];
+
+void video_screen_memory_bright(int screen, uint16_t master_bright)
+{
+    s_memory_bright[screen & 1] = master_bright;
+}
+
 void video_show_capture(int screen, int bank, uint16_t master_bright)
 {
+    if (bank >= VIDEO_SCREEN_MEMORY && bank < VIDEO_SCREEN_MEMORY + 2)
+        master_bright = s_memory_bright[bank - VIDEO_SCREEN_MEMORY];
     s_show_bank[screen & 1] = bank >= 0 && bank < 6 && s_bank_valid[bank] ? bank : -1;
     s_show_bright[screen & 1] = master_bright;
 }

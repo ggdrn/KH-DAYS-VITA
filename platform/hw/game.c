@@ -218,6 +218,8 @@ static void dump_2d(int a_on_top);
 /* the last screen toggle of a dual-3D scene (kh_dual3d_toggled), with the display registers
  * as the game set them for that frame: read later, they were sometimes the next frame's */
 static volatile uint32_t s_toggle_seq, s_toggle_vb = 0x80000000u, s_toggle_serial;
+/* the last toggle the display finished showing */
+static volatile uint32_t s_toggle_done;
 static volatile int s_toggle_top;
 static struct {
     uint32_t dispcnt_a, dispcnt_b, vramcnt, dispcapcnt;
@@ -226,6 +228,15 @@ static struct {
 
 void kh_dual3d_toggled(void)
 {
+    /* The game toggles every VBlank; the display, drawing both screens' 2D, the 3D and the
+     * screen copy, is slower than that, and showed every second toggle or so: the same screen
+     * for several frames, then the other (0.0.89). While the scene runs the game waits for the
+     * display to finish the last toggle (33 ms at most), so that each one is shown. */
+    if (s_vblanks - s_toggle_vb < 8) {
+        const uint64_t until = sceKernelGetProcessTimeWide() + 33000;
+        while (s_toggle_done != s_toggle_seq && sceKernelGetProcessTimeWide() < until)
+            sceKernelDelayThread(100);
+    }
     s_toggle_top = (KH_IO16(0x04000304) >> 15) & 1;
     s_toggle_serial = kh_gx3d_serial();
     s_toggle_regs.dispcnt_a = KH_IO32(0x04000000);
@@ -255,13 +266,13 @@ static void present(void)
     int trace_before = a_on_top;
     uint32_t trace_wait = 0;
     int trace_polys = -1;
+    uint32_t toggle_seq = 0;
     if (dual) {
-        static uint32_t used;
         const uint64_t t = sceKernelGetProcessTimeWide(), until = t + 8000;
-        while (s_toggle_seq == used && sceKernelGetProcessTimeWide() < until)
+        while (s_toggle_seq == s_toggle_done && sceKernelGetProcessTimeWide() < until)
             sceKernelDelayThread(200);
         trace_wait = (uint32_t)(sceKernelGetProcessTimeWide() - t);
-        used = s_toggle_seq;
+        toggle_seq = s_toggle_seq;
         a_on_top = s_toggle_top;
     }
     kh_gpu3d_direct = dual;
@@ -429,7 +440,8 @@ static void present(void)
              * takes three toggles in four VBlanks), and a screen showed the other one's
              * picture now and then (0.0.80 to 0.0.87). */
             captured_seq = s_toggle_seq;
-            kh_capture_screen(raw3d, a_on_top ? 0 : 1);
+            kh_capture_screen(a_on_top ? s_top : s_bottom, tex3d, a_on_top ? 0 : 1,
+                              tex3d ? s_toggle_regs.bright_a : 0);
             KH_IO32(0x04000064) &= ~0x80000000u;
         }
     }
@@ -452,7 +464,7 @@ static void present(void)
         video_show_capture(a_on_top ? 0 : 1, kh_capture_shown(bank_a, !dual) ? bank_a : -1,
                            dual ? s_toggle_regs.bright_a : KH_IO16(0x0400006c));
         if (dual && bank_b >= 0)
-            bank_b = VIDEO_SCREEN_MEMORY + (a_on_top ? 1 : 0);
+            bank_b = VIDEO_SCREEN_MEMORY + (a_on_top ? 1 : 0); /* its own brightness */
         else if (!kh_capture_shown(bank_b, !dual))
             bank_b = -1;
         video_show_capture(a_on_top ? 1 : 0, bank_b,
@@ -479,6 +491,8 @@ static void present(void)
         uint64_t t = sceKernelGetProcessTimeWide();
         /* unchanged screens are not uploaded again */
         video_present(upload2d ? s_top : NULL, upload2d ? s_bottom : NULL);
+        if (dual)
+            s_toggle_done = toggle_seq;
         t = sceKernelGetProcessTimeWide() - t;
         s_present_total += t;
         stage_max(&s_present_max, t);
