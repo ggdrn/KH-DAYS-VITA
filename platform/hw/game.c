@@ -223,6 +223,9 @@ void kh_dual3d_toggled(void)
 {
     s_toggle_top = (KH_IO16(0x04000304) >> 15) & 1;
     s_toggle_serial = kh_gx3d_serial();
+    /* the frame these screens are for, kept: the game may swap the next one before the
+     * display gets to it (0.0.84 drew the next frame half the time) */
+    kh_gx3d_pin();
     s_toggle_vb = s_vblanks;
     __atomic_add_fetch(&s_toggle_seq, 1, __ATOMIC_RELEASE);
 }
@@ -334,7 +337,7 @@ static void present(void)
             /* new textures first, decoded on both cores while the helper is free */
             uint64_t t = sceKernelGetProcessTimeWide();
             s_stage = "3d textures";
-            frame3d = kh_gx3d_acquire();
+            frame3d = dual ? kh_gx3d_pinned() : kh_gx3d_acquire();
             trace_polys = frame3d ? frame3d->npoly : -1;
             kh_gpu3d_prepare(frame3d);
             stage_max(&s_prep_max, sceKernelGetProcessTimeWide() - t);
@@ -411,9 +414,11 @@ static void present(void)
             bank_b = 2; /* sub BG3 alone, from bank C */
         else if (((db >> 16) & 1) && ((db >> 8) & 0x1f) == 0x10 && (cnt_d & 0x87) == 0x84)
             bank_b = 3; /* sub sprites alone, from bank D */
-        video_show_capture(a_on_top ? 0 : 1, kh_capture_shown(bank_a) ? bank_a : -1,
+        /* dual 3D: the banks swap roles every frame, trust the captures (their bytes are not
+         * written meanwhile; the check failed now and then there and blanked a screen) */
+        video_show_capture(a_on_top ? 0 : 1, kh_capture_shown(bank_a, !dual) ? bank_a : -1,
                            KH_IO16(0x0400006c));
-        video_show_capture(a_on_top ? 1 : 0, kh_capture_shown(bank_b) ? bank_b : -1,
+        video_show_capture(a_on_top ? 1 : 0, kh_capture_shown(bank_b, !dual) ? bank_b : -1,
                            KH_IO16(0x0400106c));
     }
     if (kh_log_verbose && dual) {

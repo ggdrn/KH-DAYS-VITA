@@ -37,9 +37,10 @@ static uint32_t bank_hash(int bank)
     return h;
 }
 
-int kh_capture_shown(int bank)
+int kh_capture_shown(int bank, int check_bytes)
 {
-    return bank >= 0 && bank < 4 && s_valid[bank] && bank_hash(bank) == s_hash[bank];
+    return bank >= 0 && bank < 4 && s_valid[bank] &&
+           (!check_bytes || bank_hash(bank) == s_hash[bank]);
 }
 
 int kh_capture_run(unsigned tex3d)
@@ -60,7 +61,7 @@ int kh_capture_run(unsigned tex3d)
     kb = mode == 0 ? 0.0f : mode == 1 ? 1.0f : (float)evb / 16.0f;
     if (mode != 1 && !src_a_3d)
         kh_gpu2d_render_graphics(KH_ENGINE_A, s_gfx);
-    if (kb > 0 && !src_b_fifo && !kh_capture_shown(bank_b)) {
+    if (kb > 0 && !src_b_fifo && !kh_capture_shown(bank_b, 1)) {
         /* source B from the bank's bytes, bottom row first like the GPU targets */
         const uint8_t *src = kh_vram_bank_home(bank_b);
         const uint32_t off = ((cnt >> 26) & 3) * 0x8000u;

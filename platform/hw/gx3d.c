@@ -2,6 +2,7 @@
  * (matrices 20.12, vertices 4.12, normals and light vectors 1.9), so that matrix read-back and
  * the box/position tests give the game the values it expects; vertices leave as floats for the
  * GPU. Command semantics follow GBATEK's "DS 3D" chapters. */
+#include <stdlib.h>
 #include <string.h>
 
 #include "hw/gx3d.h"
@@ -66,6 +67,42 @@ static KhGxFrame s_frames[3];
 static int s_build;
 static int s_shown = 1;
 static volatile int s_ready = 2; /* index | 4 when it holds a frame the renderer has not taken */
+static const KhGxFrame *s_last_published;
+
+/* frames kept by kh_gx3d_pin, three in turn */
+static KhGxFrame *s_pin[3];
+static volatile int s_pin_latest = -1;
+static int s_pin_next;
+
+void kh_gx3d_pin(void)
+{
+    const KhGxFrame *src = s_last_published;
+    KhGxFrame *dst;
+    int i = s_pin_next;
+    if (!src)
+        return;
+    if (!s_pin[i] && !(s_pin[i] = malloc(sizeof(KhGxFrame))))
+        return;
+    dst = s_pin[i];
+    /* the part in use only */
+    dst->nvtx = src->nvtx;
+    dst->npoly = src->npoly;
+    dst->swap = src->swap;
+    dst->disp3dcnt = src->disp3dcnt;
+    dst->serial = src->serial;
+    memcpy(dst->regs, src->regs, sizeof(dst->regs));
+    memcpy(dst->vtx, src->vtx, sizeof(KhGxVertex) * (size_t)src->nvtx);
+    memcpy(dst->poly, src->poly, sizeof(KhGxPolygon) * (size_t)src->npoly);
+    memcpy(dst->order, src->order, sizeof(uint16_t) * (size_t)src->npoly);
+    s_pin_next = (i + 1) % 3;
+    __atomic_store_n(&s_pin_latest, i, __ATOMIC_RELEASE);
+}
+
+const KhGxFrame *kh_gx3d_pinned(void)
+{
+    const int i = __atomic_load_n(&s_pin_latest, __ATOMIC_ACQUIRE);
+    return i >= 0 ? s_pin[i] : NULL;
+}
 static KhGxFrame *s_f;
 static uint32_t s_serial;
 
@@ -658,6 +695,7 @@ static void swap_buffers(uint32_t param)
     sort_frame(f);
     s_stats.frames++;
 
+    s_last_published = f;
     old = __atomic_exchange_n(&s_ready, s_build | 4, __ATOMIC_ACQ_REL);
     s_build = old & 3;
     frame_begin();

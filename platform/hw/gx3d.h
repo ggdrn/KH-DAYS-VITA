@@ -56,6 +56,11 @@ void kh_gx3d_init(void);
  * (NULL in the host tests). */
 extern void (*kh_gx3d_swap_wait)(void);
 
+/* Keep a copy of the frame swapped last, from the game's thread between its swaps (dual 3D:
+ * the frame the screens were just swapped for); kh_gx3d_pinned gives the latest copy. */
+void kh_gx3d_pin(void);
+const KhGxFrame *kh_gx3d_pinned(void);
+
 /* Widescreen: perspective geometry has its clip-space x multiplied by this before it is
  * drawn (1 = the DS's 4:3), and the box test sees the wider view. The game's own reads of
  * the matrices and position tests stay as on the DS. Set by the display loop. */

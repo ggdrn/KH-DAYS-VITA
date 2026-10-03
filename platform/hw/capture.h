@@ -10,7 +10,7 @@ int kh_capture_run(unsigned tex3d);
 
 /* Whether the last capture went to bank and is still what it holds: engine A showing that bank
  * (display mode 2) shows the capture (video_show_capture). */
-int kh_capture_shown(int bank);
+int kh_capture_shown(int bank, int check_bytes);
 
 /* captures since the last call, for the statistics */
 uint32_t kh_capture_take_count(void);
