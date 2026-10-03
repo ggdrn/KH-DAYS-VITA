@@ -87,6 +87,7 @@ static void boot_state(void)
     audio_out_init();
     s_gpu3d = kh_gpu3d_init(kh_config.render_scale);
     kh_gpu2d_init();
+    kh_gpu2d_profiling = kh_log_verbose; /* where the 2D time goes, in the statistics */
     workers_init();
     kh_hw_reset();
     memcpy(KH_SHARED(HW_ROM_HEADER_BUF), rom_header(), HW_ROM_HEADER_SIZE);
@@ -899,6 +900,18 @@ void kh_game_run(void)
                     LOG("display: 2d cpu per frame: engine A %uus, B %uus",
                         (unsigned)(s_2d_engine_us[0] / 600), (unsigned)(s_2d_engine_us[1] / 600));
                     s_2d_engine_us[0] = s_2d_engine_us[1] = 0;
+                    if (kh_gpu2d_profiling) {
+                        uint32_t us[2][3], spr[2][3];
+                        int k;
+                        kh_gpu2d_take_profile(us, spr);
+                        for (k = 0; k < 2; k++)
+                            LOG("display: 2d %c per frame: BGs %uus, sprites %uus, the rest %uus; "
+                                "sprite lines %u tiles, %u bitmap, %u affine", "AB"[k],
+                                (unsigned)(us[k][0] / 600), (unsigned)(us[k][1] / 600),
+                                (unsigned)((us[k][2] - us[k][0] - us[k][1]) / 600),
+                                (unsigned)(spr[k][0] / 600), (unsigned)(spr[k][1] / 600),
+                                (unsigned)(spr[k][2] / 600));
+                    }
                     LOG("display: worst frame: textures %uus, 3d submit %uus, 2d after it %uus, "
                         "present %uus", (unsigned)s_prep_max, (unsigned)s_t3d_max,
                         (unsigned)s_join_max, (unsigned)s_present_max);

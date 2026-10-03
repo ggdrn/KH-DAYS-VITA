@@ -17,6 +17,7 @@
 #include "hw/memmap.h"
 #include "hw/vram.h"
 
+#include <psp2/kernel/processmgr.h>
 #include <string.h>
 
 #define W KH_GPU2D_W
@@ -65,6 +66,33 @@ static inline uint16_t rd16(const uint8_t *base, uint32_t off, uint32_t mask)
     uint16_t v;
     memcpy(&v, base + (off & mask & ~1u), 2);
     return v;
+}
+
+/* ---- profile -------------------------------------------------------------------------- */
+
+/* where the 2D time goes, per engine (kh_gpu2d_take_profile), only with the detailed log */
+volatile int kh_gpu2d_profiling;
+static volatile uint32_t s_prof_us[2][3];      /* BGs, sprites, composition */
+static volatile uint32_t s_prof_sprites[2][3]; /* sprite lines: tiles, bitmap, affine */
+
+static inline uint64_t prof_now(void)
+{
+    return kh_gpu2d_profiling ? sceKernelGetProcessTimeWide() : 0;
+}
+
+static inline void prof_add(volatile uint32_t *c, uint32_t v)
+{
+    __atomic_add_fetch(c, v, __ATOMIC_RELAXED);
+}
+
+void kh_gpu2d_take_profile(uint32_t us[2][3], uint32_t sprites[2][3])
+{
+    int e, k;
+    for (e = 0; e < 2; e++)
+        for (k = 0; k < 3; k++) {
+            us[e][k] = __atomic_exchange_n(&s_prof_us[e][k], 0, __ATOMIC_RELAXED);
+            sprites[e][k] = __atomic_exchange_n(&s_prof_sprites[e][k], 0, __ATOMIC_RELAXED);
+        }
 }
 
 /* ---- setup ---------------------------------------------------------------------------- */
@@ -469,7 +497,35 @@ static int render_obj(const Engine *e, int line, ObjLine *o)
         if (x0 >= 256)
             x0 -= 512;
         if (!affine && mode != 3) {
+            if (kh_gpu2d_profiling)
+                prof_add(&s_prof_sprites[!e->is_a][0], 1);
             got |= obj_line_tiles(e, o, a0, a1, a2, w, h, dy, x0);
+            continue;
+        }
+        if (kh_gpu2d_profiling)
+            prof_add(&s_prof_sprites[!e->is_a][affine ? 2 : 1], 1);
+        if (!affine) {
+            /* a plain bitmap sprite (the scenes' video frames): its row of direct colours
+             * read in place, the address worked out once per line instead of per texel */
+            const uint8_t *v = e->obj_vram;
+            const uint32_t m = e->obj_mask;
+            const int tile = a2 & 0x3ff, ty = (a1 & 0x2000) ? h - 1 - dy : dy;
+            const int hflip = a1 & 0x1000;
+            uint32_t base;
+            if (!(a2 >> 12))
+                continue; /* alpha 0: not drawn */
+            if (e->dispcnt & 0x40)
+                base = tile * ((e->dispcnt & (1u << 22)) ? 256u : 128u) + (uint32_t)ty * w * 2u;
+            else if (e->dispcnt & 0x20)
+                base = (tile & 0x1f) * 0x10u + (tile & ~0x1f) * 0x80u + (uint32_t)ty * 512u;
+            else
+                base = (tile & 0x0f) * 0x10u + (tile & ~0x0f) * 0x80u + (uint32_t)ty * 256u;
+            for (lx = x0 < 0 ? -x0 : 0; lx < w && x0 + lx < W; lx++) {
+                const int tx = hflip ? w - 1 - lx : lx;
+                const uint16_t c = rd16(v, base + (uint32_t)tx * 2u, m);
+                if (c & 0x8000)
+                    got |= obj_put(o, x0 + lx, c & 0x7fff, mode, prio, a2);
+            }
             continue;
         }
         if (affine) {
@@ -605,10 +661,12 @@ static void compose_line(const Engine *e, int line, uint16_t *out, uint8_t *code
     int eva = bldalpha & 31, evb = (bldalpha >> 8) & 31, evy = io16(e, 0x54) & 31;
     const uint16_t backdrop = e->bg_pal[0] & 0x7fff;
     int order[4], prio[4], nb = 0, objs, windows, bg, x, i;
+    uint64_t t0, t1, t2;
 
     if (eva > 16) eva = 16;
     if (evb > 16) evb = 16;
     if (evy > 16) evy = 16;
+    t0 = prof_now();
     for (bg = 0; bg < 4; bg++) {
         if (!render_bg(e, bg, line, bgl[bg]))
             continue;
@@ -620,7 +678,13 @@ static void compose_line(const Engine *e, int line, uint16_t *out, uint8_t *code
             order[i] = bg, prio[i] = p, nb++;
         }
     }
+    t1 = prof_now();
     objs = render_obj(e, line, &obj);
+    t2 = prof_now();
+    if (kh_gpu2d_profiling) {
+        prof_add(&s_prof_us[!e->is_a][0], (uint32_t)(t1 - t0));
+        prof_add(&s_prof_us[!e->is_a][1], (uint32_t)(t2 - t1));
+    }
     windows = window_line(e, line, &obj, ctl);
 
     if (!windows && !effect && !(objs & 2)) {
@@ -789,6 +853,7 @@ static int render_lines(int engine, uint32_t *fb, int y0, int y1, int graphics)
     for (line = y0; line < y1; line++, fb += W) {
         uint16_t row[W];
         uint8_t code[W];
+        const uint64_t t = prof_now();
         compose_line(&e, line, row, code, &sc);
         if (e.has3d) {
             /* master brightness then comes after the composition, on the GPU */
@@ -797,6 +862,8 @@ static int render_lines(int engine, uint32_t *fb, int y0, int y1, int graphics)
         } else {
             row_out(row, fb, mmode, mf);
         }
+        if (kh_gpu2d_profiling) /* the whole line: the composition is what BGs and sprites leave */
+            prof_add(&s_prof_us[!e.is_a][2], (uint32_t)(prof_now() - t));
     }
     return e.has3d;
 }

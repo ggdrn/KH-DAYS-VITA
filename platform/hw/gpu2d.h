@@ -46,4 +46,10 @@ int kh_gpu2d_render_graphics(int engine, uint32_t *fb);
  * recorded with a dual-3D frame, the register having moved on to the next one. */
 extern volatile uint32_t kh_gpu2d_dispcnt_override[2];
 
+/* Diagnosis, with kh_gpu2d_profiling set: since the last call, per engine, the CPU time (us)
+ * of the BGs, the sprites and whole lines, and the sprite lines drawn as tiles, bitmaps and
+ * affine. */
+extern volatile int kh_gpu2d_profiling;
+void kh_gpu2d_take_profile(uint32_t us[2][3], uint32_t sprites[2][3]);
+
 #endif
