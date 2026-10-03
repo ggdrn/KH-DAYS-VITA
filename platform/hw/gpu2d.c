@@ -75,6 +75,8 @@ static int bank_is(int bank, int mst)
     return (cnt & 0x80) && (cnt & 7) == mst;
 }
 
+volatile uint32_t kh_gpu2d_dispcnt_override[2];
+
 static void engine_setup(Engine *e, int engine)
 {
     int i;
@@ -109,7 +111,8 @@ static void engine_setup(Engine *e, int engine)
         if (bank_is(8, 3)) /* I: OBJ */
             e->obj_ext = (const uint16_t *)kh_vram_bank_home(8);
     }
-    e->dispcnt = io32(e, 0x00);
+    e->dispcnt = kh_gpu2d_dispcnt_override[engine] ? kh_gpu2d_dispcnt_override[engine]
+                                                   : io32(e, 0x00);
     e->has3d = e->is_a && (e->dispcnt & 0x108) == 0x108 && (e->dispcnt & 7) != 7;
 }
 

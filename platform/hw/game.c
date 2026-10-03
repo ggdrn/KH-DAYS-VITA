@@ -265,6 +265,10 @@ static void present(void)
         a_on_top = s_toggle_top;
     }
     kh_gpu3d_direct = dual;
+    /* the 2D drawn with the frame's own layers: the game changes engine A's visible layers
+     * (and B's) with every screen it draws for */
+    kh_gpu2d_dispcnt_override[KH_ENGINE_A] = dual ? s_toggle_regs.dispcnt_a : 0;
+    kh_gpu2d_dispcnt_override[KH_ENGINE_B] = dual ? s_toggle_regs.dispcnt_b : 0;
     uint64_t t0 = sceKernelGetProcessTimeWide();
     unsigned tex3d = 0, raw3d;
     int a3d = 0, i, draw2d;
