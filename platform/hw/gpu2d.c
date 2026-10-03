@@ -823,6 +823,34 @@ static void compose_line(const Engine *e, int line, uint16_t *out, uint8_t *code
         return;
     }
 
+    if ((effect == 2 || effect == 3) && !(objs & 2)) {
+        /* a fade (brighten or darken; the dual-3D scenes and screen changes): as the general
+         * loop below, with masks and selects (NEON). With the 3D in front the pixel is the
+         * layer under it, faded when that is a first target, and the 3D's own fade is the
+         * code; otherwise the front layer, faded when it is a first target. */
+        const uint16_t a3 = (uint16_t)(e->has3d ? 1 : 0), bit0 = (uint16_t)(bldcnt & 1);
+        const uint16_t code3d = (uint16_t)((effect == 2 ? KH_GPU2D_3D_BRIGHTEN : KH_GPU2D_3D_DARKEN) | evy);
+        const int up = effect == 2;
+        uint16_t *const code16 = sc->code16;
+        for (x = 0; x < W; x++) {
+            const uint16_t i0 = id0[x], i1 = id1[x];
+            const uint16_t fx = ctl ? (uint16_t)((ctl[x] >> 5) & 1) : 1;
+            const uint16_t z0 = a3 & (i0 == L_BG0);
+            const uint16_t t = z0 ? c1[x] : c0[x];
+            const uint16_t first = (uint16_t)((bldcnt >> (z0 ? i1 : i0)) & 1) & fx;
+            const uint16_t r = t & 31, g = (t >> 5) & 31, b = (t >> 10) & 31;
+            const uint16_t rf = up ? (uint16_t)(r + (((31 - r) * evy) >> 4)) : (uint16_t)(r - ((r * evy) >> 4));
+            const uint16_t gf = up ? (uint16_t)(g + (((31 - g) * evy) >> 4)) : (uint16_t)(g - ((g * evy) >> 4));
+            const uint16_t bf = up ? (uint16_t)(b + (((31 - b) * evy) >> 4)) : (uint16_t)(b - ((b * evy) >> 4));
+            const uint16_t faded = (uint16_t)(rf | gf << 5 | bf << 10);
+            out[x] = first ? faded : t;
+            code16[x] = z0 ? ((fx & bit0) ? code3d : (uint16_t)KH_GPU2D_3D) : (uint16_t)KH_GPU2D_2D;
+        }
+        for (x = 0; x < W; x++)
+            code[x] = (uint8_t)code16[x];
+        return;
+    }
+
     for (x = 0; x < W; x++) {
         const int c = ctl ? ctl[x] : 0x3f;
         int i0 = id0[x], i1 = id1[x];

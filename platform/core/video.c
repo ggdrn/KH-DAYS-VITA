@@ -24,6 +24,9 @@ static int s_tex_at[2];
 #define s_tex_cur(i) (s_tex_ring[i][s_tex_at[i]])
 /* the last video_present's time in its uploads and in vglSwapBuffers (us), for the log */
 static uint32_t s_upload_us, s_swap_us;
+/* With the detailed log, one frame a second waits for the GPU before its swap: how long the GPU
+ * still had to work once everything was sent (whether the GPU or the swap loses the frames) */
+static uint32_t s_gpu_total, s_gpu_max, s_gpu_n;
 static const uint32_t *s_overlay;
 static ScreenLayout s_layout = LAYOUT_TOP_MAIN;
 static ScreenRect s_rect[2];
@@ -753,9 +756,29 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
         draw_quad(&full);
         glDisable(GL_BLEND);
     }
+    if (kh_log_verbose) {
+        static uint32_t n;
+        if (++n % 60 == 0) {
+            const uint64_t t = sceKernelGetProcessTimeWide();
+            uint32_t d;
+            glFinish();
+            d = (uint32_t)(sceKernelGetProcessTimeWide() - t);
+            s_gpu_total += d;
+            s_gpu_n++;
+            if (d > s_gpu_max)
+                s_gpu_max = d;
+        }
+    }
     t_swap = sceKernelGetProcessTimeWide();
     vglSwapBuffers(GL_FALSE);
     s_swap_us = (uint32_t)(sceKernelGetProcessTimeWide() - t_swap);
+}
+
+void video_take_gpu_probe(uint32_t *avg_us, uint32_t *max_us)
+{
+    *avg_us = s_gpu_n ? s_gpu_total / s_gpu_n : 0;
+    *max_us = s_gpu_max;
+    s_gpu_total = s_gpu_max = s_gpu_n = 0;
 }
 
 void video_present_times(uint32_t *upload_us, uint32_t *swap_us)

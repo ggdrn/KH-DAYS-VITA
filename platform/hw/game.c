@@ -930,6 +930,12 @@ void kh_game_run(void)
                         (unsigned)(s_present_total / 600), (unsigned)s_2d_skipped,
                         (unsigned)s_2d_async, busy / 10, busy % 10);
                     s_2d_async = 0;
+                    {
+                        uint32_t ga, gm;
+                        video_take_gpu_probe(&ga, &gm);
+                        LOG("display: gpu still busy at the swap (1 frame a second): avg %uus, "
+                            "worst %uus", (unsigned)ga, (unsigned)gm);
+                    }
                     LOG("display: 2d cpu per frame: engine A %uus, B %uus",
                         (unsigned)(s_2d_engine_us[0] / 600), (unsigned)(s_2d_engine_us[1] / 600));
                     s_2d_engine_us[0] = s_2d_engine_us[1] = 0;
