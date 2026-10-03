@@ -315,6 +315,8 @@ static void present(void)
      * (and B's) with every screen it draws for */
     kh_gpu2d_dispcnt_override[KH_ENGINE_A] = dual ? s_toggle_regs.dispcnt_a : 0;
     kh_gpu2d_dispcnt_override[KH_ENGINE_B] = dual ? s_toggle_regs.dispcnt_b : 0;
+    /* with the detailed log, once a second: this frame's GPU time measured alone */
+    video_gpu_probe_begin();
     uint64_t t0 = sceKernelGetProcessTimeWide();
     unsigned tex3d = 0, raw3d;
     int a3d = 0, i, draw2d;
@@ -933,7 +935,7 @@ void kh_game_run(void)
                     {
                         uint32_t ga, gm;
                         video_take_gpu_probe(&ga, &gm);
-                        LOG("display: gpu still busy at the swap (1 frame a second): avg %uus, "
+                        LOG("display: gpu time of one frame drawn alone (1 a second): avg %uus, "
                             "worst %uus", (unsigned)ga, (unsigned)gm);
                     }
                     LOG("display: 2d cpu per frame: engine A %uus, B %uus",

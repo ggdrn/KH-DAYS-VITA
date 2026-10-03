@@ -70,8 +70,10 @@ void video_capture(const uint32_t *gfx, int src3d, unsigned tex3d, float ka, flo
 void video_show_capture(int screen, int bank, uint16_t master_bright);
 /* The last video_present's time in its texture uploads and in the buffer swap (us). */
 void video_present_times(uint32_t *upload_us, uint32_t *swap_us);
-/* With the detailed log: the GPU's remaining work at the swap, sampled once a second, average
- * and worst since the last call (us). */
+/* With the detailed log: at the start of a display frame, drains the GPU once a second and
+ * returns 1 for that frame, whose GPU time video_present then measures; the time the GPU still
+ * worked once the frame was sent, average and worst since the last call (us). */
+int video_gpu_probe_begin(void);
 void video_take_gpu_probe(uint32_t *avg_us, uint32_t *max_us);
 /* The screen memories (VIDEO_SCREEN_MEMORY) dropped, at the start of a dual-3D scene: they
  * held the last one's pictures (0.0.96 showed one for a frame); whether a screen has one. */
