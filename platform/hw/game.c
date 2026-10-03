@@ -431,6 +431,9 @@ static void present(void)
     {
         /* dual 3D: the frame's own capture, once per toggle (its enable bit cleared too) */
         static uint32_t captured_seq;
+        /* engine A showing a VRAM bank itself (the cross-fades of these scenes: display
+         * mode 2, each capture blended with the last): the game's own captures are needed */
+        const int a_shows_bank = ((s_toggle_regs.dispcnt_a >> 16) & 3) == 2;
         if (!dual) {
             kh_capture_run(raw3d);
         } else if (captured_seq != s_toggle_seq) {
@@ -440,7 +443,10 @@ static void present(void)
              * takes three toggles in four VBlanks), and a screen showed the other one's
              * picture now and then (0.0.80 to 0.0.87). */
             captured_seq = s_toggle_seq;
-            kh_capture_screen(a_on_top ? s_top : s_bottom, tex3d, a_on_top ? 0 : 1,
+            if (a_shows_bank)
+                kh_capture_run_regs(raw3d, s_toggle_regs.dispcapcnt, s_toggle_regs.dispcnt_a);
+            else
+                kh_capture_screen(a_on_top ? s_top : s_bottom, tex3d, a_on_top ? 0 : 1,
                               tex3d ? s_toggle_regs.bright_a : 0);
             KH_IO32(0x04000064) &= ~0x80000000u;
         }
@@ -460,10 +466,12 @@ static void present(void)
             bank_b = 2; /* sub BG3 alone, from bank C */
         else if (((db >> 16) & 1) && ((db >> 8) & 0x1f) == 0x10 && (cnt_d & 0x87) == 0x84)
             bank_b = 3; /* sub sprites alone, from bank D */
-        /* dual 3D: engine B's screen shows the last picture engine A gave it */
+        /* dual 3D: engine B's screen shows the last picture engine A gave it, or with engine
+         * A showing a bank, the bank's capture as on the DS (0.0.88 to 0.0.90 kept the
+         * cross-fades' banks stale) */
         video_show_capture(a_on_top ? 0 : 1, kh_capture_shown(bank_a, !dual) ? bank_a : -1,
                            dual ? s_toggle_regs.bright_a : KH_IO16(0x0400006c));
-        if (dual && bank_b >= 0)
+        if (dual && bank_b >= 0 && bank_a < 0)
             bank_b = VIDEO_SCREEN_MEMORY + (a_on_top ? 1 : 0); /* its own brightness */
         else if (!kh_capture_shown(bank_b, !dual))
             bank_b = -1;
