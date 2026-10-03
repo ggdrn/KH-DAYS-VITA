@@ -215,14 +215,25 @@ static volatile int s_dump_2d; /* L+R+Triangle: the 2D side of the frame too */
 static volatile int s_fast_forward; /* L+R+Square */
 static void dump_2d(int a_on_top);
 
-/* the last screen toggle of a dual-3D scene (kh_dual3d_toggled) */
+/* the last screen toggle of a dual-3D scene (kh_dual3d_toggled), with the display registers
+ * as the game set them for that frame: read later, they were sometimes the next frame's */
 static volatile uint32_t s_toggle_seq, s_toggle_vb = 0x80000000u, s_toggle_serial;
 static volatile int s_toggle_top;
+static struct {
+    uint32_t dispcnt_a, dispcnt_b, vramcnt, dispcapcnt;
+    uint16_t bright_a, bright_b;
+} s_toggle_regs;
 
 void kh_dual3d_toggled(void)
 {
     s_toggle_top = (KH_IO16(0x04000304) >> 15) & 1;
     s_toggle_serial = kh_gx3d_serial();
+    s_toggle_regs.dispcnt_a = KH_IO32(0x04000000);
+    s_toggle_regs.dispcnt_b = KH_IO32(0x04001000);
+    s_toggle_regs.vramcnt = KH_IO32(0x04000240);
+    s_toggle_regs.dispcapcnt = KH_IO32(0x04000064);
+    s_toggle_regs.bright_a = KH_IO16(0x0400006c);
+    s_toggle_regs.bright_b = KH_IO16(0x0400106c);
     /* the frame these screens are for, kept: the game may swap the next one before the
      * display gets to it (0.0.84 drew the next frame half the time) */
     kh_gx3d_pin();
@@ -400,14 +411,26 @@ static void present(void)
     }
     /* the display capture the game armed for this frame (dialogue screen blends) */
     s_stage = "capture";
-    kh_capture_run(raw3d);
+    {
+        /* dual 3D: the frame's own capture, once per toggle (its enable bit cleared too) */
+        static uint32_t captured_seq;
+        if (!dual) {
+            kh_capture_run(raw3d);
+        } else if (captured_seq != s_toggle_seq) {
+            captured_seq = s_toggle_seq;
+            kh_capture_run_regs(raw3d, s_toggle_regs.dispcapcnt, s_toggle_regs.dispcnt_a);
+            KH_IO32(0x04000064) &= ~0x80000000u;
+        }
+    }
     {
         /* a screen showing a VRAM bank a capture went to shows the capture: engine A in VRAM
          * display mode (dialogue blends), or engine B with nothing but a bitmap BG3 from bank C
          * or bitmap sprites from bank D (the dual-3D scenes: 3D on both screens, one frame each,
          * the other screen showing the last capture) */
-        const uint32_t dc = KH_IO32(0x04000000), db = KH_IO32(0x04001000);
-        const uint8_t cnt_c = kh_ds_io[0x242], cnt_d = kh_ds_io[0x243];
+        const uint32_t dc = dual ? s_toggle_regs.dispcnt_a : KH_IO32(0x04000000);
+        const uint32_t db = dual ? s_toggle_regs.dispcnt_b : KH_IO32(0x04001000);
+        const uint8_t cnt_c = dual ? (uint8_t)(s_toggle_regs.vramcnt >> 16) : kh_ds_io[0x242];
+        const uint8_t cnt_d = dual ? (uint8_t)(s_toggle_regs.vramcnt >> 24) : kh_ds_io[0x243];
         const int bank_a = ((dc >> 16) & 3) == 2 ? (int)((dc >> 18) & 3) : -1;
         int bank_b = -1;
         if (((db >> 16) & 1) && ((db >> 8) & 0x1f) == 0x08 && (cnt_c & 0x87) == 0x84)
@@ -417,9 +440,9 @@ static void present(void)
         /* dual 3D: the banks swap roles every frame, trust the captures (their bytes are not
          * written meanwhile; the check failed now and then there and blanked a screen) */
         video_show_capture(a_on_top ? 0 : 1, kh_capture_shown(bank_a, !dual) ? bank_a : -1,
-                           KH_IO16(0x0400006c));
+                           dual ? s_toggle_regs.bright_a : KH_IO16(0x0400006c));
         video_show_capture(a_on_top ? 1 : 0, kh_capture_shown(bank_b, !dual) ? bank_b : -1,
-                           KH_IO16(0x0400106c));
+                           dual ? s_toggle_regs.bright_b : KH_IO16(0x0400106c));
     }
     if (kh_log_verbose && dual) {
         /* dual 3D, frame by frame: what each screen gets (the first 240 frames of the run) */

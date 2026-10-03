@@ -45,8 +45,11 @@ int kh_capture_shown(int bank, int check_bytes)
 
 int kh_capture_run(unsigned tex3d)
 {
-    const uint32_t cnt = KH_IO32(0x04000064);
-    const uint32_t dispcnt = KH_IO32(0x04000000);
+    return kh_capture_run_regs(tex3d, KH_IO32(0x04000064), KH_IO32(0x04000000));
+}
+
+int kh_capture_run_regs(unsigned tex3d, uint32_t cnt, uint32_t dispcnt)
+{
     const int mode = (cnt >> 29) & 3, src_a_3d = (cnt >> 24) & 1, src_b_fifo = (cnt >> 25) & 1;
     const int dest = (int)((cnt >> 16) & 3), bank_b = (int)((dispcnt >> 18) & 3);
     int eva = cnt & 31, evb = (cnt >> 8) & 31;
