@@ -62,6 +62,12 @@ void workers_begin(WorkFn fn, int n, void *arg)
         sceKernelSignalSema(s_go, 1);
 }
 
+void workers_help(void)
+{
+    if (s_active && s_go >= 0)
+        pull();
+}
+
 void workers_join(void)
 {
     if (!s_active)

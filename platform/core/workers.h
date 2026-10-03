@@ -9,6 +9,9 @@ typedef void (*WorkFn)(int chunk, void *arg);
 void workers_init(void);
 /* Start fn(0..n-1, arg) on the helper; the caller may do other work, then join. */
 void workers_begin(WorkFn fn, int n, void *arg);
+/* Pull the chunks still left without waiting for the ones in flight (the job stays open for
+ * workers_join). */
+void workers_help(void);
 /* Pull the chunks still left, then wait for the ones in flight. */
 void workers_join(void);
 

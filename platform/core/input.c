@@ -110,8 +110,10 @@ void kh_vita_camera_state(int manual, unsigned int bits)
 
 static int stick_axis(int v)
 {
+    static const int dz[4] = { RSTICK_DEADZONE, 25, RSTICK_DEADZONE, 60 };
+    const int d = dz[kh_config.stick_deadzone & 3];
     v -= 128;
-    if (v > -RSTICK_DEADZONE && v < RSTICK_DEADZONE)
+    if (v > -d && v < d)
         return 0;
     return v < -127 ? -127 : v > 127 ? 127 : v;
 }
@@ -120,6 +122,7 @@ void input_init(void)
 {
     sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
     sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT, SCE_TOUCH_SAMPLING_STATE_START);
+    sceTouchSetSamplingState(SCE_TOUCH_PORT_BACK, SCE_TOUCH_SAMPLING_STATE_START);
 }
 
 void input_poll(InputState *out)
@@ -161,12 +164,50 @@ void input_poll(InputState *out)
         s_nav_dir = dir;
     }
 
-    /* The left stick doubles as the d-pad (the DS has no stick). */
-    if (pad.lx < 128 - STICK_DEADZONE) held |= DS_KEY_LEFT;
-    if (pad.lx > 128 + STICK_DEADZONE) held |= DS_KEY_RIGHT;
-    if (pad.ly < 128 - STICK_DEADZONE) held |= DS_KEY_UP;
-    if (pad.ly > 128 + STICK_DEADZONE) held |= DS_KEY_DOWN;
+    /* The left stick doubles as the d-pad (the DS has no stick), past the dead zone chosen */
+    {
+        static const int dz[4] = { STICK_DEADZONE, 30, STICK_DEADZONE, 72 };
+        const int d = dz[kh_config.stick_deadzone & 3];
+        if (pad.lx < 128 - d) held |= DS_KEY_LEFT;
+        if (pad.lx > 128 + d) held |= DS_KEY_RIGHT;
+        if (pad.ly < 128 - d) held |= DS_KEY_UP;
+        if (pad.ly > 128 + d) held |= DS_KEY_DOWN;
+    }
 
+    /* the rear touchpad's halves as two more buttons (config rear_touch) */
+    if (kh_config.rear_touch) {
+        SceTouchData back;
+        int i;
+        sceTouchPeek(SCE_TOUCH_PORT_BACK, &back, 1);
+        for (i = 0; i < (int)back.reportNum && i < 2; i++) {
+            const int left = back.report[i].x < 960; /* the panel reports 1920 wide */
+            if (kh_config.rear_touch == 1)
+                held |= left ? DS_KEY_L : DS_KEY_R;
+            else
+                held |= left ? DS_KEY_SELECT : DS_KEY_START;
+        }
+    }
+
+    /* R as a toggle (config r_toggle): each press latches or releases the lock-on */
+    {
+        static int latched, was;
+        const int now_r = (held & DS_KEY_R) != 0;
+        if (kh_config.r_toggle) {
+            if (now_r && !was)
+                latched ^= 1;
+            held = (uint16_t)((held & ~DS_KEY_R) | (latched ? DS_KEY_R : 0));
+        } else {
+            latched = 0;
+        }
+        was = now_r;
+    }
+
+    /* L+R+Square switches fast-forward on and off; the combination is swallowed. */
+    if ((pad.buttons & (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_SQUARE)) ==
+        (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_SQUARE)) {
+        out->fast_forward = (s_prev_buttons & SCE_CTRL_SQUARE) == 0;
+        held = 0;
+    }
     /* L+R+Select opens and closes the port menu; the combination is swallowed. */
     if ((pad.buttons & (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_SELECT)) ==
         (SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_SELECT)) {

@@ -8,11 +8,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define CONFIG_VERSION 7
+#define CONFIG_VERSION 8
 
 static const KhConfig s_defaults = {
     .render_scale = 3, .layout = 0, .inset_width = 224, .aspect = KH_ASPECT_WIDE,
-    .frame_interpolation = 1, .texture_filter = 0, .camera_stick = 1, .camera_speed = 2,
+    .frame_interpolation = 1, .texture_filter = 1, .hud = 0, .screen_effect = 0,
+    .inset_corner = 0, .inset_opacity = 100, .rear_touch = 0, .stick_deadzone = 2, .r_toggle = 0,
+    .fast_forward = 2, .camera_stick = 1, .camera_speed = 2,
     .camera_invert_x = 0, .camera_invert_y = 0, .dpad_deck = 1, .show_fps = 0, .volume = 100,
     .debug = 0,
     /* positional, as on the DS: the right face button is A, the bottom one B */
@@ -97,6 +99,23 @@ void config_save(void)
                "show_fps = %d\n\n", kh_config.show_fps);
     fprintf(f, "# Sound volume, 0 to 100 (%% of the game's own).\n"
                "volume = %d\n\n", kh_config.volume);
+    fprintf(f, "# Widescreen field: hud = 0 stretches the 2D (HUD) over 16:9, 1 keeps it 4:3 in\n"
+               "# the middle over the wide 3D.\n"
+               "hud = %d\n\n", kh_config.hud);
+    fprintf(f, "# Screen effect: 0 none, 1 scanlines, 2 LCD grid.\n"
+               "screen_effect = %d\n\n", kh_config.screen_effect);
+    fprintf(f, "# Small screen: corner 0 top-right, 1 top-left, 2 bottom-right, 3 bottom-left;\n"
+               "# opacity 50 to 100.\n"
+               "inset_corner = %d\ninset_opacity = %d\n\n", kh_config.inset_corner,
+            kh_config.inset_opacity);
+    fprintf(f, "# Rear touchpad: 0 off, 1 left half L / right half R, 2 Select / Start.\n"
+               "rear_touch = %d\n\n", kh_config.rear_touch);
+    fprintf(f, "# Analog stick dead zone: 1 small, 2 normal, 3 large.\n"
+               "stick_deadzone = %d\n\n", kh_config.stick_deadzone);
+    fprintf(f, "# The DS's R (lock-on): 0 held as on the DS, 1 toggled by each press.\n"
+               "r_toggle = %d\n\n", kh_config.r_toggle);
+    fprintf(f, "# Fast-forward speed, switched on and off with L+R+Square: 2 or 3.\n"
+               "fast_forward = %d\n\n", kh_config.fast_forward);
     fprintf(f, "# Controls: the Vita button for each DS button. Names: cross circle square\n"
                "# triangle l r start select. The default is positional, as on the DS.\n");
     for (b = 0; b < KH_BTN_COUNT; b++)
@@ -153,6 +172,22 @@ static void set(const char *k, const char *v, int version)
         kh_config.show_fps = atoi(v) != 0;
     else if (!strcmp(k, "volume"))
         kh_config.volume = clampi(atoi(v), 0, 100);
+    else if (!strcmp(k, "hud"))
+        kh_config.hud = atoi(v) != 0;
+    else if (!strcmp(k, "screen_effect"))
+        kh_config.screen_effect = clampi(atoi(v), 0, 2);
+    else if (!strcmp(k, "inset_corner"))
+        kh_config.inset_corner = clampi(atoi(v), 0, 3);
+    else if (!strcmp(k, "inset_opacity"))
+        kh_config.inset_opacity = clampi(atoi(v), 50, 100);
+    else if (!strcmp(k, "rear_touch"))
+        kh_config.rear_touch = clampi(atoi(v), 0, 2);
+    else if (!strcmp(k, "stick_deadzone"))
+        kh_config.stick_deadzone = clampi(atoi(v), 1, 3);
+    else if (!strcmp(k, "r_toggle"))
+        kh_config.r_toggle = atoi(v) != 0;
+    else if (!strcmp(k, "fast_forward"))
+        kh_config.fast_forward = clampi(atoi(v), 2, 3);
     else if (!strcmp(k, "debug"))
         kh_config.debug = atoi(v) != 0;
     else if (!strncmp(k, "button_", 7))
@@ -197,6 +232,9 @@ void config_load(void)
              * height), and the newer settings get written out with it */
             if (version < 2 && kh_config.render_scale == 2)
                 kh_config.render_scale = 3;
+            /* the smooth texture filter became the default with the port menu's tabs */
+            if (version < 8)
+                kh_config.texture_filter = 1;
             config_save();
             LOG("config: upgraded from version %d", version);
         }

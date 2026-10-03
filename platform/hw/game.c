@@ -181,6 +181,16 @@ typedef struct {
     int eng[2], neng; /* the engines drawn this frame */
 } Frame2d;
 
+/* engine A was among the engines drawn: only then do the bands say where its 3D pixels are */
+static int drew_a(const Frame2d *f)
+{
+    int i;
+    for (i = 0; i < f->neng; i++)
+        if (f->eng[i] == KH_ENGINE_A)
+            return 1;
+    return 0;
+}
+
 /* per-stage display times since the last report, for the 10 s line */
 static uint64_t s_t3d_total, s_join_total, s_present_total;
 static uint32_t s_2d_async; /* 2D pictures drawn over two Vita frames (60 fps mode) */
@@ -202,6 +212,7 @@ static void render_chunk(int chunk, void *arg)
 }
 
 static volatile int s_dump_2d; /* L+R+Triangle: the 2D side of the frame too */
+static volatile int s_fast_forward; /* L+R+Square */
 static void dump_2d(int a_on_top);
 
 static void present(void)
@@ -226,9 +237,11 @@ static void present(void)
         workers_join();
         async_2d = 0;
         upload2d = 1;
-        last_a3d = 0;
-        for (i = 0; i < BANDS; i++)
-            last_a3d |= f2d.a3d[i];
+        if (drew_a(&f2d)) {
+            last_a3d = 0;
+            for (i = 0; i < BANDS; i++)
+                last_a3d |= f2d.a3d[i];
+        }
         d = sceKernelGetProcessTimeWide() - t;
         s_join_total += d;
         stage_max(&s_join_max, d);
@@ -278,6 +291,8 @@ static void present(void)
         const float aspect = video_screen_aspect(a_on_top ? 0 : 1);
         kh_gx3d_wide_x = (kh_config.aspect == KH_ASPECT_WIDE && kh_overlay_loaded(22) && aspect > 1.4f)
                              ? (4.0f / 3.0f) / aspect : 1.0f;
+        /* config hud: the 2D kept 4:3 in the middle while the 3D is wide */
+        video_set_hud_scale(kh_config.hud && kh_gx3d_wide_x < 0.999f ? kh_gx3d_wide_x : 1.0f);
     }
     {
         const KhGxFrame *frame3d = NULL;
@@ -316,9 +331,13 @@ static void present(void)
             stage_max(&s_join_max, d);
             if (f2d.neng) {
                 upload2d = 1;
-                last_a3d = 0;
-                for (i = 0; i < BANDS; i++)
-                    last_a3d |= f2d.a3d[i];
+                /* engine A on the small screen is drawn every other time: when only the
+                 * other engine was, A's 3D pixels are where they were (0.0.78 flickered) */
+                if (drew_a(&f2d)) {
+                    last_a3d = 0;
+                    for (i = 0; i < BANDS; i++)
+                        last_a3d |= f2d.a3d[i];
+                }
             }
         }
     }
@@ -365,6 +384,13 @@ static void present(void)
         t = sceKernelGetProcessTimeWide() - t;
         s_present_total += t;
         stage_max(&s_present_max, t);
+    }
+    /* the 2D drawn over two frames: this thread is idle until the next VBlank, so it takes
+     * its share of the chunks rather than leave them all to the helper (which shares its
+     * core with the sound) */
+    if (async_2d) {
+        s_stage = "2d help";
+        workers_help();
     }
     s_stage = "loop";
     s_beats++;
@@ -468,10 +494,20 @@ static int vblank_thread(SceSize args, void *argp)
         /* the port menu holds the game: no VBlank reaches it, so nothing advances */
         if (portmenu_is_open())
             continue;
-        kh_hw_vblank_start_us = sceKernelGetProcessTimeWide();
-        (*(volatile uint32_t *)KH_SHARED(HW_VBLANK_COUNT_BUF))++;
-        if (KH_IO16(0x04000004) & 0x08) /* DISPSTAT: VBlank IRQ enabled */
-            kh_irq_raise(KH_IRQ_VBLANK);
+        {
+            /* fast-forward (L+R+Square): two or three DS VBlanks per Vita frame, spread over
+             * it; the game runs as fast as its core allows, the sound keeps its own pace */
+            const int n = s_fast_forward ? kh_config.fast_forward : 1;
+            int k;
+            for (k = 0; k < n; k++) {
+                if (k)
+                    sceKernelDelayThread(16000 / n);
+                kh_hw_vblank_start_us = sceKernelGetProcessTimeWide();
+                (*(volatile uint32_t *)KH_SHARED(HW_VBLANK_COUNT_BUF))++;
+                if (KH_IO16(0x04000004) & 0x08) /* DISPSTAT: VBlank IRQ enabled */
+                    kh_irq_raise(KH_IRQ_VBLANK);
+            }
+        }
     }
     return 0;
 }
@@ -482,6 +518,10 @@ static void sample_input(void)
     input_poll(&in);
     if (in.port_menu)
         portmenu_toggle();
+    if (in.fast_forward && !portmenu_is_open()) {
+        s_fast_forward = !s_fast_forward;
+        LOG("input: fast-forward %s", s_fast_forward ? "on" : "off");
+    }
     if (portmenu_is_open()) {
         /* the game sees no button and no touch while the menu has them */
         portmenu_input(in.vita_buttons, sceKernelGetProcessTimeWide());
@@ -624,8 +664,15 @@ void kh_game_run(void)
             snprintf(status, sizeof(status), "3D DEBUG MODE %d", kh_gpu3d_debug);
             video_set_overlay(console_render(status));
         } else {
+            static char label[48];
+            label[0] = 0;
+            if (kh_config.show_fps)
+                snprintf(label, sizeof(label), "%s", fps_label());
+            if (s_fast_forward)
+                snprintf(label + strlen(label), sizeof(label) - strlen(label), "%s>> %dx",
+                         label[0] ? "  " : "", kh_config.fast_forward);
             video_set_overlay(s_console ? console_render(status)
-                              : kh_config.show_fps ? portmenu_render_fps(fps_label()) : NULL);
+                              : label[0] ? portmenu_render_fps(label) : NULL);
         }
         present(); /* waits for the Vita's VBlank */
 

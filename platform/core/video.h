@@ -41,6 +41,9 @@ void video_swap_screens(void);
 void video_set_overlay(const uint32_t *pixels);
 /* The overlay's pixels changed: upload them at the next present (a new pointer does it too). */
 void video_overlay_changed(void);
+/* The 2D's horizontal scale on the 3D screen: 1, or < 1 to keep it 4:3 in the middle of a
+ * widescreen 3D (config hud). */
+void video_set_hud_scale(float scale);
 /* Lay the screens out again (after the port menu changed the aspect or the inset size). */
 void video_relayout(void);
 

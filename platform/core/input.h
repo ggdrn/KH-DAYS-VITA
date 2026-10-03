@@ -27,6 +27,7 @@ typedef struct {
     int touching;
     int touch_x, touch_y; /* DS pixels, 0..255 / 0..191 */
     int port_menu;        /* port hotkey L+R+Select: open/close the port menu (edge-triggered) */
+    int fast_forward;     /* port hotkey L+R+Square: fast-forward on/off (edge-triggered) */
     uint32_t vita_buttons; /* the Vita's buttons as held (SCE_CTRL_*), for the port menu */
     int toggle_console;   /* port hotkey: show/hide the on-screen console (edge-triggered) */
     int debug_cycle;      /* port hotkey: next 3D debug mode (edge-triggered) */

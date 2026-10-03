@@ -22,7 +22,8 @@ static ScreenRect s_rect[2];
 static int s_inset = -1; /* the screen drawn small over the other one, -1 for none */
 static volatile int s_pending = -1; /* a layout asked for from another thread (input) */
 static GLuint s_compose, s_compose_vbo;
-static GLint u_c2d, u_c3d, u_bright, u_hofs, u_blend, u_backdrop, u_prev, u_cap, u_flip;
+static GLint u_c2d, u_c3d, u_bright, u_hofs, u_blend, u_backdrop, u_prev, u_cap, u_flip, u_fx;
+static float s_hud_scale = 1.0f; /* < 1: the 2D kept 4:3 over a widescreen 3D (config hud) */
 
 /* The display capture on the GPU (platform/hw/capture.c): two targets used in turn, the newest
  * one holding the last capture (GL orientation, row 0 the bottom); the graphics screen to
@@ -55,12 +56,16 @@ static const char s_compose_fs[] =
     "float4 main(float2 vUv : TEXCOORD0, uniform sampler2D u2d, uniform sampler2D u3d,\n"
     "            uniform float2 uBright, uniform float uHofs, uniform float2 uBlend,\n"
     "            uniform float3 uBackdrop, uniform sampler2D uPrev, uniform float4 uCap,\n"
-    "            uniform float uFlip) : COLOR\n"
+    "            uniform float uFlip, uniform float4 uFx) : COLOR\n"
     "{\n"
     "    float2 uv2 = vUv;\n"
     "    if (uFlip > 0.5)\n"
     "        uv2.y = 1.0 - vUv.y;\n"
-    "    float4 b = tex2D(u2d, uv2);\n"
+    /* uFx.y < 1: the 2D (HUD) kept 4:3 in the middle of a widescreen 3D; beside it, the 3D */
+    "    uv2.x = (uv2.x - 0.5) / uFx.y + 0.5;\n"
+    "    float4 b = float4(0.0, 0.0, 0.0, 0.0);\n"
+    "    if (uv2.x >= 0.0 && uv2.x <= 1.0)\n"
+    "        b = tex2D(u2d, uv2);\n"
     "    float3 c = b.rgb;\n"
     "    float u = vUv.x + uHofs;\n"
     "    float4 t = tex2D(u3d, float2(u, 1.0 - vUv.y));\n"
@@ -96,7 +101,17 @@ static const char s_compose_fs[] =
     "        c = c + (1.0 - c) * uBright.y;\n"
     "    else if (uBright.x > 1.5)\n"
     "        c = c - c * uBright.y;\n"
-    "    return float4(c, 1.0);\n"
+    /* uFx.x: the screen effect, on the DS's own pixel grid: 1 scanlines, 2 LCD grid */
+    "    if (uFx.x > 0.5) {\n"
+    "        float2 p = frac(vUv * float2(256.0, 192.0));\n"
+    "        if (uFx.x < 1.5) {\n"
+    "            if (p.y > 0.5)\n"
+    "                c = c * 0.72;\n"
+    "        } else if (p.x < 0.16 || p.y < 0.16) {\n"
+    "            c = c * 0.7;\n"
+    "        }\n"
+    "    }\n"
+    "    return float4(c, uFx.z);\n"
     "}\n";
 
 /* Compiled shaders are kept in ux0:data/khdays/shaders, named by a hash of their source: the
@@ -256,6 +271,7 @@ static void compose_init(void)
     u_prev = glGetUniformLocation(s_compose, "uPrev");
     u_cap = glGetUniformLocation(s_compose, "uCap");
     u_flip = glGetUniformLocation(s_compose, "uFlip");
+    u_fx = glGetUniformLocation(s_compose, "uFx");
     glGenBuffers(1, &s_compose_vbo);
 }
 
@@ -273,7 +289,7 @@ void video_set_3d(int screen, unsigned tex, uint16_t master_bright, int hofs, ui
 /* One pass of the composition shader over the NDC rectangle v (x, y, u, v per corner).
  * cap: 0 to the screen; 1 a capture pass (no master brightness, source B blended in). */
 static void compose_pass(const float *v, GLuint tex2d, int flip2d, GLuint tex3d, uint16_t bright,
-                         int cap)
+                         int cap, float hud, float alpha, int linear)
 {
     const int mode = (bright >> 14) & 3;
     int f = bright & 31;
@@ -288,13 +304,19 @@ static void compose_pass(const float *v, GLuint tex2d, int flip2d, GLuint tex3d,
     glBindTexture(GL_TEXTURE_2D, tex3d ? tex3d : s_clear_tex);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, tex2d);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    /* a picture with 3D codes in its alpha is read texel by texel; a plain one smoothly */
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, linear ? GL_LINEAR : GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, linear ? GL_LINEAR : GL_NEAREST);
     glUniform1i(u_c2d, 0);
     glUniform1i(u_c3d, 1);
     glUniform1i(u_prev, 2);
     glUniform1f(u_hofs, s_3d_hofs);
     glUniform1f(u_flip, flip2d ? 1.0f : 0.0f);
+    glUniform4f(u_fx, cap ? 0.0f : (float)kh_config.screen_effect, hud, alpha, 0.0f);
+    if (alpha < 0.999f) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
     if (cap)
         glUniform4f(u_cap, s_cap.ka, s_cap.kb, s_cap.src3d ? 1.0f : 0.0f, 1.0f);
     else
@@ -318,6 +340,7 @@ static void compose_pass(const float *v, GLuint tex2d, int flip2d, GLuint tex3d,
     glDisableVertexAttribArray(1);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glUseProgram(0);
+    glDisable(GL_BLEND);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 }
@@ -331,11 +354,22 @@ static void screen_quad(int screen, float *v)
     memcpy(v, q, sizeof(q));
 }
 
+static float screen_alpha(int screen)
+{
+    return screen == s_inset ? (float)kh_config.inset_opacity / 100.0f : 1.0f;
+}
+
 static void draw_composed(int screen)
 {
     float v[16];
     screen_quad(screen, v);
-    compose_pass(v, s_tex[screen], 0, s_3d_tex, s_3d_bright, 0);
+    compose_pass(v, s_tex[screen], 0, s_3d_tex, s_3d_bright, 0,
+                 screen == s_inset ? 1.0f : s_hud_scale, screen_alpha(screen), 0);
+}
+
+void video_set_hud_scale(float scale)
+{
+    s_hud_scale = scale;
 }
 
 static GLuint new_texture(int w, int h, GLint filter)
@@ -407,16 +441,18 @@ static void run_capture(void)
     }
     glBindFramebuffer(GL_FRAMEBUFFER, s_cap_fbo[next]);
     glViewport(0, 0, s_cap_w, s_cap_h);
-    compose_pass(full, s_cap.gfx ? s_cap_gfx : s_clear_tex, 0, s_cap.tex3d, 0, 1);
+    compose_pass(full, s_cap.gfx ? s_cap_gfx : s_clear_tex, 0, s_cap.tex3d, 0, 1, 1.0f, 1.0f, 0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     s_cap_cur = next;
 }
 
-/* The small screen: 4:3, inset_width wide (config.ini), in the top-right corner. */
+/* The small screen: 4:3, inset_width wide, in the corner config inset_corner names. */
 static ScreenRect inset_rect(void)
 {
     const int w = kh_config.inset_width, h = w * 3 / 4, margin = 4;
-    return (ScreenRect){ DISPLAY_W - w - margin, margin, w, h };
+    const int right = !(kh_config.inset_corner & 1), bottom = kh_config.inset_corner >= 2;
+    return (ScreenRect){ right ? DISPLAY_W - w - margin : margin,
+                         bottom ? DISPLAY_H - h - margin : margin, w, h };
 }
 
 static void compute_layout(void)
@@ -600,11 +636,18 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
             /* the screen shows the VRAM bank the last capture went to */
             float v[16];
             screen_quad(i, v);
-            compose_pass(v, s_cap_tex[s_cap_cur], 1, 0, s_show_cap_bright, 0);
-        } else if (i == s_3d_screen)
+            compose_pass(v, s_cap_tex[s_cap_cur], 1, 0, s_show_cap_bright, 0, 1.0f,
+                         screen_alpha(i), 1);
+        } else if (i == s_3d_screen) {
             draw_composed(i);
-        else
+        } else if (s_compose) {
+            /* a plain 2D screen, through the same pass for the effect and the opacity */
+            float v[16];
+            screen_quad(i, v);
+            compose_pass(v, s_tex[i], 0, 0, 0, 0, 1.0f, screen_alpha(i), 1);
+        } else {
             draw_quad(&s_rect[i]);
+        }
     }
     if (s_overlay) {
         static const ScreenRect full = { 0, 0, DISPLAY_W, DISPLAY_H };

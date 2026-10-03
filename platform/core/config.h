@@ -26,6 +26,14 @@ typedef struct {
     int dpad_deck;      /* the d-pad moves the command deck's cursor in the field: 0 off, 1 on */
     int show_fps;       /* a frame-rate counter in a corner: 0 off, 1 on */
     int volume;         /* 0-100 % of the game's own volume */
+    int hud;            /* widescreen field: 0 the 2D stretched over 16:9, 1 kept 4:3 in the middle */
+    int screen_effect;  /* 0 none, 1 scanlines, 2 LCD grid */
+    int inset_corner;   /* the small screen: 0 top-right, 1 top-left, 2 bottom-right, 3 bottom-left */
+    int inset_opacity;  /* the small screen's opacity, 50-100 % */
+    int rear_touch;     /* rear touchpad halves: 0 off, 1 L / R, 2 Select / Start */
+    int stick_deadzone; /* 1 small, 2 normal, 3 large */
+    int r_toggle;       /* the DS's R: 0 held as on the DS, 1 a press latches it until the next */
+    int fast_forward;   /* the speed L+R+Square switches to: 2 or 3 times */
     int debug;          /* debug hotkeys and the detailed log: 0 off (default), 1 on */
     uint32_t button[KH_BTN_COUNT]; /* the Vita button (SCE_CTRL_*) for each DS button */
 } KhConfig;
