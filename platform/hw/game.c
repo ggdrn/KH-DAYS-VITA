@@ -226,19 +226,25 @@ static void present(void)
      * milliseconds into the next VBlank (Gfx_ToggleCaptureMode, run after the frame's swap).
      * Composed at once, the new 3D went to the old screen for a Vita frame: the flicker of
      * 0.0.80. A new frame waits for the swap, 8 ms at most. */
+    int trace_dual = 0, trace_before = a_on_top;
+    uint32_t trace_wait = 0, trace_serial = 0;
+    int trace_polys = -1;
     {
         static uint32_t last_serial;
         static int frame_on_top = -1;
         const uint32_t serial = kh_gx3d_serial();
+        trace_serial = serial;
         if (serial != last_serial && s_vblanks < s_dual_until && frame_on_top >= 0) {
-            const uint64_t until = sceKernelGetProcessTimeWide() + 8000;
+            const uint64_t t = sceKernelGetProcessTimeWide(), until = t + 8000;
             while (a_on_top == frame_on_top && sceKernelGetProcessTimeWide() < until) {
                 sceKernelDelayThread(250);
                 a_on_top = (KH_IO16(0x04000304) >> 15) & 1;
             }
+            trace_wait = (uint32_t)(sceKernelGetProcessTimeWide() - t);
         }
         if (serial != last_serial)
             frame_on_top = a_on_top;
+        trace_dual = s_vblanks < s_dual_until && serial != last_serial;
         last_serial = serial;
     }
     uint64_t t0 = sceKernelGetProcessTimeWide();
@@ -340,6 +346,7 @@ static void present(void)
             uint64_t t = sceKernelGetProcessTimeWide();
             s_stage = "3d textures";
             frame3d = kh_gx3d_acquire();
+            trace_polys = frame3d ? frame3d->npoly : -1;
             kh_gpu3d_prepare(frame3d);
             stage_max(&s_prep_max, sceKernelGetProcessTimeWide() - t);
         }
@@ -419,6 +426,16 @@ static void present(void)
                            KH_IO16(0x0400006c));
         video_show_capture(a_on_top ? 1 : 0, kh_capture_shown(bank_b) ? bank_b : -1,
                            KH_IO16(0x0400106c));
+    }
+    if (kh_log_verbose && trace_dual) {
+        /* dual 3D, frame by frame: what each screen gets (the first 240 frames of the run) */
+        static int traced;
+        if (traced++ < 240) {
+            LOG("dual: vb %u serial %u polys %d top %d->%d waited %uus cap %08x showA %d showB %d",
+                (unsigned)s_vblanks, (unsigned)trace_serial, trace_polys, trace_before,
+                a_on_top, (unsigned)trace_wait, (unsigned)KH_IO32(0x04000064),
+                video_shown_bank(a_on_top ? 0 : 1), video_shown_bank(a_on_top ? 1 : 0));
+        }
     }
     if (s_dump_2d) {
         s_dump_2d = 0;

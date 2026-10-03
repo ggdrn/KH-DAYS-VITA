@@ -66,6 +66,8 @@ void video_capture(const uint32_t *gfx, int src3d, unsigned tex3d, float ka, flo
 /* For the next video_present: screen (0 top, 1 bottom) shows the capture held for VRAM bank
  * bank (0-3; -1 none), with its engine's master brightness (its 0x0400006c value). */
 void video_show_capture(int screen, int bank, uint16_t master_bright);
+/* the bank a screen shows the capture of, -1 none (diagnosis) */
+int video_shown_bank(int screen);
 
 /* A CG shader program with attribs[i] at location i; 0 (logged) on failure. */
 unsigned video_build_program(const char *vs, const char *fs, const char *const *attribs,

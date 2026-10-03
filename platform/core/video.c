@@ -424,6 +424,11 @@ void video_capture(const uint32_t *gfx, int src3d, unsigned tex3d, float ka, flo
     s_cap.pending = 1;
 }
 
+int video_shown_bank(int screen)
+{
+    return s_show_bank[screen & 1];
+}
+
 void video_show_capture(int screen, int bank, uint16_t master_bright)
 {
     s_show_bank[screen & 1] = bank >= 0 && s_bank_valid[bank & 3] ? (bank & 3) : -1;
