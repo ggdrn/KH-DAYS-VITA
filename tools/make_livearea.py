@@ -75,7 +75,12 @@ def read_png_rgb(data):
                 p = a + b - c
                 pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
                 line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
-        rows.append([tuple(line[x * bpp:x * bpp + 3]) for x in range(w)])
+        if bpp == 4:
+            # transparency over white (the LiveArea images have none)
+            rows.append([tuple((line[x * 4 + k] * line[x * 4 + 3] + 255 * (255 - line[x * 4 + 3])) // 255
+                               for k in range(3)) for x in range(w)])
+        else:
+            rows.append([tuple(line[x * bpp:x * bpp + 3]) for x in range(w)])
         prev = line
     return w, h, rows
 
@@ -97,11 +102,23 @@ def median_cut(pixels, n=256):
     return [tuple(sum(p[c] for p in b) // len(b) for c in range(3)) for b in boxes if b]
 
 
-def convert(src, w, h):
+# the startup image is a logo: kept whole and padded with white; the others are cropped
+FIT = {"startup.png"}
+
+
+def convert(src, w, h, fit=False):
     try:
         from PIL import Image
-        img = Image.open(src).convert("RGB")
+        rgba = Image.open(src).convert("RGBA")
+        img = Image.new("RGB", rgba.size, (255, 255, 255))
+        img.paste(rgba, mask=rgba.split()[3])
         sw, sh = img.size
+        if fit:
+            scale = min(w / sw, h / sh)
+            small = img.resize((max(1, int(sw * scale)), max(1, int(sh * scale))), Image.LANCZOS)
+            img = Image.new("RGB", (w, h), (255, 255, 255))
+            img.paste(small, ((w - small.size[0]) // 2, (h - small.size[1]) // 2))
+            sw, sh = w, h
         if sw * h > sh * w:  # wider than the target: crop the sides
             nw = sh * w // h
             img = img.crop(((sw - nw) // 2, 0, (sw - nw) // 2 + nw, sh))
@@ -121,14 +138,22 @@ def convert(src, w, h):
         sw, sh = (int(v) for v in re.findall(r"pixel(?:Width|Height): (\d+)", subprocess.run(
             ["sips", "-g", "pixelWidth", "-g", "pixelHeight", str(src)], capture_output=True,
             text=True, check=True).stdout))
-        if sw * h > sh * w:
-            cw, ch = sh * w // h, sh
-        else:
-            cw, ch = sw, sw * h // w
         mid = Path(tmp) / "mid.png"
-        subprocess.run(["sips", "-s", "format", "png", "-c", str(ch), str(cw), str(src),
-                        "--out", str(mid)], capture_output=True, check=True)
-        subprocess.run(["sips", "-z", str(h), str(w), str(mid)], capture_output=True, check=True)
+        if fit:
+            scale = min(w / sw, h / sh)
+            subprocess.run(["sips", "-s", "format", "png", "-z", str(max(1, int(sh * scale))),
+                            str(max(1, int(sw * scale))), str(src), "--out", str(mid)],
+                           capture_output=True, check=True)
+            subprocess.run(["sips", "--padToHeightWidth", str(h), str(w), "--padColor", "FFFFFF",
+                            str(mid)], capture_output=True, check=True)
+        else:
+            if sw * h > sh * w:
+                cw, ch = sh * w // h, sh
+            else:
+                cw, ch = sw, sw * h // w
+            subprocess.run(["sips", "-s", "format", "png", "-c", str(ch), str(cw), str(src),
+                            "--out", str(mid)], capture_output=True, check=True)
+            subprocess.run(["sips", "-z", str(h), str(w), str(mid)], capture_output=True, check=True)
         iw, ih, rows = read_png_rgb(mid.read_bytes())
     pal = median_cut([p for row in rows for p in row])
     cache = {}
@@ -154,7 +179,7 @@ def main():
             stem = Path(rel).stem
             found = sorted(Path(args.src).glob(stem + ".*"))
             if found:
-                dst.write_bytes(convert(found[0], w, h))
+                dst.write_bytes(convert(found[0], w, h, Path(rel).name in FIT))
             elif not dst.exists():
                 dst.write_bytes(placeholder(w, h))
         elif not dst.exists():

@@ -215,10 +215,32 @@ static volatile int s_dump_2d; /* L+R+Triangle: the 2D side of the frame too */
 static volatile int s_fast_forward; /* L+R+Square */
 static void dump_2d(int a_on_top);
 
+static uint32_t s_dual_until; /* VBlank count up to which the screens are taken as trading
+                                * places frame by frame (dual 3D) */
+
 static void present(void)
 {
     /* POWCNT1 bit 15: engine A on the top screen */
     int a_on_top = (KH_IO16(0x04000304) >> 15) & 1;
+    /* Dual 3D: the game sends a screen's 3D frame, and swaps the screens to match it a few
+     * milliseconds into the next VBlank (Gfx_ToggleCaptureMode, run after the frame's swap).
+     * Composed at once, the new 3D went to the old screen for a Vita frame: the flicker of
+     * 0.0.80. A new frame waits for the swap, 8 ms at most. */
+    {
+        static uint32_t last_serial;
+        static int frame_on_top = -1;
+        const uint32_t serial = kh_gx3d_serial();
+        if (serial != last_serial && s_vblanks < s_dual_until && frame_on_top >= 0) {
+            const uint64_t until = sceKernelGetProcessTimeWide() + 8000;
+            while (a_on_top == frame_on_top && sceKernelGetProcessTimeWide() < until) {
+                sceKernelDelayThread(250);
+                a_on_top = (KH_IO16(0x04000304) >> 15) & 1;
+            }
+        }
+        if (serial != last_serial)
+            frame_on_top = a_on_top;
+        last_serial = serial;
+    }
     uint64_t t0 = sceKernelGetProcessTimeWide();
     unsigned tex3d = 0, raw3d;
     int a3d = 0, i, draw2d;
@@ -239,8 +261,10 @@ static void present(void)
     {
         static int last_on_top = -1;
         static uint32_t last_swap_vb = 0x80000000u;
-        if (a_on_top != last_on_top && last_on_top >= 0)
+        if (a_on_top != last_on_top && last_on_top >= 0) {
             last_swap_vb = s_vblanks;
+            s_dual_until = s_vblanks + 16;
+        }
         last_on_top = a_on_top;
         dual = s_vblanks - last_swap_vb < 16;
         kh_gpu3d_direct = dual;
