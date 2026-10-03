@@ -9122,6 +9122,31 @@ index 97d97ccf8..2b77e5d0a 100644
  
  #define REG_GX_DISPCNT_DISPLAY_SHIFT        8
  #define REG_GX_DISPCNT_DISPLAY_MASK         0x00001f00
+diff --git a/src/engine/Gfx_ToggleCaptureMode.c b/src/engine/Gfx_ToggleCaptureMode.c
+index 057226b0d..602725d43 100644
+--- a/src/engine/Gfx_ToggleCaptureMode.c
++++ b/src/engine/Gfx_ToggleCaptureMode.c
+@@ -4,6 +4,9 @@
+ extern void Gfx_SetupBlendCapture(void *ptr);
+ extern void Gfx_SetupSubScreenCapture(void *ptr);
+ extern unsigned char data_0204c214[];
++#ifdef PLATFORM_VITA
++extern void kh_dual3d_toggled(void);
++#endif
+ 
+ int Gfx_ToggleCaptureMode(void *ptr) {
+     if (data_0204c214[1] != 0) {
+@@ -18,6 +21,10 @@ int Gfx_ToggleCaptureMode(void *ptr) {
+         data_0204c214[1] = 0;
+         value = data_0204c214[0];
+         data_0204c214[0] = value == 0;
++#ifdef PLATFORM_VITA
++        /* the screens now match the 3D frame just swapped: the display pairs the two */
++        kh_dual3d_toggled();
++#endif
+     }
+ 
+     return data_0204c214[0];
 diff --git a/src/engine/LoadActorOverlay.c b/src/engine/LoadActorOverlay.c
 index ed25e0ad7..1250af5d1 100644
 --- a/src/engine/LoadActorOverlay.c

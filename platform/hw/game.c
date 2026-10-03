@@ -215,38 +215,42 @@ static volatile int s_dump_2d; /* L+R+Triangle: the 2D side of the frame too */
 static volatile int s_fast_forward; /* L+R+Square */
 static void dump_2d(int a_on_top);
 
-static uint32_t s_dual_until; /* VBlank count up to which the screens are taken as trading
-                                * places frame by frame (dual 3D) */
+/* the last screen toggle of a dual-3D scene (kh_dual3d_toggled) */
+static volatile uint32_t s_toggle_seq, s_toggle_vb = 0x80000000u, s_toggle_serial;
+static volatile int s_toggle_top;
+
+void kh_dual3d_toggled(void)
+{
+    s_toggle_top = (KH_IO16(0x04000304) >> 15) & 1;
+    s_toggle_serial = kh_gx3d_serial();
+    s_toggle_vb = s_vblanks;
+    __atomic_add_fetch(&s_toggle_seq, 1, __ATOMIC_RELEASE);
+}
 
 static void present(void)
 {
     /* POWCNT1 bit 15: engine A on the top screen */
     int a_on_top = (KH_IO16(0x04000304) >> 15) & 1;
-    /* Dual 3D: the game sends a screen's 3D frame, and swaps the screens to match it a few
-     * milliseconds into the next VBlank (Gfx_ToggleCaptureMode, run after the frame's swap).
-     * Composed at once, the new 3D went to the old screen for a Vita frame: the flicker of
-     * 0.0.80. A new frame waits for the swap, 8 ms at most. */
-    int trace_dual = 0, trace_before = a_on_top;
-    uint32_t trace_wait = 0, trace_serial = 0;
+    /* Dual 3D (3D on both screens, one frame each in turn): the game swaps the screens to
+     * match each 3D frame a little after the VBlank that shows it (Gfx_ToggleCaptureMode,
+     * which calls kh_dual3d_toggled). Read at the VBlank, POWCNT was sometimes the previous
+     * frame's and sometimes the next one's: the picture jumped between the screens (0.0.80 to
+     * 0.0.83). While the scene runs, the display waits for that toggle (8 ms at most) and
+     * takes the screens it recorded. */
+    const int dual = s_vblanks - s_toggle_vb < 8;
+    int trace_before = a_on_top;
+    uint32_t trace_wait = 0;
     int trace_polys = -1;
-    {
-        static uint32_t last_serial;
-        static int frame_on_top = -1;
-        const uint32_t serial = kh_gx3d_serial();
-        trace_serial = serial;
-        if (serial != last_serial && s_vblanks < s_dual_until && frame_on_top >= 0) {
-            const uint64_t t = sceKernelGetProcessTimeWide(), until = t + 8000;
-            while (a_on_top == frame_on_top && sceKernelGetProcessTimeWide() < until) {
-                sceKernelDelayThread(250);
-                a_on_top = (KH_IO16(0x04000304) >> 15) & 1;
-            }
-            trace_wait = (uint32_t)(sceKernelGetProcessTimeWide() - t);
-        }
-        if (serial != last_serial)
-            frame_on_top = a_on_top;
-        trace_dual = s_vblanks < s_dual_until && serial != last_serial;
-        last_serial = serial;
+    if (dual) {
+        static uint32_t used;
+        const uint64_t t = sceKernelGetProcessTimeWide(), until = t + 8000;
+        while (s_toggle_seq == used && sceKernelGetProcessTimeWide() < until)
+            sceKernelDelayThread(200);
+        trace_wait = (uint32_t)(sceKernelGetProcessTimeWide() - t);
+        used = s_toggle_seq;
+        a_on_top = s_toggle_top;
     }
+    kh_gpu3d_direct = dual;
     uint64_t t0 = sceKernelGetProcessTimeWide();
     unsigned tex3d = 0, raw3d;
     int a3d = 0, i, draw2d;
@@ -259,22 +263,7 @@ static void present(void)
     static int async_2d;
     int upload2d = 0;
 
-    /* the screens trading places frame by frame (dual 3D): consecutive 3D frames are for
-     * different screens. While that goes on, nothing is held back a frame (the 60 fps mix,
-     * the 2D drawn over two frames): each screen's picture goes with the frame it was made
-     * for */
-    int dual;
-    {
-        static int last_on_top = -1;
-        static uint32_t last_swap_vb = 0x80000000u;
-        if (a_on_top != last_on_top && last_on_top >= 0) {
-            last_swap_vb = s_vblanks;
-            s_dual_until = s_vblanks + 16;
-        }
-        last_on_top = a_on_top;
-        dual = s_vblanks - last_swap_vb < 16;
-        kh_gpu3d_direct = dual;
-    }
+
     if (async_2d) {
         uint64_t t = sceKernelGetProcessTimeWide(), d;
         s_stage = "2d join";
@@ -427,12 +416,13 @@ static void present(void)
         video_show_capture(a_on_top ? 1 : 0, kh_capture_shown(bank_b) ? bank_b : -1,
                            KH_IO16(0x0400106c));
     }
-    if (kh_log_verbose && trace_dual) {
+    if (kh_log_verbose && dual) {
         /* dual 3D, frame by frame: what each screen gets (the first 240 frames of the run) */
         static int traced;
         if (traced++ < 240) {
-            LOG("dual: vb %u serial %u polys %d top %d->%d waited %uus cap %08x showA %d showB %d",
-                (unsigned)s_vblanks, (unsigned)trace_serial, trace_polys, trace_before,
+            LOG("dual: vb %u serial %u (toggled at %u) polys %d top %d->%d waited %uus cap %08x "
+                "showA %d showB %d", (unsigned)s_vblanks, (unsigned)kh_gx3d_serial(),
+                (unsigned)s_toggle_serial, trace_polys, trace_before,
                 a_on_top, (unsigned)trace_wait, (unsigned)KH_IO32(0x04000064),
                 video_shown_bank(a_on_top ? 0 : 1), video_shown_bank(a_on_top ? 1 : 0));
         }
