@@ -143,12 +143,17 @@ def main():
     w(f"rule fself\n  command = {BIN / 'vita-make-fself'} -c $in $out\n  description = FSELF $out")
     w(f"rule sfo\n  command = {BIN / 'vita-mksfoex'} -s TITLE_ID={TITLE_ID} -s APP_VER={app_ver}"
       f" -d ATTRIBUTE2=12 {shlex.quote(TITLE)} $out\n  description = SFO $out")
-    w(f"rule livearea\n  command = python3 {rel(ROOT / 'tools' / 'make_livearea.py')} sce_sys\n"
-      "  description = LIVEAREA")
+    # the LiveArea art: the user's own from art_src/ (never committed: it is the game's
+    # artwork) converted to the exact format VitaShell accepts, else the repository's
+    # placeholders in sce_sys/
+    art_dir = "build/sce_sys" if (ROOT / "art_src").is_dir() else "sce_sys"
+    art_from = " --from art_src" if art_dir != "sce_sys" else ""
+    w(f"rule livearea\n  command = python3 {rel(ROOT / 'tools' / 'make_livearea.py')} {art_dir}"
+      f"{art_from}\n  description = LIVEAREA {art_dir}")
     w(f"rule vpk\n  command = {BIN / 'vita-pack-vpk'} -s build/param.sfo -b build/eboot.bin"
-      " -a sce_sys/icon0.png=sce_sys/icon0.png"
-      " -a sce_sys/livearea/contents/bg.png=sce_sys/livearea/contents/bg.png"
-      " -a sce_sys/livearea/contents/startup.png=sce_sys/livearea/contents/startup.png"
+      f" -a {art_dir}/icon0.png=sce_sys/icon0.png"
+      f" -a {art_dir}/livearea/contents/bg.png=sce_sys/livearea/contents/bg.png"
+      f" -a {art_dir}/livearea/contents/startup.png=sce_sys/livearea/contents/startup.png"
       " -a sce_sys/livearea/contents/template.xml=sce_sys/livearea/contents/template.xml"
       " $out\n  description = VPK $out")
     w("")
@@ -187,8 +192,10 @@ def main():
         w(f"build {lib}: ar {' '.join(mobjs)} | build/gen/bss_names.txt tools/weaken_unowned.py")
         game_libs.append(lib)
 
-    art = ["sce_sys/icon0.png", "sce_sys/livearea/contents/bg.png",
-           "sce_sys/livearea/contents/startup.png"]
+    art = [f"{art_dir}/icon0.png", f"{art_dir}/livearea/contents/bg.png",
+           f"{art_dir}/livearea/contents/startup.png"]
+    art_deps = " ".join(str(p.relative_to(ROOT)).replace(" ", "$ ")
+                        for p in sorted((ROOT / "art_src").glob("*"))) if art_from else ""
     vpk = f"build/VPK/khdays-vita-{version}.vpk"
     w("")
     w(f"build build/khdays.elf: link {' '.join(objs + game_libs)}")
@@ -198,7 +205,7 @@ def main():
     w("build build/khdays.velf: velf build/khdays.elf")
     w("build build/eboot.bin: fself build/khdays.velf")
     w("build build/param.sfo: sfo | VERSION")
-    w(f"build {' '.join(art)}: livearea")
+    w(f"build {' '.join(art)}: livearea" + (f" | {art_deps}" if art_deps else ""))
     w(f"build {vpk}: vpk build/eboot.bin build/param.sfo {' '.join(art)}"
       " sce_sys/livearea/contents/template.xml")
     w(f"default {vpk}")

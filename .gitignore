@@ -28,3 +28,6 @@ log*.txt
 .DS_Store
 __pycache__/
 *.pyc
+
+# The user's own LiveArea art (the game's artwork): converted into build/ at build time
+/art_src/
