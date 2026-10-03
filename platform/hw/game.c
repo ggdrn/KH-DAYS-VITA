@@ -309,7 +309,9 @@ static void present(void)
             serial_vb = vb;
             pending = 1;
         }
-        draw2d = (pending && vb != serial_vb) || vb - drawn_vb >= 4;
+        /* dual 3D: the engines change screens with every toggle, so both are drawn each
+         * time (a skipped one left the other engine's picture on its screen, 0.0.88) */
+        draw2d = dual || (pending && vb != serial_vb) || vb - drawn_vb >= 4;
         if (draw2d) {
             pending = 0;
             drawn_vb = vb;
@@ -331,7 +333,7 @@ static void present(void)
         f2d.neng = 0;
         if (draw2d) {
             for (i = 0; i < 2; i++)
-                if (i != inset_engine || (parity & 1))
+                if (dual || i != inset_engine || (parity & 1))
                     f2d.eng[f2d.neng++] = i;
             parity++;
         }
@@ -459,12 +461,13 @@ static void present(void)
     if (kh_log_verbose && dual) {
         /* dual 3D, frame by frame: what each screen gets (the first 240 frames of the run) */
         static int traced;
-        if (traced++ < 240) {
+        if (traced++ < 600) {
             LOG("dual: vb %u serial %u (toggled at %u) polys %d top %d->%d waited %uus cap %08x "
-                "showA %d showB %d", (unsigned)s_vblanks, (unsigned)kh_gx3d_serial(),
+                "showA %d showB %d 2d %d/%d a3d %d tex %u", (unsigned)s_vblanks, (unsigned)kh_gx3d_serial(),
                 (unsigned)s_toggle_serial, trace_polys, trace_before,
                 a_on_top, (unsigned)trace_wait, (unsigned)KH_IO32(0x04000064),
-                video_shown_bank(a_on_top ? 0 : 1), video_shown_bank(a_on_top ? 1 : 0));
+                video_shown_bank(a_on_top ? 0 : 1), video_shown_bank(a_on_top ? 1 : 0),
+                draw2d, f2d.neng, a3d, tex3d);
         }
     }
     if (s_dump_2d) {
