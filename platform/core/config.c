@@ -8,11 +8,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define CONFIG_VERSION 8
+#define CONFIG_VERSION 9
 
 static const KhConfig s_defaults = {
     .render_scale = 3, .layout = 0, .inset_width = 224, .aspect = KH_ASPECT_WIDE,
-    .frame_interpolation = 1, .texture_filter = 1, .hud = 0, .screen_effect = 0,
+    .frame_interpolation = 1, .texture_filter = 1, .filter_2d = 1, .hud = 0, .screen_effect = 0,
     .inset_corner = 0, .inset_opacity = 100, .rear_touch = 0, .stick_deadzone = 2, .r_toggle = 0,
     .fast_forward = 2, .camera_stick = 1, .camera_speed = 2,
     .camera_invert_x = 0, .camera_invert_y = 0, .dpad_deck = 1, .show_fps = 0, .volume = 100,
@@ -87,6 +87,9 @@ void config_save(void)
                "inset_width = %d\n\n", kh_config.inset_width);
     fprintf(f, "# 3D textures: 0 sharp as on the DS, 1 smoothed (bilinear filtering).\n"
                "texture_filter = %d\n\n", kh_config.texture_filter);
+    fprintf(f, "# The 2D (sprites, text, menus) scaled up: 0 the DS's pixels as they are, 1 sharp\n"
+               "# (square pixels with smoothed edges), 2 smooth (bilinear filtering).\n"
+               "filter_2d = %d\n\n", kh_config.filter_2d);
     fprintf(f, "# Right stick turns the field camera (1) or does nothing (0); its speed 1 slow,\n"
                "# 2 normal, 3 fast; each axis inverted with 1.\n"
                "camera_stick = %d\ncamera_speed = %d\ncamera_invert_x = %d\ncamera_invert_y = %d\n\n",
@@ -158,6 +161,8 @@ static void set(const char *k, const char *v, int version)
         kh_config.frame_interpolation = atoi(v) != 0;
     else if (!strcmp(k, "texture_filter"))
         kh_config.texture_filter = atoi(v) != 0;
+    else if (!strcmp(k, "filter_2d"))
+        kh_config.filter_2d = clampi(atoi(v), 0, 2);
     else if (!strcmp(k, "camera_stick"))
         kh_config.camera_stick = atoi(v) != 0;
     else if (!strcmp(k, "camera_speed"))

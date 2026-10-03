@@ -203,6 +203,11 @@ static inline void stage_max(uint32_t *max, uint64_t us)
         *max = (uint32_t)us;
 }
 
+/* this display frame's stages, for the slow-frame lines of the detailed log */
+static struct {
+    uint32_t prep, t3d, join, present;
+} s_cur;
+
 /* the 2D's CPU time per engine (both cores together), for the statistics */
 static volatile uint32_t s_2d_engine_us[2];
 
@@ -329,6 +334,7 @@ static void present(void)
         }
         d = sceKernelGetProcessTimeWide() - t;
         s_join_total += d;
+        s_cur.join += (uint32_t)d;
         stage_max(&s_join_max, d);
     }
 
@@ -399,7 +405,8 @@ static void present(void)
             frame3d = dual ? kh_gx3d_pinned() : kh_gx3d_acquire();
             trace_polys = frame3d ? frame3d->npoly : -1;
             kh_gpu3d_prepare(frame3d);
-            stage_max(&s_prep_max, sceKernelGetProcessTimeWide() - t);
+            s_cur.prep = (uint32_t)(sceKernelGetProcessTimeWide() - t);
+            stage_max(&s_prep_max, s_cur.prep);
         }
         s_stage = "2d";
         if (f2d.neng)
@@ -416,6 +423,7 @@ static void present(void)
                 tex3d = kh_gpu3d_render(frame3d);
             d = sceKernelGetProcessTimeWide() - t;
             s_t3d_total += d;
+            s_cur.t3d = (uint32_t)d;
             stage_max(&s_t3d_max, d);
         }
         if (!async_2d) {
@@ -424,6 +432,7 @@ static void present(void)
             workers_join();
             d = sceKernelGetProcessTimeWide() - t;
             s_join_total += d;
+            s_cur.join += (uint32_t)d;
             stage_max(&s_join_max, d);
             if (dual)
                 s_toggle_drawn = toggle_seq;
@@ -534,6 +543,20 @@ static void present(void)
         t = sceKernelGetProcessTimeWide() - t;
         s_present_total += t;
         stage_max(&s_present_max, t);
+        s_cur.present = (uint32_t)t;
+    }
+    {
+        /* a display frame over 20 ms (a VBlank missed): its stages, to find the hitches */
+        const uint32_t total = (uint32_t)(sceKernelGetProcessTimeWide() - t0);
+        static uint32_t logged;
+        if (kh_log_verbose && total > 20000 && logged < 200) {
+            logged++;
+            LOG("slow frame: %uus at vb %u: textures %uus, 3d submit %uus, 2d wait %uus, "
+                "present %uus%s", (unsigned)total, (unsigned)s_vblanks, (unsigned)s_cur.prep,
+                (unsigned)s_cur.t3d, (unsigned)s_cur.join, (unsigned)s_cur.present,
+                dual ? " (dual 3D)" : "");
+        }
+        memset(&s_cur, 0, sizeof(s_cur));
     }
     /* the 2D drawn over two frames: this thread is idle until the next VBlank, so it takes
      * its share of the chunks rather than leave them all to the helper (which shares its

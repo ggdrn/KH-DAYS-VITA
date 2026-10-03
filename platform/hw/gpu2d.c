@@ -42,9 +42,10 @@ typedef struct {
 
 typedef struct {
     uint16_t col[W];
-    uint8_t prio[W];
+    uint16_t prio[W]; /* 16 bits like col: the composition passes vectorise */
     uint8_t alpha[W]; /* 0: opaque; 1-16: bitmap OBJ alpha + 1; 0x80: semi-transparent */
     uint8_t win[W];   /* OBJ window mask */
+    uint8_t prios;    /* bit p: a sprite pixel of priority p is on the line */
 } ObjLine;
 
 static inline uint16_t io16(const Engine *e, uint32_t off)
@@ -75,9 +76,11 @@ volatile int kh_gpu2d_profiling;
 static volatile uint32_t s_prof_us[2][3];      /* BGs, sprites, composition */
 static volatile uint32_t s_prof_sprites[2][3]; /* sprite lines: tiles, bitmap, affine */
 
-static inline uint64_t prof_now(void)
+/* one line in 8 is timed (and counted 8 times): the clock is a system call, and timing every
+ * line cost about 1 ms a frame (0.0.95) */
+static inline uint64_t prof_now(int on)
 {
-    return kh_gpu2d_profiling ? sceKernelGetProcessTimeWide() : 0;
+    return on ? sceKernelGetProcessTimeWide() : 0;
 }
 
 static inline void prof_add(volatile uint32_t *c, uint32_t v)
@@ -412,7 +415,8 @@ static inline int obj_put(ObjLine *o, int x, uint16_t c, int mode, int prio, uin
         o->alpha[x] = mode == 1 ? 0x80 : 0;
     }
     o->col[x] = c | OPAQUE;
-    o->prio[x] = (uint8_t)prio;
+    o->prio[x] = (uint16_t)prio;
+    o->prios |= (uint8_t)(1 << prio);
     return o->alpha[x] ? 3 : 1;
 }
 
@@ -475,6 +479,7 @@ static int render_obj(const Engine *e, int line, ObjLine *o)
     int i, got = 0;
     memset(o->col, 0, sizeof(o->col));
     memset(o->win, 0, sizeof(o->win));
+    o->prios = 0;
     if (!(e->dispcnt & 0x1000))
         return 0;
     for (i = 0; i < 128; i++) {
@@ -642,147 +647,191 @@ static int window_line(const Engine *e, int line, const ObjLine *o, uint8_t *ctl
     return 1;
 }
 
-/* One line into out as BGR555. The layers shown are put in drawing order once per line
- * (priority, then BG number); per pixel only those are looked at, and the window and colour
- * effect work is done only when they are on. */
+/* One line into out as BGR555. The two frontmost visible layers of each pixel are found a
+ * layer at a time, back to front (priority 3 to 0; at one priority the BGs from BG3 to BG0, then
+ * the sprites, which go above BGs of the same priority): each layer's opaque pixels push the
+ * pixel's front one down. Simple loops over the line instead of a search per pixel; the colour
+ * effect then looks at the two. 0.0.95 searched per pixel: two thirds of the 2D time. */
 typedef struct {
     uint16_t bgl[4][W];
     ObjLine obj;
+    uint16_t c0[W], c1[W];  /* the frontmost layer's colour and the one under it */
+    int prof; /* this line is timed (kh_gpu2d_profiling) */
+    uint16_t id0[W], id1[W]; /* their layers (L_*); 16 bits like the colours, so that the
+                              * passes below vectorise (NEON selects, 8 pixels at a time) */
 } Scratch; /* one per thread rendering lines */
+
+/* Pixel x goes in front where m is all ones (m 0: unchanged). Masks and no branches: the
+ * compiler makes the loops below NEON code, 8 pixels at a time. */
+#define PUSH(x, m, colour, id)                                                                    \
+    do {                                                                                        \
+        const uint16_t a_ = c0[x], b_ = i0[x];                                                  \
+        c1[x] = (uint16_t)((a_ & (m)) | (c1[x] & ~(m)));                                        \
+        i1[x] = (uint16_t)((b_ & (m)) | (i1[x] & ~(m)));                                        \
+        c0[x] = (uint16_t)(((colour) & (m)) | (a_ & ~(m)));                                     \
+        i0[x] = (uint16_t)(((id) & (m)) | (b_ & ~(m)));                                         \
+    } while (0)
+
+/* A layer's opaque pixels (where the window lets it: `allow` per pixel, or NULL) in front. */
+static inline void push_layer(Scratch *sc, const uint16_t *src, int id, const uint8_t *allow,
+                              int bit)
+{
+    uint16_t *const c0 = sc->c0, *const c1 = sc->c1, *const i0 = sc->id0, *const i1 = sc->id1;
+    const int shift = __builtin_ctz((unsigned)bit);
+    int x;
+    if (allow) {
+        for (x = 0; x < W; x++) {
+            const uint16_t m = (uint16_t)-(uint16_t)((src[x] >> 15) & (allow[x] >> shift) & 1);
+            PUSH(x, m, src[x] & 0x7fff, id);
+        }
+    } else {
+        for (x = 0; x < W; x++) {
+            const uint16_t m = (uint16_t)-(uint16_t)(src[x] >> 15);
+            PUSH(x, m, src[x] & 0x7fff, id);
+        }
+    }
+}
+
+/* the sprites of priority p in front, the same way */
+static inline void push_obj(Scratch *sc, int p, const uint8_t *allow)
+{
+    const ObjLine *o = &sc->obj;
+    uint16_t *const c0 = sc->c0, *const c1 = sc->c1, *const i0 = sc->id0, *const i1 = sc->id1;
+    int x;
+    if (allow) {
+        for (x = 0; x < W; x++) {
+            const uint16_t m = (uint16_t)-(uint16_t)((o->col[x] >> 15) & (o->prio[x] == p) &
+                                                     (allow[x] >> 4) & 1);
+            PUSH(x, m, o->col[x] & 0x7fff, L_OBJ);
+        }
+    } else {
+        for (x = 0; x < W; x++) {
+            const uint16_t m = (uint16_t)-(uint16_t)((o->col[x] >> 15) & (o->prio[x] == p));
+            PUSH(x, m, o->col[x] & 0x7fff, L_OBJ);
+        }
+    }
+}
+
+#undef PUSH
 
 static void compose_line(const Engine *e, int line, uint16_t *out, uint8_t *code, Scratch *sc)
 {
     uint16_t (*bgl)[W] = sc->bgl;
     ObjLine *const objp = &sc->obj;
 #define obj (*objp)
-    uint8_t ctl[W];
+    uint8_t ctlbuf[W];
+    const uint8_t *ctl;
     const uint16_t bldcnt = io16(e, 0x50), bldalpha = io16(e, 0x52);
     const int effect = (bldcnt >> 6) & 3;
     int eva = bldalpha & 31, evb = (bldalpha >> 8) & 31, evy = io16(e, 0x54) & 31;
     const uint16_t backdrop = e->bg_pal[0] & 0x7fff;
-    int order[4], prio[4], nb = 0, objs, windows, bg, x, i;
+    int prio[4], shown[4], objs, bg, x, p;
     uint64_t t0, t1, t2;
+    uint16_t *const c0 = sc->c0, *const c1 = sc->c1, *const id0 = sc->id0, *const id1 = sc->id1;
 
     if (eva > 16) eva = 16;
     if (evb > 16) evb = 16;
     if (evy > 16) evy = 16;
-    t0 = prof_now();
+    t0 = prof_now(sc->prof);
     for (bg = 0; bg < 4; bg++) {
-        if (!render_bg(e, bg, line, bgl[bg]))
-            continue;
-        /* insertion by (priority, BG number) */
-        {
-            const int p = io16(e, 0x08 + 2 * bg) & 3;
-            for (i = nb; i > 0 && prio[i - 1] > p; i--)
-                order[i] = order[i - 1], prio[i] = prio[i - 1];
-            order[i] = bg, prio[i] = p, nb++;
-        }
+        shown[bg] = render_bg(e, bg, line, bgl[bg]);
+        prio[bg] = io16(e, 0x08 + 2 * bg) & 3;
     }
-    t1 = prof_now();
+    t1 = prof_now(sc->prof);
     objs = render_obj(e, line, &obj);
-    t2 = prof_now();
-    if (kh_gpu2d_profiling) {
-        prof_add(&s_prof_us[!e->is_a][0], (uint32_t)(t1 - t0));
-        prof_add(&s_prof_us[!e->is_a][1], (uint32_t)(t2 - t1));
+    t2 = prof_now(sc->prof);
+    if (sc->prof) {
+        prof_add(&s_prof_us[!e->is_a][0], (uint32_t)(t1 - t0) * 8);
+        prof_add(&s_prof_us[!e->is_a][1], (uint32_t)(t2 - t1) * 8);
     }
-    windows = window_line(e, line, &obj, ctl);
+    ctl = window_line(e, line, &obj, ctlbuf) ? ctlbuf : NULL;
 
-    if (!windows && !effect && !(objs & 2)) {
-        /* the common case: the frontmost opaque pixel, nothing else */
-        for (x = 0; x < W; x++) {
-            uint16_t c = backdrop, below = backdrop;
-            int p = 4, pb = 4, is3d = 0;
-            for (i = 0; i < nb; i++) {
-                const uint16_t v = bgl[order[i]][x];
-                if (!(v & OPAQUE))
-                    continue;
-                if (!is3d && order[i] == 0 && e->has3d) {
-                    is3d = 1, p = prio[i];
-                    continue;
-                }
-                if (is3d)
-                    below = v & 0x7fff, pb = prio[i];
-                else
-                    c = v & 0x7fff, p = prio[i];
-                break;
+    for (x = 0; x < W; x++) {
+        c0[x] = c1[x] = backdrop;
+        id0[x] = id1[x] = L_BD;
+    }
+    for (p = 3; p >= 0; p--) {
+        for (bg = 3; bg >= 0; bg--) {
+            if (!shown[bg] || prio[bg] != p)
+                continue;
+            if (bg == 0 && e->has3d && !ctl) {
+                /* the 3D layer is opaque everywhere */
+                memcpy(c1, c0, sizeof(sc->c1));
+                memcpy(id1, id0, sizeof(sc->id1));
+                for (x = 0; x < W; x++)
+                    c0[x] = 0, id0[x] = L_BG0;
+            } else {
+                push_layer(sc, bgl[bg], bg, ctl, 1 << bg);
             }
-            if ((objs & 1) && (obj.col[x] & OPAQUE)) {
-                if (obj.prio[x] <= p)
-                    c = obj.col[x] & 0x7fff, is3d = 0;
-                else if (is3d && obj.prio[x] <= pb)
-                    below = obj.col[x] & 0x7fff;
+        }
+        if ((objs & 1) && (obj.prios & (1 << p)))
+            push_obj(sc, p, ctl);
+    }
+
+    if (!ctl && !effect && !(objs & 2)) {
+        /* the common case: the frontmost pixel, or with the 3D in front, what is under it */
+        if (e->has3d) {
+            for (x = 0; x < W; x++) {
+                const int is3d = id0[x] == L_BG0;
+                out[x] = is3d ? c1[x] : c0[x];
+                code[x] = is3d ? KH_GPU2D_3D : KH_GPU2D_2D;
             }
-            out[x] = is3d ? below : c;
-            code[x] = is3d ? KH_GPU2D_3D : KH_GPU2D_2D;
+        } else {
+            memcpy(out, c0, W * sizeof(*out));
+            memset(code, KH_GPU2D_2D, W);
         }
         return;
     }
 
-    if (!windows)
-        memset(ctl, 0x3f, W);
     for (x = 0; x < W; x++) {
-        /* the two frontmost visible layers: OBJ goes above BGs of the same priority */
-        uint16_t c[2] = { backdrop, backdrop };
-        int id[2] = { L_BD, L_BD }, n = 0;
-        int obj_left = (ctl[x] & 0x10) && (obj.col[x] & OPAQUE);
+        const int c = ctl ? ctl[x] : 0x3f;
+        int i0 = id0[x], i1 = id1[x];
         uint16_t out_c;
-        for (i = 0; i < nb && n < 2; i++) {
-            const int b = order[i];
-            if (obj_left && obj.prio[x] <= prio[i]) {
-                c[n] = obj.col[x] & 0x7fff, id[n] = L_OBJ, n++, obj_left = 0;
-                if (n == 2)
-                    break;
-            }
-            if ((ctl[x] & (1 << b)) && (bgl[b][x] & OPAQUE))
-                c[n] = bgl[b][x] & 0x7fff, id[n] = b, n++;
-        }
-        if (obj_left && n < 2)
-            c[n] = obj.col[x] & 0x7fff, id[n] = L_OBJ, n++;
         code[x] = KH_GPU2D_2D;
-        if (id[0] == 0 && e->has3d) {
-            /* the 3D layer in front: the GPU blends it over c[1], which is what shows
-             * where the 3D is clear, and then the frontmost layer for the colour effect */
-            out[x] = c[1];
-            if ((ctl[x] & 0x20) && (bldcnt & (1 << id[1]))) {
+        if (i0 == L_BG0 && e->has3d) {
+            /* the 3D layer in front: the GPU blends it over c1, which is what shows where the
+             * 3D is clear, and then the frontmost layer for the colour effect */
+            out[x] = c1[x];
+            if ((c & 0x20) && (bldcnt & (1 << i1))) {
                 if (effect == 2)
-                    out[x] = brighten(c[1], evy);
+                    out[x] = brighten(c1[x], evy);
                 else if (effect == 3)
-                    out[x] = darken(c[1], evy);
+                    out[x] = darken(c1[x], evy);
             }
             code[x] = KH_GPU2D_3D;
-            if ((ctl[x] & 0x20) && (bldcnt & 1) && (effect == 2 || effect == 3))
+            if ((c & 0x20) && (bldcnt & 1) && (effect == 2 || effect == 3))
                 code[x] = (uint8_t)((effect == 2 ? KH_GPU2D_3D_BRIGHTEN : KH_GPU2D_3D_DARKEN) | evy);
             continue;
         }
-        if (id[1] == 0 && e->has3d) {
+        if (i1 == L_BG0 && e->has3d) {
             /* a 2D layer over the 3D one: an alpha blend with it happens on the GPU, which
              * has the 3D colour (dialogue scenes dim the field with a translucent BG) */
-            if (id[0] == L_OBJ && obj.alpha[x] && (bldcnt & 0x100)) {
-                out[x] = c[0];
+            if (i0 == L_OBJ && obj.alpha[x] && (bldcnt & 0x100)) {
+                out[x] = c0[x];
                 code[x] = obj.alpha[x] == 0x80 ? KH_GPU2D_BLEND_3D : (uint8_t)(KH_GPU2D_OVER_3D | obj.alpha[x]);
                 continue;
             }
-            if (effect == 1 && (ctl[x] & 0x20) && (bldcnt & (1 << id[0])) && (bldcnt & 0x100)) {
-                out[x] = c[0];
+            if (effect == 1 && (c & 0x20) && (bldcnt & (1 << i0)) && (bldcnt & 0x100)) {
+                out[x] = c0[x];
                 code[x] = KH_GPU2D_BLEND_3D;
                 continue;
             }
-            id[1] = L_BD; /* otherwise as over the backdrop: brighten/darken need no 3D */
+            i1 = L_BD; /* otherwise as over the backdrop: brighten/darken need no 3D */
         }
-        out_c = c[0];
-        if (id[0] == L_OBJ && obj.alpha[x] && (bldcnt & (0x100 << id[1]))) {
+        out_c = c0[x];
+        if (i0 == L_OBJ && obj.alpha[x] && (bldcnt & (0x100 << i1))) {
             /* semi-transparent and bitmap sprites blend with what is under them */
             if (obj.alpha[x] == 0x80)
-                out_c = blend(c[0], c[1], eva, evb);
+                out_c = blend(c0[x], c1[x], eva, evb);
             else
-                out_c = blend(c[0], c[1], obj.alpha[x], 16 - obj.alpha[x]);
-        } else if ((ctl[x] & 0x20) && (bldcnt & (1 << id[0]))) {
-            if (effect == 1 && (bldcnt & (0x100 << id[1])))
-                out_c = blend(c[0], c[1], eva, evb);
+                out_c = blend(c0[x], c1[x], obj.alpha[x], 16 - obj.alpha[x]);
+        } else if ((c & 0x20) && (bldcnt & (1 << i0))) {
+            if (effect == 1 && (bldcnt & (0x100 << i1)))
+                out_c = blend(c0[x], c1[x], eva, evb);
             else if (effect == 2)
-                out_c = brighten(c[0], evy);
+                out_c = brighten(c0[x], evy);
             else if (effect == 3)
-                out_c = darken(c[0], evy);
+                out_c = darken(c0[x], evy);
         }
         out[x] = out_c;
     }
@@ -853,7 +902,9 @@ static int render_lines(int engine, uint32_t *fb, int y0, int y1, int graphics)
     for (line = y0; line < y1; line++, fb += W) {
         uint16_t row[W];
         uint8_t code[W];
-        const uint64_t t = prof_now();
+        uint64_t t;
+        sc.prof = kh_gpu2d_profiling && (line & 7) == 0;
+        t = prof_now(sc.prof);
         compose_line(&e, line, row, code, &sc);
         if (e.has3d) {
             /* master brightness then comes after the composition, on the GPU */
@@ -862,8 +913,8 @@ static int render_lines(int engine, uint32_t *fb, int y0, int y1, int graphics)
         } else {
             row_out(row, fb, mmode, mf);
         }
-        if (kh_gpu2d_profiling) /* the whole line: the composition is what BGs and sprites leave */
-            prof_add(&s_prof_us[!e.is_a][2], (uint32_t)(prof_now() - t));
+        if (sc.prof) /* the whole line: the composition is what BGs and sprites leave */
+            prof_add(&s_prof_us[!e.is_a][2], (uint32_t)(prof_now(sc.prof) - t) * 8);
     }
     return e.has3d;
 }

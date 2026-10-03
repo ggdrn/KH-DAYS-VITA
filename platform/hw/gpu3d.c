@@ -97,6 +97,9 @@ typedef struct {
     GLuint tex;
     float sx, sy;
     float cutout; /* 1: every texel opaque or clear (no partial alpha), see texels_smooth */
+    GLint ws, wt;     /* the DS's wrap modes */
+    int clamped;      /* the GL texture clamps instead (see wrap_for_frame) */
+    uint32_t wrapped; /* the last frame a polygon used it beyond its edges */
 } TexEntry;
 
 static TexEntry s_tex[TEX_SLOTS];
@@ -203,6 +206,7 @@ static void tex_put(TexEntry *e, uint32_t teximage, const uint32_t *px, int cuto
     wt = !(teximage & (1u << 17)) ? GL_CLAMP_TO_EDGE : (teximage & (1u << 19)) ? GL_MIRRORED_REPEAT : GL_REPEAT;
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, ws);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wt);
+    e->ws = ws, e->wt = wt, e->clamped = 0;
     e->cutout = cutout ? 1.0f : 0.0f;
     e->sx = 1.0f / (float)w;
     e->sy = 1.0f / (float)h;
@@ -421,11 +425,26 @@ static DrawState s_pstate[KH_GX_MAX_POLYGONS]; /* per polygon, in frame order */
 static uint32_t s_pkey[KH_GX_MAX_POLYGONS];
 static uint16_t s_popaque[KH_GX_MAX_POLYGONS];
 
+/* Smoothed textures: a repeating texture that no polygon of the frame uses beyond its edges
+ * (a flare, a glow, a sprite-like effect drawn once over a quad) clamps instead. Repeating, the
+ * bilinear filter at its edge mixed in the opposite edge, a line round each effect. */
+static void wrap_for_frame(TexEntry *t)
+{
+    const int clamp = kh_config.texture_filter && t->wrapped != s_frame &&
+                      (t->ws != GL_CLAMP_TO_EDGE || t->wt != GL_CLAMP_TO_EDGE);
+    if (clamp == t->clamped)
+        return;
+    t->clamped = clamp;
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, clamp ? GL_CLAMP_TO_EDGE : t->ws);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, clamp ? GL_CLAMP_TO_EDGE : t->wt);
+}
+
 static void apply_state(const DrawState *st)
 {
     if (st->tex) {
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, st->tex->tex);
+        wrap_for_frame(st->tex);
         glUniform2f(u_tex_scale, st->tex->sx, st->tex->sy);
         glUniform1f(u_textured, 1.0f);
         glUniform1f(u_cutout, st->tex->cutout > 0.5f ? (st->blend ? 1.0f : 2.0f) : 0.0f);
@@ -738,6 +757,13 @@ static unsigned draw_frame(const KhGxFrame *f, const KhGxVertex *vtx)
             }
             if (ps->tex) {
                 const KhGxVertex *a = &f->vtx[p->v[0]], *b = &f->vtx[p->v[1]], *c = &f->vtx[p->v[2]];
+                const float tw = 1.0f / ps->tex->sx + 0.05f, th = 1.0f / ps->tex->sy + 0.05f;
+                int k;
+                for (k = 0; k < p->count; k++) {
+                    const KhGxVertex *v = &f->vtx[p->v[k]];
+                    if (v->s < -0.05f || v->t < -0.05f || v->s > tw || v->t > th)
+                        ps->tex->wrapped = s_frame; /* repeats here: keeps the DS's wrap */
+                }
                 s_stats.texgen[p->teximage >> 30]++;
                 if (a->s == b->s && a->s == c->s && a->t == b->t && a->t == c->t)
                     s_stats.flat_st++;

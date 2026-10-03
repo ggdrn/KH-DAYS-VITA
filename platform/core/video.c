@@ -4,6 +4,7 @@
 #include "log.h"
 #include "paths.h"
 
+#include <math.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,7 +23,8 @@ static ScreenRect s_rect[2];
 static int s_inset = -1; /* the screen drawn small over the other one, -1 for none */
 static volatile int s_pending = -1; /* a layout asked for from another thread (input) */
 static GLuint s_compose, s_compose_vbo;
-static GLint u_c2d, u_c3d, u_bright, u_hofs, u_blend, u_backdrop, u_prev, u_cap, u_flip, u_fx;
+static GLint u_c2d, u_c3d, u_bright, u_hofs, u_blend, u_backdrop, u_prev, u_cap, u_flip, u_fx,
+    u_filt;
 static float s_hud_scale = 1.0f; /* < 1: the 2D kept 4:3 over a widescreen 3D (config hud) */
 
 /* The display capture on the GPU (platform/hw/capture.c): two targets used in turn, the newest
@@ -58,10 +60,31 @@ static const char s_compose_vs[] =
     "    vUv = aUv;\n"
     "}\n";
 static const char s_compose_fs[] =
+    /* The 2D scaled up (config filter_2d, uFilt.x): 1 sharp, the DS's square pixels with
+     * their edges smoothed over uFilt.y (Vita pixels per DS pixel) to one Vita pixel; 2 smooth,
+     * bilinear. Only 2D texels take part: the 3D-coded ones hold the colour under the 3D. */
+    "float3 smooth2d(sampler2D s, float2 uv, float2 filt)\n"
+    "{\n"
+    "    float2 p = uv * float2(256.0, 192.0) - 0.5;\n"
+    "    float2 i = floor(p);\n"
+    "    float2 f = p - i;\n"
+    "    if (filt.x < 1.5)\n"
+    "        f = saturate((f - 0.5) * filt.y + 0.5);\n"
+    "    float2 t0 = (i + 0.5) / float2(256.0, 192.0);\n"
+    "    float2 t1 = t0 + float2(1.0 / 256.0, 1.0 / 192.0);\n"
+    "    float4 a = tex2D(s, t0), b = tex2D(s, float2(t1.x, t0.y));\n"
+    "    float4 c = tex2D(s, float2(t0.x, t1.y)), d = tex2D(s, t1);\n"
+    "    float wa = (1.0 - f.x) * (1.0 - f.y) * step(0.99, a.a);\n"
+    "    float wb = f.x * (1.0 - f.y) * step(0.99, b.a);\n"
+    "    float wc = (1.0 - f.x) * f.y * step(0.99, c.a);\n"
+    "    float wd = f.x * f.y * step(0.99, d.a);\n"
+    "    return (a.rgb * wa + b.rgb * wb + c.rgb * wc + d.rgb * wd) / max(wa + wb + wc + wd, 0.0001);\n"
+    "}\n"
+    "\n"
     "float4 main(float2 vUv : TEXCOORD0, uniform sampler2D u2d, uniform sampler2D u3d,\n"
     "            uniform float2 uBright, uniform float uHofs, uniform float2 uBlend,\n"
     "            uniform float3 uBackdrop, uniform sampler2D uPrev, uniform float4 uCap,\n"
-    "            uniform float uFlip, uniform float4 uFx) : COLOR\n"
+    "            uniform float uFlip, uniform float4 uFx, uniform float2 uFilt) : COLOR\n"
     "{\n"
     "    float2 uv2 = vUv;\n"
     "    if (uFlip > 0.5)\n"
@@ -69,8 +92,11 @@ static const char s_compose_fs[] =
     /* uFx.y < 1: the 2D (HUD) kept 4:3 in the middle of a widescreen 3D; beside it, the 3D */
     "    uv2.x = (uv2.x - 0.5) / uFx.y + 0.5;\n"
     "    float4 b = float4(0.0, 0.0, 0.0, 0.0);\n"
-    "    if (uv2.x >= 0.0 && uv2.x <= 1.0)\n"
+    "    if (uv2.x >= 0.0 && uv2.x <= 1.0) {\n"
     "        b = tex2D(u2d, uv2);\n"
+    "        if (uFilt.x > 0.5 && b.a > 0.99)\n"
+    "            b.rgb = smooth2d(u2d, uv2, uFilt);\n"
+    "    }\n"
     "    float3 c = b.rgb;\n"
     "    float u = vUv.x + uHofs;\n"
     "    float4 t = tex2D(u3d, float2(u, 1.0 - vUv.y));\n"
@@ -277,6 +303,7 @@ static void compose_init(void)
     u_cap = glGetUniformLocation(s_compose, "uCap");
     u_flip = glGetUniformLocation(s_compose, "uFlip");
     u_fx = glGetUniformLocation(s_compose, "uFx");
+    u_filt = glGetUniformLocation(s_compose, "uFilt");
     glGenBuffers(1, &s_compose_vbo);
 }
 
@@ -292,10 +319,15 @@ void video_set_3d(int screen, unsigned tex, uint16_t master_bright, int hofs, ui
 }
 
 /* One pass of the composition shader over the NDC rectangle v (x, y, u, v per corner).
- * cap: 0 to the screen; 1 a capture pass (no master brightness, source B blended in). */
+ * cap: 0 to the screen; 1 a capture pass (no master brightness, source B blended in).
+ * filter: how tex2d is read: FILTER_TEXEL texel by texel, FILTER_LINEAR bilinear (a capture,
+ * already at the 3D's resolution), FILTER_2D a DS screen, through config filter_2d. */
+enum { FILTER_TEXEL, FILTER_LINEAR, FILTER_2D };
+
 static void compose_pass(const float *v, GLuint tex2d, int flip2d, GLuint tex3d, uint16_t bright,
-                         int cap, float hud, float alpha, int linear)
+                         int cap, float hud, float alpha, int filter)
 {
+    const int linear = filter == FILTER_LINEAR;
     const int mode = (bright >> 14) & 3;
     int f = bright & 31;
 
@@ -321,6 +353,9 @@ static void compose_pass(const float *v, GLuint tex2d, int flip2d, GLuint tex3d,
     glUniform1f(u_hofs, s_3d_hofs);
     glUniform1f(u_flip, flip2d ? 1.0f : 0.0f);
     glUniform4f(u_fx, cap ? 0.0f : (float)kh_config.screen_effect, hud, alpha, 0.0f);
+    /* Vita pixels per DS pixel, from the quad's height */
+    glUniform2f(u_filt, filter == FILTER_2D ? (float)kh_config.filter_2d : 0.0f,
+                fabsf(v[1] - v[9]) * (DISPLAY_H / 2.0f) / 192.0f);
     if (alpha < 0.999f) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -372,7 +407,7 @@ static void draw_composed(int screen)
     float v[16];
     screen_quad(screen, v);
     compose_pass(v, s_tex[screen], 0, s_3d_tex, s_3d_bright, 0,
-                 screen == s_inset ? 1.0f : s_hud_scale, screen_alpha(screen), 0);
+                 screen == s_inset ? 1.0f : s_hud_scale, screen_alpha(screen), FILTER_2D);
 }
 
 void video_set_hud_scale(float scale)
@@ -465,7 +500,8 @@ static void run_capture(void)
     }
     glBindFramebuffer(GL_FRAMEBUFFER, s_cap_fbo[next]);
     glViewport(0, 0, s_cap_w, s_cap_h);
-    compose_pass(full, s_cap.gfx ? s_cap_gfx : s_clear_tex, 0, s_cap.tex3d, 0, 1, 1.0f, 1.0f, 0);
+    compose_pass(full, s_cap.gfx ? s_cap_gfx : s_clear_tex, 0, s_cap.tex3d, 0, 1, 1.0f, 1.0f,
+                 FILTER_TEXEL);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     /* the spare now holds the bank's capture: trade the two */
     s_spare_slot = s_bank_slot[s_cap.dest];
@@ -665,14 +701,14 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
             float v[16];
             screen_quad(i, v);
             compose_pass(v, s_cap_tex[s_bank_slot[s_show_bank[i]]], 1, 0, s_show_bright[i], 0,
-                         1.0f, screen_alpha(i), 1);
+                         1.0f, screen_alpha(i), FILTER_LINEAR);
         } else if (i == s_3d_screen) {
             draw_composed(i);
         } else if (s_compose) {
             /* a plain 2D screen, through the same pass for the effect and the opacity */
             float v[16];
             screen_quad(i, v);
-            compose_pass(v, s_tex[i], 0, 0, 0, 0, 1.0f, screen_alpha(i), 1);
+            compose_pass(v, s_tex[i], 0, 0, 0, 0, 1.0f, screen_alpha(i), FILTER_2D);
         } else {
             draw_quad(&s_rect[i]);
         }

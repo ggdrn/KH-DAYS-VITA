@@ -20,6 +20,8 @@ typedef struct {
     int aspect;         /* KH_ASPECT_*: widescreen 3D, the DS picture stretched, or 4:3 */
     int frame_interpolation; /* 3D at 60 fps with frames mixed in between: 0 off, 1 on */
     int texture_filter; /* 3D textures: 0 sharp as on the DS, 1 smoothed (bilinear) */
+    int filter_2d;      /* the 2D (sprites, text, menus) scaled up: 0 pixels as they are,
+                         * 1 sharp (square pixels, smoothed edges), 2 smooth (bilinear) */
     int camera_stick;   /* the right stick turns the field camera: 0 off, 1 on */
     int camera_speed;   /* 1 slow, 2 normal, 3 fast */
     int camera_invert_x, camera_invert_y;
