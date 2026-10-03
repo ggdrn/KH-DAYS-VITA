@@ -202,13 +202,30 @@ static inline void stage_max(uint32_t *max, uint64_t us)
         *max = (uint32_t)us;
 }
 
+/* the 2D's CPU time per engine (both cores together), for the statistics */
+static volatile uint32_t s_2d_engine_us[2];
+
 static void render_chunk(int chunk, void *arg)
 {
     Frame2d *f = arg;
     const int engine = f->eng[chunk % f->neng], band = chunk / f->neng;
+    const uint64_t t = sceKernelGetProcessTimeWide();
     int r = kh_gpu2d_render_lines(engine, f->fb[engine], band * BAND_LINES, (band + 1) * BAND_LINES);
     if (engine == KH_ENGINE_A)
         f->a3d[band] = r;
+    __atomic_add_fetch(&s_2d_engine_us[engine], (uint32_t)(sceKernelGetProcessTimeWide() - t),
+                       __ATOMIC_RELAXED);
+}
+
+/* Engine B showing nothing but a bitmap BG3 from bank C or bitmap sprites from bank D, sub
+ * BG / sub OBJ: the bank a capture went to (the dual-3D scenes), -1 otherwise. */
+static int engine_b_bank(uint32_t db, uint8_t cnt_c, uint8_t cnt_d)
+{
+    if (((db >> 16) & 1) && ((db >> 8) & 0x1f) == 0x08 && (cnt_c & 0x87) == 0x84)
+        return 2;
+    if (((db >> 16) & 1) && ((db >> 8) & 0x1f) == 0x10 && (cnt_d & 0x87) == 0x84)
+        return 3;
+    return -1;
 }
 
 static volatile int s_dump_2d; /* L+R+Triangle: the 2D side of the frame too */
@@ -346,10 +363,18 @@ static void present(void)
         static uint32_t parity;
         const int inset = video_inset_screen(); /* 0 top, 1 bottom, -1 none */
         const int inset_engine = inset < 0 ? -1 : ((inset == 0) == a_on_top ? KH_ENGINE_A : KH_ENGINE_B);
+        /* dual 3D: engine B's screen shows the last picture engine A gave it, its own 2D (a
+         * bitmap the size of the screen) is not seen; it was half the 2D time there */
+        const int skip_b = dual && engine_b_bank(s_toggle_regs.dispcnt_b,
+                                                 (uint8_t)(s_toggle_regs.vramcnt >> 16),
+                                                 (uint8_t)(s_toggle_regs.vramcnt >> 24)) >= 0 &&
+                           ((s_toggle_regs.dispcnt_a >> 16) & 3) != 2;
         f2d.neng = 0;
         if (draw2d) {
             for (i = 0; i < 2; i++)
-                if (dual || i != inset_engine || (parity & 1))
+                if (i == KH_ENGINE_B && skip_b)
+                    continue;
+                else if (dual || i != inset_engine || (parity & 1))
                     f2d.eng[f2d.neng++] = i;
             parity++;
         }
@@ -468,11 +493,7 @@ static void present(void)
         const uint8_t cnt_c = dual ? (uint8_t)(s_toggle_regs.vramcnt >> 16) : kh_ds_io[0x242];
         const uint8_t cnt_d = dual ? (uint8_t)(s_toggle_regs.vramcnt >> 24) : kh_ds_io[0x243];
         const int bank_a = ((dc >> 16) & 3) == 2 ? (int)((dc >> 18) & 3) : -1;
-        int bank_b = -1;
-        if (((db >> 16) & 1) && ((db >> 8) & 0x1f) == 0x08 && (cnt_c & 0x87) == 0x84)
-            bank_b = 2; /* sub BG3 alone, from bank C */
-        else if (((db >> 16) & 1) && ((db >> 8) & 0x1f) == 0x10 && (cnt_d & 0x87) == 0x84)
-            bank_b = 3; /* sub sprites alone, from bank D */
+        int bank_b = engine_b_bank(db, cnt_c, cnt_d);
         /* dual 3D: engine B's screen shows the last picture engine A gave it, or with engine
          * A showing a bank, the bank's capture as on the DS (0.0.88 to 0.0.90 kept the
          * cross-fades' banks stale) */
@@ -490,11 +511,12 @@ static void present(void)
         static int traced;
         if (traced++ < 600) {
             LOG("dual: vb %u serial %u (toggled at %u) polys %d top %d->%d waited %uus cap %08x "
-                "showA %d showB %d 2d %d/%d a3d %d tex %u", (unsigned)s_vblanks, (unsigned)kh_gx3d_serial(),
+                "showA %d showB %d 2d %d/%d a3d %d tex %u dispcnt %08x %08x", (unsigned)s_vblanks, (unsigned)kh_gx3d_serial(),
                 (unsigned)s_toggle_serial, trace_polys, trace_before,
                 a_on_top, (unsigned)trace_wait, (unsigned)KH_IO32(0x04000064),
                 video_shown_bank(a_on_top ? 0 : 1), video_shown_bank(a_on_top ? 1 : 0),
-                draw2d, f2d.neng, a3d, tex3d);
+                draw2d, f2d.neng, a3d, tex3d, (unsigned)s_toggle_regs.dispcnt_a,
+                (unsigned)s_toggle_regs.dispcnt_b);
         }
     }
     if (s_dump_2d) {
@@ -874,6 +896,9 @@ void kh_game_run(void)
                         (unsigned)(s_present_total / 600), (unsigned)s_2d_skipped,
                         (unsigned)s_2d_async, busy / 10, busy % 10);
                     s_2d_async = 0;
+                    LOG("display: 2d cpu per frame: engine A %uus, B %uus",
+                        (unsigned)(s_2d_engine_us[0] / 600), (unsigned)(s_2d_engine_us[1] / 600));
+                    s_2d_engine_us[0] = s_2d_engine_us[1] = 0;
                     LOG("display: worst frame: textures %uus, 3d submit %uus, 2d after it %uus, "
                         "present %uus", (unsigned)s_prep_max, (unsigned)s_t3d_max,
                         (unsigned)s_join_max, (unsigned)s_present_max);
