@@ -14988,6 +14988,23 @@ index 9ef078435..06cf35bb3 100644
          sub[0] = (sub[0] & ~3) | 3;
          sub[1] = (sub[1] & ~3) | 2;
          sub[2] = (sub[2] & ~3) | 1;
+diff --git a/src/overlays/scenes/ov000_title/Ov000_RefreshMenuLayout.c b/src/overlays/scenes/ov000_title/Ov000_RefreshMenuLayout.c
+index 05d801c1c..af9650079 100644
+--- a/src/overlays/scenes/ov000_title/Ov000_RefreshMenuLayout.c
++++ b/src/overlays/scenes/ov000_title/Ov000_RefreshMenuLayout.c
+@@ -98,7 +98,12 @@ void Ov000_RefreshMenuLayout(void) {
+             Slot_SetVisible(ctx->objectManager, ctx->cells[3], 0);
+             Slot_SetVisible(ctx->objectManager, ctx->cells[4], 0);
+             Slot_SetVisible(ctx->objectManager, ctx->cells[8], 1);
++#ifdef PLATFORM_VITA
++            /* no wireless play on the Vita: Mission Mode's Multiplayer row is not shown */
++            Slot_SetVisible(ctx->objectManager, ctx->cells[9], 0);
++#else
+             Slot_SetVisible(ctx->objectManager, ctx->cells[9], 1);
++#endif
+         }
+     }
+ 
 diff --git a/src/overlays/scenes/ov000_title/Ov000_SetupBootTextScreen.c b/src/overlays/scenes/ov000_title/Ov000_SetupBootTextScreen.c
 index 815990750..f214c9ff9 100644
 --- a/src/overlays/scenes/ov000_title/Ov000_SetupBootTextScreen.c
@@ -15037,6 +15054,21 @@ index 36e193ce4..7e022ff56 100644
  #define FS_OVERLAY_ID_ov024 ((FSOverlayID)(u32) & (OVERLAY_24_ID))
  
  typedef struct Ov000RowDescriptor {
+diff --git a/src/overlays/scenes/ov000_title/Ov000_StepMenuSelection.c b/src/overlays/scenes/ov000_title/Ov000_StepMenuSelection.c
+index 9353506a4..27c7b805f 100644
+--- a/src/overlays/scenes/ov000_title/Ov000_StepMenuSelection.c
++++ b/src/overlays/scenes/ov000_title/Ov000_StepMenuSelection.c
+@@ -29,6 +29,10 @@ int Ov000_StepMenuSelection(void *input, int selection, int group) {
+     if (NNSi_FndGetCurrentRootHeap()->second_locked == 0) {
+         counts.values[1] = 1;
+     }
++#ifdef PLATFORM_VITA
++    /* the Vita port has no wireless play: Mission Mode offers Solo only (row 0) */
++    counts.values[2] = 1;
++#endif
+ 
+     if ((Mem_ReadU16(input) & 0x40) != 0) {
+         decrement = 1;
 diff --git a/src/overlays/scenes/ov000_title/Ov000_TickBootFadeTransition.c b/src/overlays/scenes/ov000_title/Ov000_TickBootFadeTransition.c
 index 7c64a5cb1..28040ec1b 100644
 --- a/src/overlays/scenes/ov000_title/Ov000_TickBootFadeTransition.c
