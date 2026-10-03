@@ -641,10 +641,16 @@ static void sort_frame(KhGxFrame *f)
     }
 }
 
+void (*kh_gx3d_swap_wait)(void);
+
 static void swap_buffers(uint32_t param)
 {
     KhGxFrame *f = s_f;
     int old;
+    /* the DS's geometry engine takes nothing after a swap until the next VBlank: a game loop
+     * that does not wait for the VBlank itself is paced by that */
+    if (kh_gx3d_swap_wait)
+        kh_gx3d_swap_wait();
     f->swap = param & 3;
     f->disp3dcnt = KH_IO32(0x04000060);
     memcpy(f->regs, KH_IO_PTR(0x04000330), sizeof(f->regs));

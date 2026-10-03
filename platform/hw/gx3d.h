@@ -51,6 +51,11 @@ typedef struct {
 
 void kh_gx3d_init(void);
 
+/* Called on every SWAP_BUFFERS before the frame is published: the platform holds the game
+ * there until a VBlank has passed since the previous swap, as the DS's geometry engine does
+ * (NULL in the host tests). */
+extern void (*kh_gx3d_swap_wait)(void);
+
 /* Widescreen: perspective geometry has its clip-space x multiplied by this before it is
  * drawn (1 = the DS's 4:3), and the box test sees the wider view. The game's own reads of
  * the matrices and position tests stay as on the DS. Set by the display loop. */

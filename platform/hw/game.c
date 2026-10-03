@@ -647,6 +647,20 @@ static void watch_registers(uint32_t frame)
     }
 }
 
+/* At most one 3D frame per VBlank, as on the DS, whose geometry engine stalls after a swap
+ * until the next VBlank. Some scenes rely on it: the dual-3D cutscenes' loop does not wait for
+ * the VBlank itself and swapped two or three times a frame here, half of them empty frames,
+ * which flickered (0.0.81: 1252 swaps in 10 s). */
+static void swap_wait(void)
+{
+    static uint32_t last;
+    volatile uint32_t *count = (volatile uint32_t *)KH_SHARED(HW_VBLANK_COUNT_BUF);
+    const uint64_t give_up = sceKernelGetProcessTimeWide() + 50000;
+    while (*count == last && sceKernelGetProcessTimeWide() < give_up)
+        sceKernelDelayThread(200);
+    last = *count;
+}
+
 static void set_volume(int percent)
 {
     snd7_port_volume = (float)percent / 100.0f;
@@ -664,6 +678,7 @@ void kh_game_run(void)
 
     boot_state();
     input_init();
+    kh_gx3d_swap_wait = swap_wait;
     portmenu_on_scale = kh_gpu3d_set_scale;
     portmenu_on_texture_filter = kh_gpu3d_reload_textures;
     portmenu_on_volume = set_volume;
