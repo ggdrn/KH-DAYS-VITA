@@ -57,6 +57,8 @@ typedef struct {
      * radius of its corners in Vita pixels, and whether it only shows for a while when its
      * contents change (autohide 1; Start and Select pin it). sw 0: unused. */
     int panel[KH_PANELS][KH_PANEL_FIELDS];
+    int language;       /* the game's language, read at boot: 1 English, 2 French, 3 German,
+                         * 4 Italian, 5 Spanish (the European cartridge's five) */
     int debug;          /* debug hotkeys and the detailed log: 0 off (default), 1 on */
     uint32_t button[KH_BTN_COUNT]; /* the Vita button (SCE_CTRL_*) for each DS button */
 } KhConfig;

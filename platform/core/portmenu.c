@@ -22,6 +22,7 @@ void (*portmenu_on_volume)(int percent);
 
 static uint32_t s_px[W * H];
 static volatile int s_open;
+static int s_boot_language; /* the language this run started with (config language) */
 static int s_tab, s_sel[8];
 static uint32_t s_prev;
 static uint64_t s_repeat_at;
@@ -33,7 +34,7 @@ enum {
     IT_ASPECT, IT_HUD, IT_LAYOUT, IT_INSET, IT_CORNER, IT_OPACITY, IT_SINGLE, IT_PANELOP,
     IT_CAMERA, IT_CAMSPEED, IT_INVX, IT_INVY, IT_DEADZONE, IT_DPAD, IT_RMODE, IT_REAR,
     IT_BUTTON, /* + the DS button index */
-    IT_VOLUME, IT_FFWD, IT_DEFAULTS, IT_CLOSE,
+    IT_LANGUAGE, IT_VOLUME, IT_FFWD, IT_DEFAULTS, IT_CLOSE,
 };
 
 typedef struct {
@@ -78,6 +79,7 @@ static const Item s_buttons[] = {
     { IT_BUTTON, KH_BTN_START, "Start", NULL }, { IT_BUTTON, KH_BTN_SELECT, "Select", NULL },
 };
 static const Item s_system[] = {
+    { IT_LANGUAGE, 0, "Language", "The game's language. Applied the next time it starts." },
     { IT_VOLUME, 0, "Volume", NULL },
     { IT_FFWD, 0, "Fast-forward speed", "L+R+Square turns fast-forward on and off." },
     { IT_DEFAULTS, 0, "Restore defaults", "Press Cross to set every option to its default." },
@@ -185,6 +187,14 @@ static void value(const Item *it, char *out, size_t n)
     case IT_BUTTON:
         snprintf(out, n, "%s", s_vita_names[config_vita_button_index(kh_config.button[it->arg])]);
         break;
+    case IT_LANGUAGE: {
+        static const char *const langs[] = { "English", "Francais", "Deutsch", "Italiano",
+                                             "Espanol" };
+        /* "(restart)" while it differs from the language this run started with */
+        snprintf(out, n, "%s%s", langs[(kh_config.language - 1) % 5],
+                 kh_config.language != s_boot_language ? " (restart)" : "");
+        break;
+    }
     case IT_VOLUME: snprintf(out, n, "%d%%", kh_config.volume); break;
     case IT_FFWD: snprintf(out, n, "%dx", kh_config.fast_forward); break;
     default: out[0] = 0; break;
@@ -259,6 +269,7 @@ static void change(const Item *it, int d)
         kh_config.button[it->arg] = config_vita_button_mask(i);
         break;
     }
+    case IT_LANGUAGE: kh_config.language = wrap(kh_config.language, 1, 5, d); break;
     case IT_VOLUME:
         kh_config.volume = wrap(kh_config.volume, 0, 100, d * 10);
         if (portmenu_on_volume)
@@ -282,6 +293,8 @@ static void close_menu(void)
 
 void portmenu_toggle(void)
 {
+    if (!s_boot_language)
+        s_boot_language = kh_config.language;
     if (s_open) {
         close_menu();
         return;

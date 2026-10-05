@@ -106,6 +106,10 @@ static void boot_state(void)
     /* the card ID the boot read, where CARDi_CheckPulledOutCore compares it */
     *(volatile uint32_t *)KH_SHARED(0x027ff800) = KH_CARD_ID;
     *(volatile uint32_t *)KH_SHARED(0x027ffc00) = KH_CARD_ID;
+    /* the firmware's user settings: the language (bits 0-2 at +0x64), which the game reads at
+     * boot (Game_ReadLocalProfile) to pick its text, screens and fonts: 1 English, 2 French,
+     * 3 German, 4 Italian, 5 Spanish (config language). Left at 0, the game took English. */
+    *(volatile uint16_t *)KH_SHARED(0x027ffc80 + 0x64) = (uint16_t)(kh_config.language & 7);
     /* OS_ResetSystem's parameter survives the reset (asm_replacements.c): Boot_InitScene picks
      * the first scene from it */
     *(volatile uint32_t *)KH_SHARED(0x027ffc20) = kh_reset_parameter();

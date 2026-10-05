@@ -16,7 +16,7 @@ static const KhConfig s_defaults = {
     .inset_corner = 0, .inset_opacity = 100, .rear_touch = 0, .stick_deadzone = 2, .r_toggle = 0,
     .fast_forward = 2, .camera_stick = 1, .camera_speed = 2,
     .camera_invert_x = 0, .camera_invert_y = 0, .dpad_deck = 1, .show_fps = 0, .volume = 100,
-    .single_screen = 0, .panel_opacity = 90,
+    .single_screen = 0, .panel_opacity = 90, .language = 1,
     /* the mission screen's bottom-screen parts (sx sy sw sh anchor dx dy scale), measured on
      * the DS's bottom screen in a mission: the INFORMATION bar top-left, the map in the
      * top-right corner with the target beside it (below the top screen's enemy name and HP),
@@ -131,6 +131,9 @@ void config_save(void)
                "r_toggle = %d\n\n", kh_config.r_toggle);
     fprintf(f, "# Fast-forward speed, switched on and off with L+R+Square: 2 or 3.\n"
                "fast_forward = %d\n\n", kh_config.fast_forward);
+    fprintf(f, "# The game's language, taken at the next start: 1 English, 2 French, 3 German,\n"
+               "# 4 Italian, 5 Spanish.\n"
+               "language = %d\n\n", kh_config.language);
     fprintf(f, "# Experimental single screen: in missions, the top screen alone over the whole\n"
                "# display, parts of the bottom screen as panels over it (touch a panel to touch\n"
                "# the DS screen there). single_screen 0 off, 1 on; panel_opacity 50 to 100.\n"
@@ -224,6 +227,8 @@ static void set(const char *k, const char *v, int version)
         kh_config.fast_forward = clampi(atoi(v), 2, 3);
     else if (!strcmp(k, "debug"))
         kh_config.debug = atoi(v) != 0;
+    else if (!strcmp(k, "language"))
+        kh_config.language = clampi(atoi(v), 1, 5);
     else if (!strcmp(k, "single_screen"))
         kh_config.single_screen = atoi(v) != 0;
     else if (!strcmp(k, "panel_opacity"))
