@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define CONFIG_VERSION 11
+#define CONFIG_VERSION 12
 
 static const KhConfig s_defaults = {
     .render_scale = 3, .layout = 0, .inset_width = 224, .aspect = KH_ASPECT_WIDE,
@@ -17,12 +17,15 @@ static const KhConfig s_defaults = {
     .fast_forward = 2, .camera_stick = 1, .camera_speed = 2,
     .camera_invert_x = 0, .camera_invert_y = 0, .dpad_deck = 1, .show_fps = 0, .volume = 100,
     .single_screen = 0, .panel_opacity = 90,
-    /* the mission screen's bottom-screen parts (sx sy sw sh anchor dx dy scale): the objective
-     * and mission gauge along the bottom, the map and the target in the top-right corner */
-    .panel = { { 0, 0, 256, 40, KH_PANEL_BOTTOM_CENTER, 0, 6, 160 },
-               { 64, 48, 128, 112, KH_PANEL_TOP_RIGHT, 8, 8, 110 },
-               { 8, 136, 56, 56, KH_PANEL_TOP_RIGHT, 157, 8, 110 },
-               { 0, 0, 0, 0, 0, 0, 0, 100 } },
+    /* the mission screen's bottom-screen parts (sx sy sw sh anchor dx dy scale), measured on
+     * the DS's bottom screen in a mission: the INFORMATION bar top-left, the map in the
+     * top-right corner with the target beside it (below the top screen's enemy name and HP),
+     * the objective and mission gauge along the bottom between the commands and the HP */
+    .panel = { { 4, 6, 180, 24, KH_PANEL_TOP_LEFT, 0, 0, 190 },
+               { 102, 54, 120, 86, KH_PANEL_TOP_RIGHT, 6, 60, 130 },
+               { 33, 53, 64, 87, KH_PANEL_TOP_RIGHT, 166, 60, 130 },
+               /* 115 %: between the commands and the HP gauge of the stretched HUD */
+               { 7, 149, 241, 43, KH_PANEL_BOTTOM_CENTER, 0, 0, 115 } },
     .debug = 0,
     /* positional, as on the DS: the right face button is A, the bottom one B */
     .button = { SCE_CTRL_CIRCLE, SCE_CTRL_CROSS, SCE_CTRL_TRIANGLE, SCE_CTRL_SQUARE,
@@ -278,6 +281,9 @@ void config_load(void)
              * height), and the newer settings get written out with it */
             if (version < 2 && kh_config.render_scale == 2)
                 kh_config.render_scale = 3;
+            /* the single-screen panels measured on the game (0.1.2 shipped estimates) */
+            if (version < 12)
+                memcpy(kh_config.panel, s_defaults.panel, sizeof(kh_config.panel));
             /* the smooth texture filter became the default with the port menu's tabs */
             if (version < 8)
                 kh_config.texture_filter = 1;
