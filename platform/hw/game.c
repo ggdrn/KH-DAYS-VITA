@@ -832,7 +832,8 @@ void kh_game_run(void)
 
     /* the display keeps core 0 whatever the game does; the game runs on core 1 */
     sceKernelChangeThreadCpuAffinityMask(sceKernelGetThreadId(), SCE_KERNEL_CPU_MASK_USER_0);
-    th = sceKernelCreateThread("kh_game", game_thread, 0x10000100, GAME_STACK_SIZE, 0,
+    sceKernelChangeThreadPriority(0, KH_DISPLAY_PRIORITY);
+    th = sceKernelCreateThread("kh_game", game_thread, KH_COMPUTE_PRIORITY, GAME_STACK_SIZE, 0,
                                KH_GAME_CPU_MASK, NULL);
     if (th < 0) {
         LOG("game: create thread failed %08x", th);

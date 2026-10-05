@@ -23,6 +23,7 @@
 #include "hw/memmap.h"
 #include "hw/timers.h"
 #include "log.h"
+#include "workers.h"
 
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
@@ -603,7 +604,7 @@ void OS_LoadContext(void *ctx)
         return;
     if (next->host <= 0) {
         KhThread *arg = next;
-        next->host = sceKernelCreateThread("kh_nitro", trampoline, 0x10000100, HOST_STACK_SIZE, 0,
+        next->host = sceKernelCreateThread("kh_nitro", trampoline, KH_COMPUTE_PRIORITY, HOST_STACK_SIZE, 0,
                                            KH_GAME_CPU_MASK, NULL);
         if (next->host < 0) {
             LOG("cpu: thread create failed %08x", next->host);

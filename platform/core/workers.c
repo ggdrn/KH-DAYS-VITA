@@ -40,7 +40,7 @@ void workers_init(void)
     SceUID th;
     s_go = sceKernelCreateSema("kh_work_go", 0, 0, 1, NULL);
     s_done = sceKernelCreateSema("kh_work_done", 0, 0, 1, NULL);
-    th = sceKernelCreateThread("kh_worker", worker, 0x10000100, 0x10000, 0,
+    th = sceKernelCreateThread("kh_worker", worker, KH_COMPUTE_PRIORITY, 0x10000, 0,
                                SCE_KERNEL_CPU_MASK_USER_2, NULL);
     if (s_go < 0 || s_done < 0 || th < 0 || sceKernelStartThread(th, 0, NULL) < 0) {
         LOG("workers: no helper thread (%08x %08x %08x): single-threaded", s_go, s_done, th);

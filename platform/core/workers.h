@@ -4,6 +4,15 @@
 #ifndef KH_WORKERS_H
 #define KH_WORKERS_H
 
+/* The priority of the port's long-running threads (game, helper, display): a little below the
+ * system's default, so that the system's own threads at the default -- the one putting each
+ * finished frame on the screen at the VBlank among them -- never wait for a time slice behind
+ * them. At the default (0.1.0 and before) a frame now and then missed its VBlank, the screen
+ * showed the last one again, with the CPU and the GPU far from busy. */
+#define KH_COMPUTE_PRIORITY (0x10000100 + 16)
+/* the display thread, above the helper whose 2D it waits for */
+#define KH_DISPLAY_PRIORITY (0x10000100 + 8)
+
 typedef void (*WorkFn)(int chunk, void *arg);
 
 void workers_init(void);
