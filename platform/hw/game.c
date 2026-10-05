@@ -277,8 +277,9 @@ void kh_dual3d_toggled(void)
 
 /* The single screen's autohide panels (config panel autohide: the INFORMATION bar, the mission
  * gauge): each one slides in for 7 s when what it shows changes to something new -- a picture
- * seen in the last few seconds (a marker blinking) does not count -- and stays while Start (the
- * pause menu; B closes it too) or Select has pinned it. */
+ * seen in the last few seconds (a marker blinking) does not count -- and stays while the game
+ * is paused (its own pause state, however the pause menu was opened or closed) or Select has
+ * pinned it. */
 #define PANEL_SHOW_US 7000000u
 #define PANEL_SLIDE_US 300000.0f
 #define PANEL_RECENT 8
@@ -289,7 +290,8 @@ static struct {
     uint32_t seen[PANEL_RECENT];
     uint64_t seen_at[PANEL_RECENT];
 } s_panels[KH_PANELS];
-static int s_pin_start, s_pin_select;
+static int s_pin_select;
+extern int PauseMenu_GetMode(void); /* the game's pause state: 0 running */
 
 static uint32_t panel_hash(const uint32_t *fb, const int *p)
 {
@@ -306,15 +308,17 @@ static void update_panels(int single, int drawn, const uint32_t *bottom_fb)
     static int was_single;
     static uint64_t last;
     static uint16_t keys_prev = 0x3ff;
+    static int was_paused;
+    static uint64_t quiet_until;
     const uint64_t now = sceKernelGetProcessTimeWide();
     const uint16_t keys = KH_IO16(0x04000130), pressed = (uint16_t)(keys_prev & ~keys);
     const float step = last ? (float)(now - last) / PANEL_SLIDE_US : 0.0f;
-    int i, k;
+    int i, k, paused;
     keys_prev = keys;
     last = now;
     if (!single) {
         was_single = 0;
-        s_pin_start = s_pin_select = 0;
+        s_pin_select = 0;
         return;
     }
     if (!was_single) {
@@ -325,13 +329,18 @@ static void update_panels(int single, int drawn, const uint32_t *bottom_fb)
             s_panels[i].until = now + PANEL_SHOW_US;
         }
     }
-    /* KEYINPUT, active low: Start bit 3, Select bit 2, B bit 1 */
-    if (pressed & 8)
-        s_pin_start ^= 1;
-    else if ((pressed & 2) && s_pin_start)
-        s_pin_start = 0;
+    /* KEYINPUT, active low: Select is bit 2 */
     if (pressed & 4)
         s_pin_select ^= 1;
+    paused = PauseMenu_GetMode() != 0;
+    if (was_paused && !paused) {
+        /* the pause menu closed: the panels go at once, and the screen changing back does
+         * not bring them out again */
+        for (i = 0; i < KH_PANELS; i++)
+            s_panels[i].until = 0;
+        quiet_until = now + 1000000u;
+    }
+    was_paused = paused;
     for (i = 0; i < KH_PANELS; i++) {
         const int *p = kh_config.panel[i];
         float target;
@@ -354,10 +363,11 @@ static void update_panels(int single, int drawn, const uint32_t *bottom_fb)
             if (!known) {
                 s_panels[i].seen[oldest] = h;
                 s_panels[i].seen_at[oldest] = now;
-                s_panels[i].until = now + PANEL_SHOW_US;
+                if (now >= quiet_until)
+                    s_panels[i].until = now + PANEL_SHOW_US;
             }
         }
-        target = (s_pin_start || s_pin_select || now < s_panels[i].until) ? 1.0f : 0.0f;
+        target = (paused || s_pin_select || now < s_panels[i].until) ? 1.0f : 0.0f;
         if (s_panels[i].vis < target)
             s_panels[i].vis = s_panels[i].vis + step > target ? target : s_panels[i].vis + step;
         else if (s_panels[i].vis > target)
