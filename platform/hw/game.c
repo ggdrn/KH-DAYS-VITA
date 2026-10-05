@@ -297,6 +297,13 @@ static struct {
 static int s_pin_select;
 extern int PauseMenu_GetMode(void); /* the game's pause state: 0 running */
 
+/* MASTER_BRIGHT brightening or darkening by a non-zero factor */
+static int fading(uint16_t mb)
+{
+    const int mode = (mb >> 14) & 3;
+    return (mode == 1 || mode == 2) && (mb & 31);
+}
+
 static uint32_t panel_hash(const uint32_t *fb, const int *p)
 {
     uint32_t h = 2166136261u;
@@ -326,17 +333,18 @@ static void update_panels(int single, int drawn, const uint32_t *bottom_fb)
         return;
     }
     if (!was_single) {
-        /* a mission starts (or comes back): everything shown once */
+        /* the field (re)loaded -- an area change reloads its overlays: what the panels show
+         * then is not news (0.1.6 brought them out at every area change) */
         was_single = 1;
-        for (i = 0; i < KH_PANELS; i++) {
-            memset(s_panels[i].seen, 0, sizeof(s_panels[i].seen));
-            s_panels[i].until = now + PANEL_SHOW_US;
-        }
+        quiet_until = now + 2000000u;
     }
     /* KEYINPUT, active low: Select is bit 2 */
     if (pressed & 4)
         s_pin_select ^= 1;
     paused = PauseMenu_GetMode() != 0;
+    /* a screen fading (an area change, a cutscene): nothing it shows meanwhile counts */
+    if (fading(KH_IO16(0x0400006c)) || fading(KH_IO16(0x0400106c)))
+        quiet_until = now + 1500000u;
     if (was_paused && !paused) {
         /* the pause menu closed: the panels go at once, and the screen changing back does
          * not bring them out again */
@@ -356,7 +364,7 @@ static void update_panels(int single, int drawn, const uint32_t *bottom_fb)
             const uint32_t h = panel_hash(bottom_fb, p);
             int known = 0, oldest = 0;
             for (k = 0; k < PANEL_RECENT; k++) {
-                if (s_panels[i].seen[k] == h && now - s_panels[i].seen_at[k] < 4000000u) {
+                if (s_panels[i].seen[k] == h && now - s_panels[i].seen_at[k] < 30000000u) {
                     known = 1;
                     s_panels[i].seen_at[k] = now;
                     break;
@@ -423,7 +431,15 @@ static void present(void)
     /* experimental single screen (config single_screen): in the field (ov022, its action code,
      * loaded; the same test as the widescreen 3D) with engine A on the top screen, the top
      * screen alone and the bottom one's map, target and mission gauge as panels over it */
-    video_set_single_screen(kh_config.single_screen && !dual && a_on_top && kh_overlay_loaded(22));
+    const int single = kh_config.single_screen && !dual && a_on_top && kh_overlay_loaded(22);
+    video_set_single_screen(single);
+    /* a tutorial page (Ov002_OpenTutorialPage leaves the sub engine with BG2 and BG3 alone,
+     * which nothing else in the field does) is shown whole; while the game is paused the bottom
+     * screen is drawn without the fade it gets behind the pause menu, the panels being part of
+     * the menu then */
+    const int tutorial = single && ((KH_IO32(0x04001000) >> 8) & 0x1f) == 0x0c;
+    video_set_tutorial(tutorial);
+    kh_gpu2d_plain[KH_ENGINE_B] = single && PauseMenu_GetMode() != 0;
     /* with the detailed log, once a second: this frame's GPU time measured alone */
     video_gpu_probe_begin();
     uint64_t t0 = sceKernelGetProcessTimeWide();
@@ -495,10 +511,17 @@ static void present(void)
                                                  (uint8_t)(s_toggle_regs.vramcnt >> 24)) >= 0 &&
                            ((s_toggle_regs.dispcnt_a >> 16) & 3) != 2 &&
                            video_screen_memory_valid(a_on_top ? 1 : 0);
+        /* single screen: the bottom screen only shows through small panels; drawn one 2D
+         * frame in three (every other one for a tutorial page) it was a third of the 2D time
+         * at full rate (0.1.6) */
+        static uint32_t single_parity;
+        const int skip_single_b = single && (tutorial ? (single_parity & 1) : (single_parity % 3));
         f2d.neng = 0;
         if (draw2d) {
+            if (single)
+                single_parity++;
             for (i = 0; i < 2; i++)
-                if (i == KH_ENGINE_B && skip_b)
+                if (i == KH_ENGINE_B && (skip_b || skip_single_b))
                     continue;
                 else if (dual || i != inset_engine || (parity & 1))
                     f2d.eng[f2d.neng++] = i;

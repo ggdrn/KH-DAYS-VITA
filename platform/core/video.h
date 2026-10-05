@@ -32,6 +32,9 @@ int video_on_inset(int px, int py);
 void video_set_single_screen(int on);
 /* An autohide panel's visibility, 0 hidden .. 1 shown: in between, it slides in from its edge. */
 void video_set_panel_visibility(int i, float vis);
+/* Single screen: the bottom screen holds a tutorial page, shown whole in the middle instead of
+ * the panels. */
+void video_set_tutorial(int on);
 int video_single_screen(void);
 /* Display pixel (960x544) -> DS touch-screen pixel; 0 when it is not on the touch screen. */
 int video_map_touch(int px, int py, int *x, int *y);

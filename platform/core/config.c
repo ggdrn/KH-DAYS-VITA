@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define CONFIG_VERSION 13
+#define CONFIG_VERSION 14
 
 static const KhConfig s_defaults = {
     .render_scale = 3, .layout = 0, .inset_width = 224, .aspect = KH_ASPECT_WIDE,
@@ -21,8 +21,9 @@ static const KhConfig s_defaults = {
      * the DS's bottom screen in a mission: the INFORMATION bar top-left, the map in the
      * top-right corner with the target beside it (below the top screen's enemy name and HP),
      * the objective and mission gauge along the bottom between the commands and the HP */
-    .panel = { /* top centre, clear of the chain counter; shown when its message changes */
-               { 4, 6, 180, 24, KH_PANEL_TOP_CENTER, 0, 4, 170, KH_STYLE_PLAIN, 10, 1 },
+    .panel = { /* top centre, clear of the chain counter, the bar's whole width (a long
+                * message ran past 180 pixels); shown when its message changes */
+               { 2, 6, 252, 24, KH_PANEL_TOP_CENTER, 0, 4, 170, KH_STYLE_PLAIN, 10, 1 },
                { 102, 54, 120, 86, KH_PANEL_TOP_RIGHT, 6, 60, 130, KH_STYLE_INVERT_GREYS, 6, 0 },
                { 33, 53, 64, 87, KH_PANEL_TOP_RIGHT, 166, 60, 130, KH_STYLE_WHITE_TO_BLACK, 6, 0 },
                /* between the commands and the HP gauge of the stretched HUD; shown when the
@@ -294,7 +295,7 @@ void config_load(void)
             if (version < 2 && kh_config.render_scale == 2)
                 kh_config.render_scale = 3;
             /* the single-screen panels measured on the game (0.1.2 shipped estimates) */
-            if (version < 13)
+            if (version < 14)
                 memcpy(kh_config.panel, s_defaults.panel, sizeof(kh_config.panel));
             /* the smooth texture filter became the default with the port menu's tabs */
             if (version < 8)

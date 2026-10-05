@@ -45,6 +45,9 @@ int kh_gpu2d_render_graphics(int engine, uint32_t *fb);
 /* An engine's DISPCNT to draw with instead of the register's (0: the register): the value
  * recorded with a dual-3D frame, the register having moved on to the next one. */
 extern volatile uint32_t kh_gpu2d_dispcnt_override[2];
+/* An engine drawn without its fades (master brightness, brighten/darken): the single screen's
+ * panels while the game is paused, which the game dims behind its pause menu. */
+extern volatile int kh_gpu2d_plain[2];
 
 /* Diagnosis, with kh_gpu2d_profiling set: since the last call, per engine, the CPU time (us)
  * of the BGs, the sprites and whole lines, and the sprite lines drawn as tiles, bitmaps and

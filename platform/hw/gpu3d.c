@@ -925,10 +925,21 @@ static int mix_vertices(const KhGxFrame *f)
     for (i = 0; i < p; i++) {
         const KhGxVertex *a = &s_prev_vtx[i], *b = &f->vtx[i];
         KhGxVertex *m = &s_mix_vtx[i];
-        if (a->w > 0 && b->w > 0) {
+        /* a vertex that cannot be halved: one side of the camera to the other (the halfway w
+         * near 0 projects it off to infinity) or a long jump (a particle reborn elsewhere with
+         * the same tag) stays where the new frame has it. Halved, a Heartless's death burst
+         * once drew a polygon over half the screen (0.1.6) */
+        int snap = !(a->w > 0 && b->w > 0);
+        if (!snap) {
             const float dx = a->x / a->w - b->x / b->w, dy = a->y / a->w - b->y / b->w;
-            if (dx * dx + dy * dy > 1.0f) /* half the screen in one game frame */
+            const float d2 = dx * dx + dy * dy;
+            if (d2 > 1.0f) /* half the screen in one game frame */
                 jumps++;
+            snap = d2 > 0.25f || a->w > 4.0f * b->w || b->w > 4.0f * a->w;
+        }
+        if (snap) {
+            *m = *b;
+            continue;
         }
         m->x = (a->x + b->x) * 0.5f;
         m->y = (a->y + b->y) * 0.5f;

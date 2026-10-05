@@ -567,7 +567,16 @@ static void run_capture(void)
 /* Experimental single screen (config single_screen, game.c decides when): the top screen alone
  * over the display, and the config's panels -- rectangles of the bottom screen -- over it. */
 static int s_single;
+static int s_tutorial; /* the bottom screen holds a tutorial page: shown whole, in the middle */
+/* the tutorial page: the whole bottom screen, two Vita pixels per DS pixel, centred */
+static const int s_tutorial_panel[KH_PANEL_FIELDS] = { 0, 0, 256, 192, KH_PANEL_TOP_CENTER, 0, 80,
+                                                       200, KH_STYLE_PLAIN, 12, 0 };
 static float s_panel_vis[KH_PANELS] = { 1, 1, 1, 1 }; /* 0 hidden .. 1 shown (autohide panels) */
+
+void video_set_tutorial(int on)
+{
+    s_tutorial = on != 0;
+}
 
 void video_set_panel_visibility(int i, float vis)
 {
@@ -703,8 +712,10 @@ int video_map_touch(int px, int py, int *x, int *y)
         /* a panel is the bottom screen under it: a touch there is a touch on the DS's */
         int i;
         for (i = 0; i < KH_PANELS; i++) {
-            const int *p = kh_config.panel[i];
-            const ScreenRect q = panel_rect_now(i);
+            const int *p = s_tutorial ? s_tutorial_panel : kh_config.panel[i];
+            const ScreenRect q = s_tutorial ? panel_rect(p) : panel_rect_now(i);
+            if (s_tutorial && i)
+                break;
             if (!p[KH_PANEL_SW] || !q.w || !q.h || px < q.x || px >= q.x + q.w || py < q.y ||
                 py >= q.y + q.h)
                 continue;
@@ -819,9 +830,11 @@ static void draw_panels(void)
     const float alpha = (float)kh_config.panel_opacity / 100.0f;
     int i;
     for (i = 0; i < KH_PANELS; i++) {
-        const int *p = kh_config.panel[i];
-        const ScreenRect q = panel_rect_now(i);
+        const int *p = s_tutorial ? s_tutorial_panel : kh_config.panel[i];
+        const ScreenRect q = s_tutorial ? panel_rect(p) : panel_rect_now(i);
         float x0, x1, y0, y1, u0, u1, v0, v1;
+        if (s_tutorial && i)
+            break; /* the tutorial page alone */
         if (!p[KH_PANEL_SW] || !p[KH_PANEL_SH] || q.w <= 0 || q.h <= 0)
             continue;
         x0 = q.x / (DISPLAY_W / 2.0f) - 1.0f, x1 = (q.x + q.w) / (DISPLAY_W / 2.0f) - 1.0f;

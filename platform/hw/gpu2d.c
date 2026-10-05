@@ -107,6 +107,7 @@ static int bank_is(int bank, int mst)
 }
 
 volatile uint32_t kh_gpu2d_dispcnt_override[2];
+volatile int kh_gpu2d_plain[2];
 
 static void engine_setup(Engine *e, int engine)
 {
@@ -730,7 +731,8 @@ static void compose_line(const Engine *e, int line, uint16_t *out, uint8_t *code
     uint8_t ctlbuf[W];
     const uint8_t *ctl;
     const uint16_t bldcnt = io16(e, 0x50), bldalpha = io16(e, 0x52);
-    const int effect = (bldcnt >> 6) & 3;
+    /* plain (kh_gpu2d_plain): no fade, the alpha blend kept */
+    const int effect = kh_gpu2d_plain[!e->is_a] && ((bldcnt >> 6) & 3) >= 2 ? 0 : (bldcnt >> 6) & 3;
     int eva = bldalpha & 31, evb = (bldalpha >> 8) & 31, evy = io16(e, 0x54) & 31;
     const uint16_t backdrop = e->bg_pal[0] & 0x7fff;
     int prio[4], shown[4], objs, bg, x, p;
@@ -951,7 +953,7 @@ static int render_lines(int engine, uint32_t *fb, int y0, int y1, int graphics)
         memset(fb, 0xff, (size_t)(y1 - y0) * W * sizeof(*fb));
         return 0;
     }
-    mmode = graphics ? 0 : master_mode(&e, &mf);
+    mmode = graphics || kh_gpu2d_plain[engine] ? 0 : master_mode(&e, &mf);
     if (mode == 2) { /* engine A shows a VRAM bank (A-D) as a 256x192 direct-colour bitmap */
         const uint8_t *bank = kh_vram_bank_home((e.dispcnt >> 18) & 3);
         for (line = y0; line < y1; line++, fb += W) {
