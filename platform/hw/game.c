@@ -275,6 +275,97 @@ void kh_dual3d_toggled(void)
     __atomic_add_fetch(&s_toggle_seq, 1, __ATOMIC_RELEASE);
 }
 
+/* The single screen's autohide panels (config panel autohide: the INFORMATION bar, the mission
+ * gauge): each one slides in for 7 s when what it shows changes to something new -- a picture
+ * seen in the last few seconds (a marker blinking) does not count -- and stays while Start (the
+ * pause menu; B closes it too) or Select has pinned it. */
+#define PANEL_SHOW_US 7000000u
+#define PANEL_SLIDE_US 300000.0f
+#define PANEL_RECENT 8
+
+static struct {
+    float vis;
+    uint64_t until;
+    uint32_t seen[PANEL_RECENT];
+    uint64_t seen_at[PANEL_RECENT];
+} s_panels[KH_PANELS];
+static int s_pin_start, s_pin_select;
+
+static uint32_t panel_hash(const uint32_t *fb, const int *p)
+{
+    uint32_t h = 2166136261u;
+    int x, y;
+    for (y = p[KH_PANEL_SY]; y < p[KH_PANEL_SY] + p[KH_PANEL_SH]; y++)
+        for (x = p[KH_PANEL_SX]; x < p[KH_PANEL_SX] + p[KH_PANEL_SW]; x++)
+            h = (h ^ (fb[y * 256 + x] & 0xffffffu)) * 16777619u;
+    return h;
+}
+
+static void update_panels(int single, int drawn, const uint32_t *bottom_fb)
+{
+    static int was_single;
+    static uint64_t last;
+    static uint16_t keys_prev = 0x3ff;
+    const uint64_t now = sceKernelGetProcessTimeWide();
+    const uint16_t keys = KH_IO16(0x04000130), pressed = (uint16_t)(keys_prev & ~keys);
+    const float step = last ? (float)(now - last) / PANEL_SLIDE_US : 0.0f;
+    int i, k;
+    keys_prev = keys;
+    last = now;
+    if (!single) {
+        was_single = 0;
+        s_pin_start = s_pin_select = 0;
+        return;
+    }
+    if (!was_single) {
+        /* a mission starts (or comes back): everything shown once */
+        was_single = 1;
+        for (i = 0; i < KH_PANELS; i++) {
+            memset(s_panels[i].seen, 0, sizeof(s_panels[i].seen));
+            s_panels[i].until = now + PANEL_SHOW_US;
+        }
+    }
+    /* KEYINPUT, active low: Start bit 3, Select bit 2, B bit 1 */
+    if (pressed & 8)
+        s_pin_start ^= 1;
+    else if ((pressed & 2) && s_pin_start)
+        s_pin_start = 0;
+    if (pressed & 4)
+        s_pin_select ^= 1;
+    for (i = 0; i < KH_PANELS; i++) {
+        const int *p = kh_config.panel[i];
+        float target;
+        if (!p[KH_PANEL_AUTOHIDE] || !p[KH_PANEL_SW] || !p[KH_PANEL_SH]) {
+            video_set_panel_visibility(i, 1.0f);
+            continue;
+        }
+        if (drawn) {
+            const uint32_t h = panel_hash(bottom_fb, p);
+            int known = 0, oldest = 0;
+            for (k = 0; k < PANEL_RECENT; k++) {
+                if (s_panels[i].seen[k] == h && now - s_panels[i].seen_at[k] < 4000000u) {
+                    known = 1;
+                    s_panels[i].seen_at[k] = now;
+                    break;
+                }
+                if (s_panels[i].seen_at[k] < s_panels[i].seen_at[oldest])
+                    oldest = k;
+            }
+            if (!known) {
+                s_panels[i].seen[oldest] = h;
+                s_panels[i].seen_at[oldest] = now;
+                s_panels[i].until = now + PANEL_SHOW_US;
+            }
+        }
+        target = (s_pin_start || s_pin_select || now < s_panels[i].until) ? 1.0f : 0.0f;
+        if (s_panels[i].vis < target)
+            s_panels[i].vis = s_panels[i].vis + step > target ? target : s_panels[i].vis + step;
+        else if (s_panels[i].vis > target)
+            s_panels[i].vis = s_panels[i].vis - step < target ? target : s_panels[i].vis - step;
+        video_set_panel_visibility(i, s_panels[i].vis);
+    }
+}
+
 static void present(void)
 {
     /* POWCNT1 bit 15: engine A on the top screen */
@@ -547,6 +638,7 @@ static void present(void)
         s_dump_2d = 0;
         dump_2d(a_on_top);
     }
+    update_panels(video_single_screen(), upload2d, s_bottom);
     s_stage = "present";
     {
         uint64_t t = sceKernelGetProcessTimeWide();

@@ -45,7 +45,9 @@ static int s_inset = -1; /* the screen drawn small over the other one, -1 for no
 static volatile int s_pending = -1; /* a layout asked for from another thread (input) */
 static GLuint s_compose, s_compose_vbo;
 static GLint u_c2d, u_c3d, u_bright, u_hofs, u_blend, u_backdrop, u_prev, u_cap, u_flip, u_fx,
-    u_filt;
+    u_filt, u_panel, u_panel_rect;
+/* the panel being drawn (draw_panels): style, radius, width, height; its texture rectangle */
+static float s_panel[4], s_panel_rect[4];
 static float s_hud_scale = 1.0f; /* < 1: the 2D kept 4:3 over a widescreen 3D (config hud) */
 
 /* The display capture on the GPU (platform/hw/capture.c): two targets used in turn, the newest
@@ -105,7 +107,8 @@ static const char s_compose_fs[] =
     "float4 main(float2 vUv : TEXCOORD0, uniform sampler2D u2d, uniform sampler2D u3d,\n"
     "            uniform float2 uBright, uniform float uHofs, uniform float2 uBlend,\n"
     "            uniform float3 uBackdrop, uniform sampler2D uPrev, uniform float4 uCap,\n"
-    "            uniform float uFlip, uniform float4 uFx, uniform float2 uFilt) : COLOR\n"
+    "            uniform float uFlip, uniform float4 uFx, uniform float2 uFilt,\n"
+    "            uniform float4 uPanel, uniform float4 uPanelRect) : COLOR\n"
     "{\n"
     "    float2 uv2 = vUv;\n"
     "    if (uFlip > 0.5)\n"
@@ -163,7 +166,23 @@ static const char s_compose_fs[] =
     "            c = c * 0.7;\n"
     "        }\n"
     "    }\n"
-    "    return float4(c, uFx.z);\n"
+    /* a single-screen panel (uPanel: style, corner radius, size in Vita pixels; uPanelRect its
+     * texture rectangle): its colours, then its rounded corners */
+    "    float a = uFx.z;\n"
+    "    if (uPanel.x > 1.5) {\n"
+    "        if (max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)) < 0.1)\n"
+    "            c = 1.0 - c;\n"
+    "    } else if (uPanel.x > 0.5) {\n"
+    "        if (min(c.r, min(c.g, c.b)) > 0.85)\n"
+    "            c = float3(0.0, 0.0, 0.0);\n"
+    "    }\n"
+    "    if (uPanel.y > 0.5) {\n"
+    "        float2 lp = (vUv - uPanelRect.xy) / (uPanelRect.zw - uPanelRect.xy) * uPanel.zw;\n"
+    "        float2 q = abs(lp - uPanel.zw * 0.5) - (uPanel.zw * 0.5 - uPanel.y);\n"
+    "        float d = length(max(q, float2(0.0, 0.0))) - uPanel.y;\n"
+    "        a = a * saturate(0.5 - d);\n"
+    "    }\n"
+    "    return float4(c, a);\n"
     "}\n";
 
 /* Compiled shaders are kept in ux0:data/khdays/shaders, named by a hash of their source: the
@@ -325,6 +344,8 @@ static void compose_init(void)
     u_flip = glGetUniformLocation(s_compose, "uFlip");
     u_fx = glGetUniformLocation(s_compose, "uFx");
     u_filt = glGetUniformLocation(s_compose, "uFilt");
+    u_panel = glGetUniformLocation(s_compose, "uPanel");
+    u_panel_rect = glGetUniformLocation(s_compose, "uPanelRect");
     glGenBuffers(1, &s_compose_vbo);
 }
 
@@ -377,7 +398,9 @@ static void compose_pass(const float *v, GLuint tex2d, int flip2d, GLuint tex3d,
     /* Vita pixels per DS pixel, from the quad's height */
     glUniform2f(u_filt, filter == FILTER_2D ? (float)kh_config.filter_2d : 0.0f,
                 fabsf(v[1] - v[9]) * (DISPLAY_H / 2.0f) / 192.0f);
-    if (alpha < 0.999f) {
+    glUniform4f(u_panel, s_panel[0], s_panel[1], s_panel[2], s_panel[3]);
+    glUniform4f(u_panel_rect, s_panel_rect[0], s_panel_rect[1], s_panel_rect[2], s_panel_rect[3]);
+    if (alpha < 0.999f || s_panel[1] > 0.5f) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     }
@@ -544,6 +567,33 @@ static void run_capture(void)
 /* Experimental single screen (config single_screen, game.c decides when): the top screen alone
  * over the display, and the config's panels -- rectangles of the bottom screen -- over it. */
 static int s_single;
+static float s_panel_vis[KH_PANELS] = { 1, 1, 1, 1 }; /* 0 hidden .. 1 shown (autohide panels) */
+
+void video_set_panel_visibility(int i, float vis)
+{
+    if (i >= 0 && i < KH_PANELS)
+        s_panel_vis[i] = vis < 0 ? 0 : vis > 1 ? 1 : vis;
+}
+
+static ScreenRect panel_rect(const int *p);
+
+/* where panel i is now: an autohide one slides in from the edge it is anchored to */
+static ScreenRect panel_rect_now(int i)
+{
+    const int *p = kh_config.panel[i];
+    ScreenRect r = panel_rect(p);
+    if (p[KH_PANEL_AUTOHIDE]) {
+        const float t = s_panel_vis[i], e = t * t * (3.0f - 2.0f * t); /* eased */
+        const int bottom = p[KH_PANEL_ANCHOR] == KH_PANEL_BOTTOM_LEFT ||
+                           p[KH_PANEL_ANCHOR] == KH_PANEL_BOTTOM_RIGHT ||
+                           p[KH_PANEL_ANCHOR] == KH_PANEL_BOTTOM_CENTER;
+        const int away = bottom ? DISPLAY_H - r.y : r.y + r.h;
+        r.y += (int)((1.0f - e) * (float)away) * (bottom ? 1 : -1);
+        if (t <= 0.0f)
+            r.w = r.h = 0;
+    }
+    return r;
+}
 
 static ScreenRect panel_rect(const int *p)
 {
@@ -654,7 +704,7 @@ int video_map_touch(int px, int py, int *x, int *y)
         int i;
         for (i = 0; i < KH_PANELS; i++) {
             const int *p = kh_config.panel[i];
-            const ScreenRect q = panel_rect(p);
+            const ScreenRect q = panel_rect_now(i);
             if (!p[KH_PANEL_SW] || !q.w || !q.h || px < q.x || px >= q.x + q.w || py < q.y ||
                 py >= q.y + q.h)
                 continue;
@@ -770,7 +820,7 @@ static void draw_panels(void)
     int i;
     for (i = 0; i < KH_PANELS; i++) {
         const int *p = kh_config.panel[i];
-        const ScreenRect q = panel_rect(p);
+        const ScreenRect q = panel_rect_now(i);
         float x0, x1, y0, y1, u0, u1, v0, v1;
         if (!p[KH_PANEL_SW] || !p[KH_PANEL_SH] || q.w <= 0 || q.h <= 0)
             continue;
@@ -780,7 +830,12 @@ static void draw_panels(void)
         v0 = (float)p[KH_PANEL_SY] / DS_SCREEN_H, v1 = (float)(p[KH_PANEL_SY] + p[KH_PANEL_SH]) / DS_SCREEN_H;
         {
             const float v[16] = { x0, y0, u0, v0, x1, y0, u1, v0, x0, y1, u0, v1, x1, y1, u1, v1 };
+            s_panel[0] = (float)p[KH_PANEL_STYLE];
+            s_panel[1] = (float)p[KH_PANEL_RADIUS];
+            s_panel[2] = (float)q.w, s_panel[3] = (float)q.h;
+            s_panel_rect[0] = u0, s_panel_rect[1] = v0, s_panel_rect[2] = u1, s_panel_rect[3] = v1;
             compose_pass(v, s_tex_cur(1), 0, 0, 0, 0, 1.0f, alpha, FILTER_2D);
+            memset(s_panel, 0, sizeof(s_panel));
         }
     }
 }

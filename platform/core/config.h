@@ -15,7 +15,11 @@ enum { KH_BTN_A, KH_BTN_B, KH_BTN_X, KH_BTN_Y, KH_BTN_L, KH_BTN_R, KH_BTN_START,
 enum { KH_PANEL_TOP_LEFT, KH_PANEL_TOP_RIGHT, KH_PANEL_BOTTOM_LEFT, KH_PANEL_BOTTOM_RIGHT,
        KH_PANEL_TOP_CENTER, KH_PANEL_BOTTOM_CENTER };
 enum { KH_PANEL_SX, KH_PANEL_SY, KH_PANEL_SW, KH_PANEL_SH, KH_PANEL_ANCHOR, KH_PANEL_DX,
-       KH_PANEL_DY, KH_PANEL_SCALE };
+       KH_PANEL_DY, KH_PANEL_SCALE, KH_PANEL_STYLE, KH_PANEL_RADIUS, KH_PANEL_AUTOHIDE,
+       KH_PANEL_FIELDS };
+/* a panel's colours: as on the DS, white turned black (the target's frame), or the greys
+ * inverted (the map: black ground, white walls) */
+enum { KH_STYLE_PLAIN, KH_STYLE_WHITE_TO_BLACK, KH_STYLE_INVERT_GREYS };
 
 /* how the large screen fills the 16:9 display */
 enum { KH_ASPECT_WIDE, KH_ASPECT_STRETCH, KH_ASPECT_4_3 };
@@ -48,9 +52,11 @@ typedef struct {
                          * with parts of the bottom screen as panels over it: 0 off, 1 on */
     int panel_opacity;  /* those panels' opacity, 50-100 % */
     /* the panels: the DS bottom screen's rectangle (sx, sy, sw, sh), where it goes on the Vita
-     * (anchor KH_PANEL_*, dx/dy in Vita pixels from that corner or edge) and its size (scale, %
-     * of the DS pixel; 100 = one Vita pixel per DS pixel). sw 0: unused. */
-    int panel[KH_PANELS][8];
+     * (anchor KH_PANEL_*, dx/dy in Vita pixels from that corner or edge), its size (scale, %
+     * of the DS pixel; 100 = one Vita pixel per DS pixel), its colours (style KH_STYLE_*), the
+     * radius of its corners in Vita pixels, and whether it only shows for a while when its
+     * contents change (autohide 1; Start and Select pin it). sw 0: unused. */
+    int panel[KH_PANELS][KH_PANEL_FIELDS];
     int debug;          /* debug hotkeys and the detailed log: 0 off (default), 1 on */
     uint32_t button[KH_BTN_COUNT]; /* the Vita button (SCE_CTRL_*) for each DS button */
 } KhConfig;

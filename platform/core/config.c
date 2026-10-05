@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define CONFIG_VERSION 12
+#define CONFIG_VERSION 13
 
 static const KhConfig s_defaults = {
     .render_scale = 3, .layout = 0, .inset_width = 224, .aspect = KH_ASPECT_WIDE,
@@ -21,11 +21,13 @@ static const KhConfig s_defaults = {
      * the DS's bottom screen in a mission: the INFORMATION bar top-left, the map in the
      * top-right corner with the target beside it (below the top screen's enemy name and HP),
      * the objective and mission gauge along the bottom between the commands and the HP */
-    .panel = { { 4, 6, 180, 24, KH_PANEL_TOP_LEFT, 0, 0, 190 },
-               { 102, 54, 120, 86, KH_PANEL_TOP_RIGHT, 6, 60, 130 },
-               { 33, 53, 64, 87, KH_PANEL_TOP_RIGHT, 166, 60, 130 },
-               /* 115 %: between the commands and the HP gauge of the stretched HUD */
-               { 7, 149, 241, 43, KH_PANEL_BOTTOM_CENTER, 0, 0, 115 } },
+    .panel = { /* top centre, clear of the chain counter; shown when its message changes */
+               { 4, 6, 180, 24, KH_PANEL_TOP_CENTER, 0, 4, 170, KH_STYLE_PLAIN, 10, 1 },
+               { 102, 54, 120, 86, KH_PANEL_TOP_RIGHT, 6, 60, 130, KH_STYLE_INVERT_GREYS, 6, 0 },
+               { 33, 53, 64, 87, KH_PANEL_TOP_RIGHT, 166, 60, 130, KH_STYLE_WHITE_TO_BLACK, 6, 0 },
+               /* between the commands and the HP gauge of the stretched HUD; shown when the
+                * gauge moves */
+               { 7, 149, 241, 43, KH_PANEL_BOTTOM_CENTER, 0, 0, 120, KH_STYLE_PLAIN, 10, 1 } },
     .debug = 0,
     /* positional, as on the DS: the right face button is A, the bottom one B */
     .button = { SCE_CTRL_CIRCLE, SCE_CTRL_CROSS, SCE_CTRL_TRIANGLE, SCE_CTRL_SQUARE,
@@ -137,11 +139,13 @@ void config_save(void)
     fprintf(f, "# Panels: sx sy sw sh (the rectangle on the DS bottom screen, 256x192), anchor\n"
                "# (0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right, 4 top-centre,\n"
                "# 5 bottom-centre), dx dy (Vita pixels from that corner), scale (%% of a DS\n"
-               "# pixel; 100 = one Vita pixel). sw 0 turns a panel off.\n");
+               "# pixel; 100 = one Vita pixel), style (0 as is, 1 white to black, 2 greys\n"
+               "# inverted), corner radius (Vita pixels), autohide (1: shown for 7 s when it\n"
+               "# changes; Start or Select pins it). sw 0 turns a panel off.\n");
     for (b = 0; b < KH_PANELS; b++) {
         const int *p = kh_config.panel[b];
-        fprintf(f, "panel_%d = %d %d %d %d %d %d %d %d\n", b + 1, p[0], p[1], p[2], p[3], p[4],
-                p[5], p[6], p[7]);
+        fprintf(f, "panel_%d = %d %d %d %d %d %d %d %d %d %d %d\n", b + 1, p[0], p[1], p[2], p[3],
+                p[4], p[5], p[6], p[7], p[8], p[9], p[10]);
     }
     fprintf(f, "\n");
     fprintf(f, "# Controls: the Vita button for each DS button. Names: cross circle square\n"
@@ -225,9 +229,9 @@ static void set(const char *k, const char *v, int version)
     else if (!strcmp(k, "panel_opacity"))
         kh_config.panel_opacity = clampi(atoi(v), 50, 100);
     else if (!strncmp(k, "panel_", 6) && k[6] >= '1' && k[6] < '1' + KH_PANELS && !k[7]) {
-        int p[8], n = sscanf(v, "%d %d %d %d %d %d %d %d", &p[0], &p[1], &p[2], &p[3], &p[4],
-                             &p[5], &p[6], &p[7]);
-        if (n == 8) {
+        int p[11] = { 0 }, n = sscanf(v, "%d %d %d %d %d %d %d %d %d %d %d", &p[0], &p[1], &p[2],
+                                      &p[3], &p[4], &p[5], &p[6], &p[7], &p[8], &p[9], &p[10]);
+        if (n == 8 || n == 11) {
             int *d = kh_config.panel[k[6] - '1'];
             d[KH_PANEL_SX] = clampi(p[0], 0, 255);
             d[KH_PANEL_SY] = clampi(p[1], 0, 191);
@@ -237,6 +241,9 @@ static void set(const char *k, const char *v, int version)
             d[KH_PANEL_DX] = clampi(p[5], -960, 960);
             d[KH_PANEL_DY] = clampi(p[6], -544, 544);
             d[KH_PANEL_SCALE] = clampi(p[7], 25, 400);
+            d[KH_PANEL_STYLE] = clampi(p[8], 0, 2);
+            d[KH_PANEL_RADIUS] = clampi(p[9], 0, 40);
+            d[KH_PANEL_AUTOHIDE] = p[10] != 0;
         }
     }
     else if (!strncmp(k, "button_", 7))
@@ -282,7 +289,7 @@ void config_load(void)
             if (version < 2 && kh_config.render_scale == 2)
                 kh_config.render_scale = 3;
             /* the single-screen panels measured on the game (0.1.2 shipped estimates) */
-            if (version < 12)
+            if (version < 13)
                 memcpy(kh_config.panel, s_defaults.panel, sizeof(kh_config.panel));
             /* the smooth texture filter became the default with the port menu's tabs */
             if (version < 8)
