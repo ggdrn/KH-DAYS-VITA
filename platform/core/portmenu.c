@@ -30,7 +30,7 @@ static char s_note[64]; /* feedback after an action ("Defaults restored.") */
 
 enum {
     IT_PRESET, IT_SCALE, IT_FPS, IT_TEXFILTER, IT_FILTER2D, IT_EFFECT, IT_SHOWFPS,
-    IT_ASPECT, IT_HUD, IT_LAYOUT, IT_INSET, IT_CORNER, IT_OPACITY,
+    IT_ASPECT, IT_HUD, IT_LAYOUT, IT_INSET, IT_CORNER, IT_OPACITY, IT_SINGLE, IT_PANELOP,
     IT_CAMERA, IT_CAMSPEED, IT_INVX, IT_INVY, IT_DEADZONE, IT_DPAD, IT_RMODE, IT_REAR,
     IT_BUTTON, /* + the DS button index */
     IT_VOLUME, IT_FFWD, IT_DEFAULTS, IT_CLOSE,
@@ -58,6 +58,8 @@ static const Item s_screen[] = {
     { IT_INSET, 0, "Small screen size", "Width of the small screen, in Vita pixels." },
     { IT_CORNER, 0, "Small screen corner", NULL },
     { IT_OPACITY, 0, "Small screen opacity", "See the game through the small screen." },
+    { IT_SINGLE, 0, "Single screen (beta)", "Missions on one screen: map and gauge as panels." },
+    { IT_PANELOP, 0, "Panel opacity", "Single screen: see the game through the panels." },
 };
 static const Item s_controls[] = {
     { IT_CAMERA, 0, "Right stick camera", "The right stick turns the field camera." },
@@ -170,6 +172,8 @@ static void value(const Item *it, char *out, size_t n)
     case IT_INSET: snprintf(out, n, "%d", kh_config.inset_width); break;
     case IT_CORNER: snprintf(out, n, "%s", corners[kh_config.inset_corner & 3]); break;
     case IT_OPACITY: snprintf(out, n, "%d%%", kh_config.inset_opacity); break;
+    case IT_SINGLE: snprintf(out, n, "%s", kh_config.single_screen ? "On" : "Off"); break;
+    case IT_PANELOP: snprintf(out, n, "%d%%", kh_config.panel_opacity); break;
     case IT_CAMERA: snprintf(out, n, "%s", kh_config.camera_stick ? "On" : "Off"); break;
     case IT_CAMSPEED: snprintf(out, n, "%s", speeds[kh_config.camera_speed & 3]); break;
     case IT_INVX: snprintf(out, n, "%s", kh_config.camera_invert_x ? "Yes" : "No"); break;
@@ -236,6 +240,10 @@ static void change(const Item *it, int d)
         break;
     case IT_OPACITY:
         kh_config.inset_opacity = wrap(kh_config.inset_opacity, 50, 100, d * 25);
+        break;
+    case IT_SINGLE: kh_config.single_screen ^= 1; break;
+    case IT_PANELOP:
+        kh_config.panel_opacity = wrap(kh_config.panel_opacity, 50, 100, d * 10);
         break;
     case IT_CAMERA: kh_config.camera_stick ^= 1; break;
     case IT_CAMSPEED: kh_config.camera_speed = wrap(kh_config.camera_speed, 1, 3, d); break;

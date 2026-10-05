@@ -315,6 +315,10 @@ static void present(void)
      * (and B's) with every screen it draws for */
     kh_gpu2d_dispcnt_override[KH_ENGINE_A] = dual ? s_toggle_regs.dispcnt_a : 0;
     kh_gpu2d_dispcnt_override[KH_ENGINE_B] = dual ? s_toggle_regs.dispcnt_b : 0;
+    /* experimental single screen (config single_screen): in the field (ov022, its action code,
+     * loaded; the same test as the widescreen 3D) with engine A on the top screen, the top
+     * screen alone and the bottom one's map, target and mission gauge as panels over it */
+    video_set_single_screen(kh_config.single_screen && !dual && a_on_top && kh_overlay_loaded(22));
     /* with the detailed log, once a second: this frame's GPU time measured alone */
     video_gpu_probe_begin();
     uint64_t t0 = sceKernelGetProcessTimeWide();

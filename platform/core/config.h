@@ -10,6 +10,13 @@
 enum { KH_BTN_A, KH_BTN_B, KH_BTN_X, KH_BTN_Y, KH_BTN_L, KH_BTN_R, KH_BTN_START, KH_BTN_SELECT,
        KH_BTN_COUNT };
 
+/* the single-screen panels (config panel): where each one is anchored on the Vita's display */
+#define KH_PANELS 4
+enum { KH_PANEL_TOP_LEFT, KH_PANEL_TOP_RIGHT, KH_PANEL_BOTTOM_LEFT, KH_PANEL_BOTTOM_RIGHT,
+       KH_PANEL_TOP_CENTER, KH_PANEL_BOTTOM_CENTER };
+enum { KH_PANEL_SX, KH_PANEL_SY, KH_PANEL_SW, KH_PANEL_SH, KH_PANEL_ANCHOR, KH_PANEL_DX,
+       KH_PANEL_DY, KH_PANEL_SCALE };
+
 /* how the large screen fills the 16:9 display */
 enum { KH_ASPECT_WIDE, KH_ASPECT_STRETCH, KH_ASPECT_4_3 };
 
@@ -37,6 +44,13 @@ typedef struct {
     int stick_deadzone; /* 1 small, 2 normal, 3 large */
     int r_toggle;       /* the DS's R: 0 held as on the DS, 1 a press latches it until the next */
     int fast_forward;   /* the speed L+R+Square switches to: 2 or 3 times */
+    int single_screen;  /* experimental: in missions, the top screen alone over the whole display,
+                         * with parts of the bottom screen as panels over it: 0 off, 1 on */
+    int panel_opacity;  /* those panels' opacity, 50-100 % */
+    /* the panels: the DS bottom screen's rectangle (sx, sy, sw, sh), where it goes on the Vita
+     * (anchor KH_PANEL_*, dx/dy in Vita pixels from that corner or edge) and its size (scale, %
+     * of the DS pixel; 100 = one Vita pixel per DS pixel). sw 0: unused. */
+    int panel[KH_PANELS][8];
     int debug;          /* debug hotkeys and the detailed log: 0 off (default), 1 on */
     uint32_t button[KH_BTN_COUNT]; /* the Vita button (SCE_CTRL_*) for each DS button */
 } KhConfig;

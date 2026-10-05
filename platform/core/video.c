@@ -541,6 +541,25 @@ static void run_capture(void)
 }
 
 /* The small screen: 4:3, inset_width wide, in the corner config inset_corner names. */
+/* Experimental single screen (config single_screen, game.c decides when): the top screen alone
+ * over the display, and the config's panels -- rectangles of the bottom screen -- over it. */
+static int s_single;
+
+static ScreenRect panel_rect(const int *p)
+{
+    const int w = p[KH_PANEL_SW] * p[KH_PANEL_SCALE] / 100;
+    const int h = p[KH_PANEL_SH] * p[KH_PANEL_SCALE] / 100;
+    const int dx = p[KH_PANEL_DX], dy = p[KH_PANEL_DY];
+    switch (p[KH_PANEL_ANCHOR]) {
+    case KH_PANEL_TOP_RIGHT: return (ScreenRect){ DISPLAY_W - w - dx, dy, w, h };
+    case KH_PANEL_BOTTOM_LEFT: return (ScreenRect){ dx, DISPLAY_H - h - dy, w, h };
+    case KH_PANEL_BOTTOM_RIGHT: return (ScreenRect){ DISPLAY_W - w - dx, DISPLAY_H - h - dy, w, h };
+    case KH_PANEL_TOP_CENTER: return (ScreenRect){ (DISPLAY_W - w) / 2 + dx, dy, w, h };
+    case KH_PANEL_BOTTOM_CENTER: return (ScreenRect){ (DISPLAY_W - w) / 2 + dx, DISPLAY_H - h - dy, w, h };
+    default: return (ScreenRect){ dx, dy, w, h };
+    }
+}
+
 static ScreenRect inset_rect(void)
 {
     const int w = kh_config.inset_width, h = w * 3 / 4, margin = 4;
@@ -573,6 +592,28 @@ static void compute_layout(void)
         s_inset = -1;
         break;
     }
+    if (s_single) {
+        /* the top screen as in the top-main layout; the bottom one only through its panels */
+        s_rect[0] = kh_config.aspect == KH_ASPECT_4_3
+                        ? (ScreenRect){ (DISPLAY_W - 725) / 2, 0, 725, 544 }
+                        : (ScreenRect){ 0, 0, DISPLAY_W, DISPLAY_H };
+        s_rect[1] = (ScreenRect){ 0, 0, DISPLAY_W, DISPLAY_H };
+        s_inset = -1;
+    }
+}
+
+void video_set_single_screen(int on)
+{
+    on = on != 0;
+    if (on == s_single)
+        return;
+    s_single = on;
+    compute_layout();
+}
+
+int video_single_screen(void)
+{
+    return s_single;
 }
 
 void video_relayout(void)
@@ -608,6 +649,21 @@ int video_on_inset(int px, int py)
 int video_map_touch(int px, int py, int *x, int *y)
 {
     const ScreenRect *r = &s_rect[1];
+    if (s_single) {
+        /* a panel is the bottom screen under it: a touch there is a touch on the DS's */
+        int i;
+        for (i = 0; i < KH_PANELS; i++) {
+            const int *p = kh_config.panel[i];
+            const ScreenRect q = panel_rect(p);
+            if (!p[KH_PANEL_SW] || !q.w || !q.h || px < q.x || px >= q.x + q.w || py < q.y ||
+                py >= q.y + q.h)
+                continue;
+            *x = p[KH_PANEL_SX] + (px - q.x) * p[KH_PANEL_SW] / q.w;
+            *y = p[KH_PANEL_SY] + (py - q.y) * p[KH_PANEL_SH] / q.h;
+            return 1;
+        }
+        return 0;
+    }
     if (s_inset >= 0 && video_on_inset(px, py))
         return 0; /* the small screen is a button (it swaps the screens), not the DS's */
     if (px < r->x || px >= r->x + r->w || py < r->y || py >= r->y + r->h)
@@ -707,6 +763,28 @@ static void draw_quad(const ScreenRect *r)
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
+/* the single-screen panels: each its rectangle of the bottom screen, over the top one */
+static void draw_panels(void)
+{
+    const float alpha = (float)kh_config.panel_opacity / 100.0f;
+    int i;
+    for (i = 0; i < KH_PANELS; i++) {
+        const int *p = kh_config.panel[i];
+        const ScreenRect q = panel_rect(p);
+        float x0, x1, y0, y1, u0, u1, v0, v1;
+        if (!p[KH_PANEL_SW] || !p[KH_PANEL_SH] || q.w <= 0 || q.h <= 0)
+            continue;
+        x0 = q.x / (DISPLAY_W / 2.0f) - 1.0f, x1 = (q.x + q.w) / (DISPLAY_W / 2.0f) - 1.0f;
+        y0 = 1.0f - q.y / (DISPLAY_H / 2.0f), y1 = 1.0f - (q.y + q.h) / (DISPLAY_H / 2.0f);
+        u0 = (float)p[KH_PANEL_SX] / DS_SCREEN_W, u1 = (float)(p[KH_PANEL_SX] + p[KH_PANEL_SW]) / DS_SCREEN_W;
+        v0 = (float)p[KH_PANEL_SY] / DS_SCREEN_H, v1 = (float)(p[KH_PANEL_SY] + p[KH_PANEL_SH]) / DS_SCREEN_H;
+        {
+            const float v[16] = { x0, y0, u0, v0, x1, y0, u1, v0, x0, y1, u0, v1, x1, y1, u1, v1 };
+            compose_pass(v, s_tex_cur(1), 0, 0, 0, 0, 1.0f, alpha, FILTER_2D);
+        }
+    }
+}
+
 void video_present(const uint32_t *top, const uint32_t *bottom)
 {
     const uint32_t *src[2] = { top, bottom };
@@ -736,6 +814,11 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
             s_upload_us += (uint32_t)(sceKernelGetProcessTimeWide() - t);
         }
         glBindTexture(GL_TEXTURE_2D, s_tex_cur(i));
+        if (i == 1 && s_single) {
+            if (s_compose)
+                draw_panels();
+            continue;
+        }
         if (s_show_bank[i] >= 0 && s_compose) {
             /* the screen shows a VRAM bank a capture went to (engine A's VRAM display, or
              * engine B's bitmap BG or sprites in the dual-3D scenes) */

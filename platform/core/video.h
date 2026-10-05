@@ -27,6 +27,10 @@ ScreenLayout video_layout(void);
 ScreenRect video_bottom_rect(void);
 /* Whether display pixel (960x544) lies on the small screen (touching it swaps the screens). */
 int video_on_inset(int px, int py);
+/* Experimental single screen (config single_screen): on, the top screen alone over the display
+ * and the config's panels (parts of the bottom screen) over it; game.c turns it on in missions. */
+void video_set_single_screen(int on);
+int video_single_screen(void);
 /* Display pixel (960x544) -> DS touch-screen pixel; 0 when it is not on the touch screen. */
 int video_map_touch(int px, int py, int *x, int *y);
 /* The width/height of the display rectangle a screen (0 top, 1 bottom) is drawn into. */

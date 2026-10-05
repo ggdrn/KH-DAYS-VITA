@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define CONFIG_VERSION 10
+#define CONFIG_VERSION 11
 
 static const KhConfig s_defaults = {
     .render_scale = 3, .layout = 0, .inset_width = 224, .aspect = KH_ASPECT_WIDE,
@@ -16,6 +16,13 @@ static const KhConfig s_defaults = {
     .inset_corner = 0, .inset_opacity = 100, .rear_touch = 0, .stick_deadzone = 2, .r_toggle = 0,
     .fast_forward = 2, .camera_stick = 1, .camera_speed = 2,
     .camera_invert_x = 0, .camera_invert_y = 0, .dpad_deck = 1, .show_fps = 0, .volume = 100,
+    .single_screen = 0, .panel_opacity = 90,
+    /* the mission screen's bottom-screen parts (sx sy sw sh anchor dx dy scale): the objective
+     * and mission gauge along the bottom, the map and the target in the top-right corner */
+    .panel = { { 0, 0, 256, 40, KH_PANEL_BOTTOM_CENTER, 0, 6, 160 },
+               { 64, 48, 128, 112, KH_PANEL_TOP_RIGHT, 8, 8, 110 },
+               { 8, 136, 56, 56, KH_PANEL_TOP_RIGHT, 157, 8, 110 },
+               { 0, 0, 0, 0, 0, 0, 0, 100 } },
     .debug = 0,
     /* positional, as on the DS: the right face button is A, the bottom one B */
     .button = { SCE_CTRL_CIRCLE, SCE_CTRL_CROSS, SCE_CTRL_TRIANGLE, SCE_CTRL_SQUARE,
@@ -119,6 +126,21 @@ void config_save(void)
                "r_toggle = %d\n\n", kh_config.r_toggle);
     fprintf(f, "# Fast-forward speed, switched on and off with L+R+Square: 2 or 3.\n"
                "fast_forward = %d\n\n", kh_config.fast_forward);
+    fprintf(f, "# Experimental single screen: in missions, the top screen alone over the whole\n"
+               "# display, parts of the bottom screen as panels over it (touch a panel to touch\n"
+               "# the DS screen there). single_screen 0 off, 1 on; panel_opacity 50 to 100.\n"
+               "single_screen = %d\npanel_opacity = %d\n", kh_config.single_screen,
+            kh_config.panel_opacity);
+    fprintf(f, "# Panels: sx sy sw sh (the rectangle on the DS bottom screen, 256x192), anchor\n"
+               "# (0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right, 4 top-centre,\n"
+               "# 5 bottom-centre), dx dy (Vita pixels from that corner), scale (%% of a DS\n"
+               "# pixel; 100 = one Vita pixel). sw 0 turns a panel off.\n");
+    for (b = 0; b < KH_PANELS; b++) {
+        const int *p = kh_config.panel[b];
+        fprintf(f, "panel_%d = %d %d %d %d %d %d %d %d\n", b + 1, p[0], p[1], p[2], p[3], p[4],
+                p[5], p[6], p[7]);
+    }
+    fprintf(f, "\n");
     fprintf(f, "# Controls: the Vita button for each DS button. Names: cross circle square\n"
                "# triangle l r start select. The default is positional, as on the DS.\n");
     for (b = 0; b < KH_BTN_COUNT; b++)
@@ -195,6 +217,25 @@ static void set(const char *k, const char *v, int version)
         kh_config.fast_forward = clampi(atoi(v), 2, 3);
     else if (!strcmp(k, "debug"))
         kh_config.debug = atoi(v) != 0;
+    else if (!strcmp(k, "single_screen"))
+        kh_config.single_screen = atoi(v) != 0;
+    else if (!strcmp(k, "panel_opacity"))
+        kh_config.panel_opacity = clampi(atoi(v), 50, 100);
+    else if (!strncmp(k, "panel_", 6) && k[6] >= '1' && k[6] < '1' + KH_PANELS && !k[7]) {
+        int p[8], n = sscanf(v, "%d %d %d %d %d %d %d %d", &p[0], &p[1], &p[2], &p[3], &p[4],
+                             &p[5], &p[6], &p[7]);
+        if (n == 8) {
+            int *d = kh_config.panel[k[6] - '1'];
+            d[KH_PANEL_SX] = clampi(p[0], 0, 255);
+            d[KH_PANEL_SY] = clampi(p[1], 0, 191);
+            d[KH_PANEL_SW] = clampi(p[2], 0, 256 - d[KH_PANEL_SX]);
+            d[KH_PANEL_SH] = clampi(p[3], 0, 192 - d[KH_PANEL_SY]);
+            d[KH_PANEL_ANCHOR] = clampi(p[4], 0, 5);
+            d[KH_PANEL_DX] = clampi(p[5], -960, 960);
+            d[KH_PANEL_DY] = clampi(p[6], -544, 544);
+            d[KH_PANEL_SCALE] = clampi(p[7], 25, 400);
+        }
+    }
     else if (!strncmp(k, "button_", 7))
         for (b = 0; b < KH_BTN_COUNT; b++)
             if (!strcmp(k, s_ds_buttons[b]))
