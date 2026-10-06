@@ -59,7 +59,7 @@ static const Item s_screen[] = {
     { IT_INSET, 0, "Small screen size", "Width of the small screen, in Vita pixels." },
     { IT_CORNER, 0, "Small screen corner", NULL },
     { IT_OPACITY, 0, "Small screen opacity", "See the game through the small screen." },
-    { IT_HUDSIZE, 0, "HUD size", "Field HUD: commands, HP, chain, each in its corner." },
+    { IT_HUDSIZE, 0, "HUD size", "Commands, HP, chain (and map, target) in the field." },
     { IT_SINGLE, 0, "Single screen (beta)", "Missions on one screen: map and gauge as panels." },
     { IT_PANELOP, 0, "Panel opacity", "Single screen: see the game through the panels." },
 };

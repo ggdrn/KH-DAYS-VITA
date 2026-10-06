@@ -44,13 +44,22 @@ static ScreenRect s_rect[2];
 static int s_inset = -1; /* the screen drawn small over the other one, -1 for none */
 static volatile int s_pending = -1; /* a layout asked for from another thread (input) */
 static GLuint s_compose, s_compose_vbo;
-static GLint u_c2d, u_c3d, u_bright, u_hofs, u_blend, u_backdrop, u_prev, u_cap, u_flip, u_fx,
-    u_filt, u_panel, u_panel_rect, u_hud_on, u_hud[4];
-/* config hud_size: the HUD's four blocks on the DS top screen (x0, y0, x1, y1), each drawn
- * smaller in its own corner: hearts and chain, the target's name and HP, the commands, the HP
- * gauge with the portraits */
+/* The composition shader in four builds, each with only what its passes use: the screens
+ * (covering the whole display every frame), the screens with the HUD blocks masked, the panels
+ * and HUD blocks, the display captures. One build with everything cost the GPU frames (0.1.8). */
+enum { PROG_SCREEN, PROG_HUDMASK, PROG_PANEL, PROG_CAP, PROGS };
+typedef struct {
+    GLuint id;
+    GLint c2d, c3d, bright, hofs, blend, backdrop, prev, cap, flip, fx, filt, panel, panel_rect,
+        hud[4];
+} ComposeProg;
+static ComposeProg s_progs[PROGS];
+/* config hud_size: the HUD's blocks on the DS top screen (x0, y0, x1, y1), each drawn smaller
+ * in its own corner (top-left, top-right, bottom-left, bottom-right): hearts and chain, none
+ * (the target's name and HP keep their size), the command deck, the HP gauge with the
+ * portraits */
 static const float s_hud_blocks[4][4] = {
-    { 0, 0, 64, 34 }, { 200, 0, 256, 18 }, { 0, 134, 92, 192 }, { 152, 112, 256, 192 } };
+    { 0, 0, 64, 34 }, { 0, 0, 0, 0 }, { 0, 134, 92, 192 }, { 152, 112, 256, 192 } };
 static int s_hud_shrink, s_hud_mask; /* the field's HUD is shrunk; this pass masks it */
 /* the panel being drawn (draw_panels): style, radius, width, height; its texture rectangle */
 static float s_panel[4], s_panel_rect[4];
@@ -114,7 +123,7 @@ static const char s_compose_fs[] =
     "            uniform float2 uBright, uniform float uHofs, uniform float2 uBlend,\n"
     "            uniform float3 uBackdrop, uniform sampler2D uPrev, uniform float4 uCap,\n"
     "            uniform float uFlip, uniform float4 uFx, uniform float2 uFilt,\n"
-    "            uniform float4 uPanel, uniform float4 uPanelRect, uniform float uHudOn,\n"
+    "            uniform float4 uPanel, uniform float4 uPanelRect,\n"
     "            uniform float4 uHud0, uniform float4 uHud1, uniform float4 uHud2,\n"
     "            uniform float4 uHud3) : COLOR\n"
     "{\n"
@@ -131,7 +140,8 @@ static const char s_compose_fs[] =
     "    }\n"
     /* config hud_size: the four HUD blocks are drawn again smaller in their corners (a later
      * pass); here their 2D pixels give way to the 3D over the backdrop */
-    "    if (uHudOn > 0.5 && b.a > 0.99) {\n"
+    "#ifdef HUDMASK\n"
+    "    if (b.a > 0.99 || b.a * 255.0 > 191.5) {\n" /* 2D, or 2D blended over the 3D */
     "        float2 p = uv2 * float2(256.0, 192.0);\n"
     "        if ((p.x >= uHud0.x && p.x < uHud0.z && p.y >= uHud0.y && p.y < uHud0.w) ||\n"
     "            (p.x >= uHud1.x && p.x < uHud1.z && p.y >= uHud1.y && p.y < uHud1.w) ||\n"
@@ -139,15 +149,19 @@ static const char s_compose_fs[] =
     "            (p.x >= uHud3.x && p.x < uHud3.z && p.y >= uHud3.y && p.y < uHud3.w))\n"
     "            b = float4(uBackdrop, 0.0);\n"
     "    }\n"
+    "#endif\n"
     "    float3 c = b.rgb;\n"
     "    float u = vUv.x + uHofs;\n"
     "    float4 t = tex2D(u3d, float2(u, 1.0 - vUv.y));\n"
     "    if (u < 0.0 || u > 1.0)\n"
     "        t = float4(0.0, 0.0, 0.0, 0.0);\n"
     /* uCap.z: a capture of the 3D layer alone */
+    "#ifdef CAP\n"
     "    if (uCap.z > 0.5) {\n"
     "        c = t.rgb;\n"
-    "    } else if (b.a < 0.99) {\n"
+    "    } else\n"
+    "#endif\n"
+    "    if (b.a < 0.99) {\n"
     "        float code = floor(b.a * 255.0 + 0.5);\n"
     /* a 2D layer blended over the 3D one (gpu2d.h OVER_3D / BLEND_3D): b is the 2D colour,
      * the 3D layer over the backdrop the second target */
@@ -168,8 +182,10 @@ static const char s_compose_fs[] =
     "        }\n"
     "    }\n"
     /* a display capture: this picture times EVA plus the source B picture times EVB */
+    "#ifdef CAP\n"
     "    if (uCap.w > 0.5)\n"
     "        c = min(c * uCap.x + tex2D(uPrev, float2(vUv.x, 1.0 - vUv.y)).rgb * uCap.y, 1.0);\n"
+    "#endif\n"
     "    if (uBright.x > 0.5 && uBright.x < 1.5)\n"
     "        c = c + (1.0 - c) * uBright.y;\n"
     "    else if (uBright.x > 1.5)\n"
@@ -187,9 +203,19 @@ static const char s_compose_fs[] =
     /* a single-screen panel (uPanel: style, corner radius, size in Vita pixels; uPanelRect its
      * texture rectangle): its colours, then its rounded corners */
     "    float a = uFx.z;\n"
+    "#ifdef PANEL\n"
     "    if (uPanel.x > 2.5) {\n"
-    "        if (b.a < 0.99)\n" /* a HUD block: its 2D pixels only */
-    "            a = 0.0;\n"
+    /* a HUD block: its 2D pixels, and its pixels blended over the 3D blended over what is
+     * already there with their weight (the 3D under the block's new place) */
+    "        float hc = floor(b.a * 255.0 + 0.5);\n"
+    "        if (b.a < 0.99) {\n"
+    "            if (hc >= 192.0) {\n"
+    "                c = b.rgb;\n"
+    "                a = a * (hc < 224.0 ? (hc - 192.0) / 16.0 : uBlend.x);\n"
+    "            } else {\n"
+    "                a = 0.0;\n"
+    "            }\n"
+    "        }\n"
     "    } else if (uPanel.x > 1.5) {\n"
     "        if (max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)) < 0.1)\n"
     "            c = 1.0 - c;\n"
@@ -203,6 +229,7 @@ static const char s_compose_fs[] =
     "        float d = length(max(q, float2(0.0, 0.0))) - uPanel.y;\n"
     "        a = a * saturate(0.5 - d);\n"
     "    }\n"
+    "#endif\n"
     "    return float4(c, a);\n"
     "}\n";
 
@@ -349,29 +376,41 @@ unsigned video_build_program(const char *vs_src, const char *fs_src, const char 
 static void compose_init(void)
 {
     static const char *const attribs[] = { "aPos", "aUv" };
-    s_compose = video_build_program(s_compose_vs, s_compose_fs, attribs, 2);
-    if (!s_compose) {
-        LOG("video: composition shader did not build: the 3D layer will not show");
-        return;
+    static const char *const defines[PROGS] = { "", "#define HUDMASK\n", "#define PANEL\n",
+                                                "#define CAP\n" };
+    int k;
+    for (k = 0; k < PROGS; k++) {
+        ComposeProg *g = &s_progs[k];
+        const size_t n = strlen(defines[k]) + sizeof(s_compose_fs);
+        char *src = malloc(n);
+        if (!src)
+            return;
+        snprintf(src, n, "%s%s", defines[k], s_compose_fs);
+        g->id = video_build_program(s_compose_vs, src, attribs, 2);
+        free(src);
+        if (!g->id) {
+            LOG("video: composition shader %d did not build: the 3D layer will not show", k);
+            return;
+        }
+        g->c2d = glGetUniformLocation(g->id, "u2d");
+        g->c3d = glGetUniformLocation(g->id, "u3d");
+        g->bright = glGetUniformLocation(g->id, "uBright");
+        g->hofs = glGetUniformLocation(g->id, "uHofs");
+        g->blend = glGetUniformLocation(g->id, "uBlend");
+        g->backdrop = glGetUniformLocation(g->id, "uBackdrop");
+        g->prev = glGetUniformLocation(g->id, "uPrev");
+        g->cap = glGetUniformLocation(g->id, "uCap");
+        g->flip = glGetUniformLocation(g->id, "uFlip");
+        g->fx = glGetUniformLocation(g->id, "uFx");
+        g->filt = glGetUniformLocation(g->id, "uFilt");
+        g->panel = glGetUniformLocation(g->id, "uPanel");
+        g->panel_rect = glGetUniformLocation(g->id, "uPanelRect");
+        g->hud[0] = glGetUniformLocation(g->id, "uHud0");
+        g->hud[1] = glGetUniformLocation(g->id, "uHud1");
+        g->hud[2] = glGetUniformLocation(g->id, "uHud2");
+        g->hud[3] = glGetUniformLocation(g->id, "uHud3");
     }
-    u_c2d = glGetUniformLocation(s_compose, "u2d");
-    u_c3d = glGetUniformLocation(s_compose, "u3d");
-    u_bright = glGetUniformLocation(s_compose, "uBright");
-    u_hofs = glGetUniformLocation(s_compose, "uHofs");
-    u_blend = glGetUniformLocation(s_compose, "uBlend");
-    u_backdrop = glGetUniformLocation(s_compose, "uBackdrop");
-    u_prev = glGetUniformLocation(s_compose, "uPrev");
-    u_cap = glGetUniformLocation(s_compose, "uCap");
-    u_flip = glGetUniformLocation(s_compose, "uFlip");
-    u_fx = glGetUniformLocation(s_compose, "uFx");
-    u_filt = glGetUniformLocation(s_compose, "uFilt");
-    u_panel = glGetUniformLocation(s_compose, "uPanel");
-    u_panel_rect = glGetUniformLocation(s_compose, "uPanelRect");
-    u_hud_on = glGetUniformLocation(s_compose, "uHudOn");
-    u_hud[0] = glGetUniformLocation(s_compose, "uHud0");
-    u_hud[1] = glGetUniformLocation(s_compose, "uHud1");
-    u_hud[2] = glGetUniformLocation(s_compose, "uHud2");
-    u_hud[3] = glGetUniformLocation(s_compose, "uHud3");
+    s_compose = s_progs[PROG_SCREEN].id;
     glGenBuffers(1, &s_compose_vbo);
 }
 
@@ -401,7 +440,12 @@ static void compose_pass(const float *v, GLuint tex2d, int flip2d, GLuint tex3d,
 
     if (f > 16)
         f = 16;
-    glUseProgram(s_compose);
+    const ComposeProg *g = &s_progs[cap ? PROG_CAP
+                                    : (s_panel[0] > 0.5f || s_panel[1] > 0.5f) ? PROG_PANEL
+                                    : s_hud_mask ? PROG_HUDMASK : PROG_SCREEN];
+/* a uniform the build leaves out (not used there) has no location */
+#define SET(loc, call) do { if ((loc) >= 0) call; } while (0)
+    glUseProgram(g->id);
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D,
                   !cap ? s_clear_tex
@@ -415,40 +459,44 @@ static void compose_pass(const float *v, GLuint tex2d, int flip2d, GLuint tex3d,
     /* a picture with 3D codes in its alpha is read texel by texel; a plain one smoothly */
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, linear ? GL_LINEAR : GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, linear ? GL_LINEAR : GL_NEAREST);
-    glUniform1i(u_c2d, 0);
-    glUniform1i(u_c3d, 1);
-    glUniform1i(u_prev, 2);
-    glUniform1f(u_hofs, s_3d_hofs);
-    glUniform1f(u_flip, flip2d ? 1.0f : 0.0f);
-    glUniform4f(u_fx, cap ? 0.0f : (float)kh_config.screen_effect, hud, alpha, 0.0f);
+    SET(g->c2d, glUniform1i(g->c2d, 0));
+    SET(g->c3d, glUniform1i(g->c3d, 1));
+    SET(g->prev, glUniform1i(g->prev, 2));
+    SET(g->hofs, glUniform1f(g->hofs, s_3d_hofs));
+    SET(g->flip, glUniform1f(g->flip, flip2d ? 1.0f : 0.0f));
+    SET(g->fx, glUniform4f(g->fx, cap ? 0.0f : (float)kh_config.screen_effect, hud, alpha, 0.0f));
     /* Vita pixels per DS pixel, from the quad's height */
-    glUniform2f(u_filt, filter == FILTER_2D ? (float)kh_config.filter_2d : 0.0f,
-                fabsf(v[1] - v[9]) * (DISPLAY_H / 2.0f) / 192.0f);
-    glUniform4f(u_panel, s_panel[0], s_panel[1], s_panel[2], s_panel[3]);
-    glUniform1f(u_hud_on, s_hud_mask ? 1.0f : 0.0f);
+    SET(g->filt, glUniform2f(g->filt, filter == FILTER_2D ? (float)kh_config.filter_2d : 0.0f,
+                             fabsf(v[1] - v[9]) * (DISPLAY_H / 2.0f) / 192.0f));
+    SET(g->panel, glUniform4f(g->panel, s_panel[0], s_panel[1], s_panel[2], s_panel[3]));
+    SET(g->panel_rect, glUniform4f(g->panel_rect, s_panel_rect[0], s_panel_rect[1],
+                                   s_panel_rect[2], s_panel_rect[3]));
     {
         int k;
         for (k = 0; k < 4; k++)
-            glUniform4f(u_hud[k], s_hud_blocks[k][0], s_hud_blocks[k][1], s_hud_blocks[k][2],
-                        s_hud_blocks[k][3]);
+            SET(g->hud[k], glUniform4f(g->hud[k], s_hud_blocks[k][0], s_hud_blocks[k][1],
+                                       s_hud_blocks[k][2], s_hud_blocks[k][3]));
     }
-    glUniform4f(u_panel_rect, s_panel_rect[0], s_panel_rect[1], s_panel_rect[2], s_panel_rect[3]);
     if (alpha < 0.999f || s_panel[1] > 0.5f || s_panel[0] > 2.5f) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     }
     if (cap)
-        glUniform4f(u_cap, s_cap.ka, s_cap.kb, s_cap.src3d ? 1.0f : 0.0f, 1.0f);
+        SET(g->cap, glUniform4f(g->cap, s_cap.ka, s_cap.kb, s_cap.src3d ? 1.0f : 0.0f, 1.0f));
     else
-        glUniform4f(u_cap, 1.0f, 0.0f, 0.0f, 0.0f);
+        SET(g->cap, glUniform4f(g->cap, 1.0f, 0.0f, 0.0f, 0.0f));
     {
         float eva = (float)(s_3d_bldalpha & 31), evb = (float)((s_3d_bldalpha >> 8) & 31);
         const uint16_t bd = s_3d_backdrop;
-        glUniform2f(u_blend, (eva > 16 ? 16 : eva) / 16.0f, (evb > 16 ? 16 : evb) / 16.0f);
-        glUniform3f(u_backdrop, (float)(bd & 31) / 31.0f, (float)((bd >> 5) & 31) / 31.0f,
-                    (float)((bd >> 10) & 31) / 31.0f);
+        SET(g->blend, glUniform2f(g->blend, (eva > 16 ? 16 : eva) / 16.0f,
+                                  (evb > 16 ? 16 : evb) / 16.0f));
+        SET(g->backdrop, glUniform3f(g->backdrop, (float)(bd & 31) / 31.0f,
+                                     (float)((bd >> 5) & 31) / 31.0f,
+                                     (float)((bd >> 10) & 31) / 31.0f));
     }
-    glUniform2f(u_bright, (!cap && (mode == 1 || mode == 2)) ? (float)mode : 0.0f, (float)f / 16.0f);
+    SET(g->bright, glUniform2f(g->bright, (!cap && (mode == 1 || mode == 2)) ? (float)mode : 0.0f,
+                               (float)f / 16.0f));
+#undef SET
     glBindBuffer(GL_ARRAY_BUFFER, s_compose_vbo);
     glBufferData(GL_ARRAY_BUFFER, 16 * sizeof(float), v, GL_DYNAMIC_DRAW);
     glEnableVertexAttribArray(0);
@@ -501,6 +549,8 @@ static void draw_composed(int screen)
         int b;
         for (b = 0; b < 4; b++) {
             const float *q = s_hud_blocks[b];
+            if (q[2] <= q[0])
+                continue;
             const float u0 = q[0] / DS_SCREEN_W, u1 = q[2] / DS_SCREEN_W;
             const float v0 = q[1] / DS_SCREEN_H, v1 = q[3] / DS_SCREEN_H;
             float X0 = r->x + ((u0 - 0.5f) * hud + 0.5f) * r->w;
@@ -681,9 +731,13 @@ static ScreenRect panel_rect_now(int i)
 
 static ScreenRect panel_rect(const int *p)
 {
-    const int w = p[KH_PANEL_SW] * p[KH_PANEL_SCALE] / 100;
-    const int h = p[KH_PANEL_SH] * p[KH_PANEL_SCALE] / 100;
-    const int dx = p[KH_PANEL_DX], dy = p[KH_PANEL_DY];
+    /* the panels always on screen (the map, the target) follow config hud_size, as the HUD */
+    const int hud = p != s_tutorial_panel && (p[KH_PANEL_AUTOHIDE] == KH_SHOW_ALWAYS ||
+                                              p[KH_PANEL_AUTOHIDE] == KH_SHOW_ON_RED)
+                        ? kh_config.hud_size : 100;
+    const int w = p[KH_PANEL_SW] * p[KH_PANEL_SCALE] / 100 * hud / 100;
+    const int h = p[KH_PANEL_SH] * p[KH_PANEL_SCALE] / 100 * hud / 100;
+    const int dx = p[KH_PANEL_DX] * hud / 100, dy = p[KH_PANEL_DY];
     switch (p[KH_PANEL_ANCHOR]) {
     case KH_PANEL_TOP_RIGHT: return (ScreenRect){ DISPLAY_W - w - dx, dy, w, h };
     case KH_PANEL_BOTTOM_LEFT: return (ScreenRect){ dx, DISPLAY_H - h - dy, w, h };

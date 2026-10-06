@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define CONFIG_VERSION 15
+#define CONFIG_VERSION 16
 
 static const KhConfig s_defaults = {
     .render_scale = 3, .layout = 0, .inset_width = 224, .aspect = KH_ASPECT_WIDE,
@@ -28,8 +28,8 @@ static const KhConfig s_defaults = {
                  KH_SHOW_ON_PAUSE },
                { 102, 54, 120, 86, KH_PANEL_TOP_RIGHT, 6, 60, 130, KH_STYLE_INVERT_GREYS, 6,
                  KH_SHOW_ALWAYS },
-               /* only with a target (its red tab) */
-               { 33, 53, 64, 87, KH_PANEL_TOP_RIGHT, 166, 60, 130, KH_STYLE_WHITE_TO_BLACK, 6,
+               /* only with a target (its red tab); shorter than the map */
+               { 33, 53, 64, 87, KH_PANEL_TOP_RIGHT, 166, 60, 100, KH_STYLE_WHITE_TO_BLACK, 6,
                  KH_SHOW_ON_RED },
                /* between the commands and the HP gauge of the stretched HUD; shown when the
                 * gauge moves */
@@ -139,8 +139,9 @@ void config_save(void)
                "r_toggle = %d\n\n", kh_config.r_toggle);
     fprintf(f, "# Fast-forward speed, switched on and off with L+R+Square: 2 or 3.\n"
                "fast_forward = %d\n\n", kh_config.fast_forward);
-    fprintf(f, "# Field HUD size, 60 to 100 %%: the commands, the HP gauge, the chain and the\n"
-               "# target's name each drawn smaller in their corner.\n"
+    fprintf(f, "# Field HUD size, 60 to 100 %%: the command deck, the HP gauge with the face and\n"
+               "# the chain each drawn smaller in their corner (and the single screen's map and\n"
+               "# target).\n"
                "hud_size = %d\n\n", kh_config.hud_size);
     fprintf(f, "# The game's language, taken at the next start: 1 English, 2 French, 3 German,\n"
                "# 4 Italian, 5 Spanish.\n"
@@ -308,7 +309,7 @@ void config_load(void)
             if (version < 2 && kh_config.render_scale == 2)
                 kh_config.render_scale = 3;
             /* the single-screen panels measured on the game (0.1.2 shipped estimates) */
-            if (version < 15)
+            if (version < 16)
                 memcpy(kh_config.panel, s_defaults.panel, sizeof(kh_config.panel));
             /* the smooth texture filter became the default with the port menu's tabs */
             if (version < 8)
