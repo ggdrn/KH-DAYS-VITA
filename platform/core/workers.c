@@ -1,6 +1,7 @@
 #include "workers.h"
 
 #include "log.h"
+#include "threadstat.h"
 
 #include <psp2/kernel/threadmgr.h>
 
@@ -52,12 +53,15 @@ void workers_init(void)
         s_go = -1;
         return;
     }
+    threadstat_add("2d helper", th);
     s_go_spare = sceKernelCreateSema("kh_work_spare", 0, 0, 1, NULL);
     th = s_go_spare < 0 ? -1
                         : sceKernelCreateThread("kh_worker_spare", worker, KH_SPARE_PRIORITY,
                                                 0x10000, 0, SCE_KERNEL_CPU_MASK_USER_1, NULL);
     if (th < 0 || sceKernelStartThread(th, sizeof(s_go_spare), &s_go_spare) < 0)
         s_go_spare = -1;
+    else
+        threadstat_add("2d spare", th);
     LOG("workers: helper thread on core 2%s",
         s_go_spare >= 0 ? ", and one on core 1 below the game" : "");
 }

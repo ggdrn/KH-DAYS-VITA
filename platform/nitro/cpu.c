@@ -24,6 +24,7 @@
 #include "hw/timers.h"
 #include "log.h"
 #include "workers.h"
+#include "threadstat.h"
 
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
@@ -266,8 +267,10 @@ void kh_cpu_init(void)
     s_deferred_lock = sceKernelCreateMutex("kh_defer", 0, 0, NULL);
     th = sceKernelCreateThread("kh_irq", irq_thread, 0x10000100 - 10, 0x10000, 0,
                                SCE_KERNEL_CPU_MASK_USER_2, NULL);
-    if (th >= 0)
+    if (th >= 0) {
+        threadstat_add("irq", th);
         sceKernelStartThread(th, 0, NULL);
+    }
 }
 
 /* The idle thread's OS_Halt: sleep until something can be delivered. */
@@ -610,6 +613,7 @@ void OS_LoadContext(void *ctx)
             LOG("cpu: thread create failed %08x", next->host);
             return;
         }
+        threadstat_add("game", next->host);
         sceKernelStartThread(next->host, sizeof(arg), &arg);
         LOGV("cpu: thread %p started (entry %08x)", next->ctx, (unsigned)(ctx_word(next->ctx, CTX_PC4) - 4));
     }

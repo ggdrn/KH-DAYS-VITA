@@ -3,6 +3,7 @@
 #include "audio/snd7.h"
 #include "log.h"
 #include "nitro/arm7.h"
+#include "threadstat.h"
 
 #include <psp2/audioout.h>
 #include <psp2/kernel/threadmgr.h>
@@ -51,6 +52,7 @@ void audio_out_init(void)
         LOG("audio: no thread (%08x): silent", th);
         return;
     }
+    threadstat_add("audio", th);
     snd7_set_running(1);
     LOG("audio: 48 kHz stereo, %d-frame grain, ARM7 sound driver on core 2", GRAIN);
 }

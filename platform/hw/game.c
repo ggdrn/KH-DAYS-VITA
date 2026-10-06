@@ -32,6 +32,7 @@
 #include "nitro/romfs.h"
 #include "rom.h"
 #include "video.h"
+#include "threadstat.h"
 
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
@@ -1077,17 +1078,21 @@ void kh_game_run(void)
     /* the display keeps core 0 whatever the game does; the game runs on core 1 */
     sceKernelChangeThreadCpuAffinityMask(sceKernelGetThreadId(), SCE_KERNEL_CPU_MASK_USER_0);
     sceKernelChangeThreadPriority(0, KH_DISPLAY_PRIORITY);
+    threadstat_add("display", sceKernelGetThreadId());
     th = sceKernelCreateThread("kh_game", game_thread, KH_COMPUTE_PRIORITY, GAME_STACK_SIZE, 0,
                                KH_GAME_CPU_MASK, NULL);
     if (th < 0) {
         LOG("game: create thread failed %08x", th);
         return;
     }
+    threadstat_add("game", th);
     sceKernelStartThread(th, 0, NULL);
     th = sceKernelCreateThread("kh_vblank", vblank_thread, 0x10000100 - 30, 0x4000, 0,
                                SCE_KERNEL_CPU_MASK_USER_2, NULL);
-    if (th >= 0)
+    if (th >= 0) {
+        threadstat_add("vblank", th);
         sceKernelStartThread(th, 0, NULL);
+    }
     th = sceKernelCreateThread("kh_power", power_thread, 0x10000100 - 20, 0x4000, 0,
                                SCE_KERNEL_CPU_MASK_USER_2, NULL);
     if (th >= 0)
@@ -1217,6 +1222,7 @@ void kh_game_run(void)
                 s_render_max = 0;
             }
             kh_gx3d_take_stats(&gs);
+            threadstat_log();
             {
                 KhGpu3dStats rs;
                 kh_gpu3d_take_stats(&rs);
