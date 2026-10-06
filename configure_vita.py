@@ -56,7 +56,7 @@ GAME_CXXFLAGS = ["-std=gnu++11", "-O2", "-w", "-ftrivial-auto-var-init=zero", "-
 
 LIBS = [
     "-lvitaGL", "-lvitashark", "-lSceShaccCgExt", "-lmathneon", "-lstdc++", "-lm", "-lc",
-    "-lkubridge_stub_weak", "-ltaihen_stub", "-lSceShaccCg_stub", "-lSceKernelDmacMgr_stub",
+    "-lkubridge_stub_weak", "-lSceVshBridge_stub", "-ltaihen_stub", "-lSceShaccCg_stub", "-lSceKernelDmacMgr_stub",
     "-lSceCommonDialog_stub", "-lSceGxm_stub", "-lSceDisplay_stub", "-lSceAppMgr_stub",
     "-lSceAppUtil_stub", "-lSceCtrl_stub", "-lSceTouch_stub", "-lSceAudio_stub",
     "-lScePower_stub", "-lSceRtc_stub", "-lSceSysmodule_stub", "-lSceLibKernel_stub",

@@ -12,6 +12,7 @@
 #include "log.h"
 
 #include <kubridge.h>
+#include <psp2/vshbridge.h>
 #include <psp2/kernel/threadmgr.h>
 #include <stdio.h>
 
@@ -106,7 +107,14 @@ HANDLER(2)
 void fault_init(void)
 {
     static const KuKernelExceptionHandler h[3] = { handler0, handler1, handler2 };
-    int i, ok = 0;
+    int i, ok = 0, search[2] = { 0, 0 };
+    /* kubridge is optional (crash reports only). Without the plugin its weak import does not
+     * return an error as fault.c assumed: the call jumps to address 0 and the port died at boot
+     * (GitHub issue, v0.1.0). Asked for by name first. */
+    if (_vshKernelSearchModuleByName("kubridge", search) < 0) {
+        LOG("fault: kubridge not loaded, no crash reports (main=%08x)", (unsigned)(uintptr_t)main);
+        return;
+    }
     for (i = 0; i < 3; i++)
         ok += kuKernelRegisterExceptionHandler(i, h[i], &s_prev[i], NULL) >= 0;
     LOG("fault: %s (main=%08x)", ok == 3 ? "kubridge handlers installed" : "kubridge not available",

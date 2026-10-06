@@ -35,6 +35,8 @@ void video_set_panel_visibility(int i, float vis);
 /* Single screen: the bottom screen holds a tutorial page, shown whole in the middle instead of
  * the panels. */
 void video_set_tutorial(int on);
+/* In the field: the top screen's HUD blocks drawn at config hud_size, each in its corner. */
+void video_set_hud_shrink(int on);
 int video_single_screen(void);
 /* Display pixel (960x544) -> DS touch-screen pixel; 0 when it is not on the touch screen. */
 int video_map_touch(int px, int py, int *x, int *y);

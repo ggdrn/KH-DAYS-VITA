@@ -10,6 +10,8 @@ engines, sound, card, touch screen) is reimplemented on top of VitaSDK and vitaG
 
 - A Vita with HENkaku/Enso and VitaShell.
 - `libshacccg.suprx` in `ur0:data/`, extracted from your own console (see the vitaGL README).
+- Optional: [kubridge](https://github.com/bythos14/kubridge) in `ur0:tai/` (`*KERNEL` in
+  `config.txt`), for crash reports in the log. The port runs without it.
 - Your own dump of the **European** cartridge. No game data is included here.
 
 | Gamecode | Size | SHA-1 |

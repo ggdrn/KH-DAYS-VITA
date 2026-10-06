@@ -304,6 +304,19 @@ static int fading(uint16_t mb)
     return (mode == 1 || mode == 2) && (mb & 31);
 }
 
+/* whether the panel's top 8 rows hold a few red pixels: the TARGET tab's letters */
+static int panel_has_red(const uint32_t *fb, const int *p)
+{
+    int x, y, n = 0;
+    for (y = p[KH_PANEL_SY]; y < p[KH_PANEL_SY] + 8 && y < p[KH_PANEL_SY] + p[KH_PANEL_SH]; y++)
+        for (x = p[KH_PANEL_SX]; x < p[KH_PANEL_SX] + p[KH_PANEL_SW]; x++) {
+            const uint32_t c = fb[y * 256 + x];
+            const int r = c & 0xff, g = (c >> 8) & 0xff, b = (c >> 16) & 0xff;
+            n += r > 150 && g < 90 && b < 90;
+        }
+    return n >= 6;
+}
+
 static uint32_t panel_hash(const uint32_t *fb, const int *p)
 {
     uint32_t h = 2166136261u;
@@ -360,7 +373,13 @@ static void update_panels(int single, int drawn, const uint32_t *bottom_fb)
             video_set_panel_visibility(i, 1.0f);
             continue;
         }
-        if (drawn) {
+        if (p[KH_PANEL_AUTOHIDE] == KH_SHOW_ON_RED) {
+            if (drawn)
+                s_panels[i].until = panel_has_red(bottom_fb, p) ? ~0ull : 0;
+            target = now < s_panels[i].until ? 1.0f : 0.0f;
+            goto slide;
+        }
+        if (drawn && p[KH_PANEL_AUTOHIDE] == KH_SHOW_ON_CHANGE) {
             const uint32_t h = panel_hash(bottom_fb, p);
             int known = 0, oldest = 0;
             for (k = 0; k < PANEL_RECENT; k++) {
@@ -380,6 +399,7 @@ static void update_panels(int single, int drawn, const uint32_t *bottom_fb)
             }
         }
         target = (paused || s_pin_select || now < s_panels[i].until) ? 1.0f : 0.0f;
+    slide:
         if (s_panels[i].vis < target)
             s_panels[i].vis = s_panels[i].vis + step > target ? target : s_panels[i].vis + step;
         else if (s_panels[i].vis > target)
@@ -439,6 +459,8 @@ static void present(void)
      * the menu then */
     const int tutorial = single && ((KH_IO32(0x04001000) >> 8) & 0x1f) == 0x0c;
     video_set_tutorial(tutorial);
+    /* the field's HUD at config hud_size (engine A, with the 3D, on top in the field) */
+    video_set_hud_shrink(!dual && a_on_top && kh_overlay_loaded(22));
     kh_gpu2d_plain[KH_ENGINE_B] = single && PauseMenu_GetMode() != 0;
     /* with the detailed log, once a second: this frame's GPU time measured alone */
     video_gpu_probe_begin();

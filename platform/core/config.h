@@ -20,6 +20,10 @@ enum { KH_PANEL_SX, KH_PANEL_SY, KH_PANEL_SW, KH_PANEL_SH, KH_PANEL_ANCHOR, KH_P
 /* a panel's colours: as on the DS, white turned black (the target's frame), or the greys
  * inverted (the map: black ground, white walls) */
 enum { KH_STYLE_PLAIN, KH_STYLE_WHITE_TO_BLACK, KH_STYLE_INVERT_GREYS };
+/* when a panel shows (autohide): always; 7 s when it changes, and while paused or pinned with
+ * Select; only while paused or pinned; only while its top rows hold red (the TARGET tab, not the
+ * world picture of a mission without a target) */
+enum { KH_SHOW_ALWAYS, KH_SHOW_ON_CHANGE, KH_SHOW_ON_PAUSE, KH_SHOW_ON_RED };
 
 /* how the large screen fills the 16:9 display */
 enum { KH_ASPECT_WIDE, KH_ASPECT_STRETCH, KH_ASPECT_4_3 };
@@ -57,6 +61,7 @@ typedef struct {
      * radius of its corners in Vita pixels, and whether it only shows for a while when its
      * contents change (autohide 1; Start and Select pin it). sw 0: unused. */
     int panel[KH_PANELS][KH_PANEL_FIELDS];
+    int hud_size;       /* the field HUD's blocks (commands, HP, chain, target), 60-100 % */
     int language;       /* the game's language, read at boot: 1 English, 2 French, 3 German,
                          * 4 Italian, 5 Spanish (the European cartridge's five) */
     int debug;          /* debug hotkeys and the detailed log: 0 off (default), 1 on */

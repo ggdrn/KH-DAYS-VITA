@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define CONFIG_VERSION 14
+#define CONFIG_VERSION 15
 
 static const KhConfig s_defaults = {
     .render_scale = 3, .layout = 0, .inset_width = 224, .aspect = KH_ASPECT_WIDE,
@@ -16,19 +16,25 @@ static const KhConfig s_defaults = {
     .inset_corner = 0, .inset_opacity = 100, .rear_touch = 0, .stick_deadzone = 2, .r_toggle = 0,
     .fast_forward = 2, .camera_stick = 1, .camera_speed = 2,
     .camera_invert_x = 0, .camera_invert_y = 0, .dpad_deck = 1, .show_fps = 0, .volume = 100,
-    .single_screen = 0, .panel_opacity = 90, .language = 1,
+    .single_screen = 0, .panel_opacity = 90, .language = 1, .hud_size = 100,
     /* the mission screen's bottom-screen parts (sx sy sw sh anchor dx dy scale), measured on
      * the DS's bottom screen in a mission: the INFORMATION bar top-left, the map in the
      * top-right corner with the target beside it (below the top screen's enemy name and HP),
      * the objective and mission gauge along the bottom between the commands and the HP */
     .panel = { /* top centre, clear of the chain counter, the bar's whole width (a long
-                * message ran past 180 pixels); shown when its message changes */
-               { 2, 6, 252, 24, KH_PANEL_TOP_CENTER, 0, 4, 170, KH_STYLE_PLAIN, 10, 1 },
-               { 102, 54, 120, 86, KH_PANEL_TOP_RIGHT, 6, 60, 130, KH_STYLE_INVERT_GREYS, 6, 0 },
-               { 33, 53, 64, 87, KH_PANEL_TOP_RIGHT, 166, 60, 130, KH_STYLE_WHITE_TO_BLACK, 6, 0 },
+                * message ran past 180 pixels); the game shows a new message on the top screen
+                * itself, so this one only comes with the pause menu */
+               { 2, 6, 252, 24, KH_PANEL_TOP_CENTER, 0, 4, 170, KH_STYLE_PLAIN, 10,
+                 KH_SHOW_ON_PAUSE },
+               { 102, 54, 120, 86, KH_PANEL_TOP_RIGHT, 6, 60, 130, KH_STYLE_INVERT_GREYS, 6,
+                 KH_SHOW_ALWAYS },
+               /* only with a target (its red tab) */
+               { 33, 53, 64, 87, KH_PANEL_TOP_RIGHT, 166, 60, 130, KH_STYLE_WHITE_TO_BLACK, 6,
+                 KH_SHOW_ON_RED },
                /* between the commands and the HP gauge of the stretched HUD; shown when the
                 * gauge moves */
-               { 7, 149, 241, 43, KH_PANEL_BOTTOM_CENTER, 0, 0, 120, KH_STYLE_PLAIN, 10, 1 } },
+               { 7, 149, 241, 43, KH_PANEL_BOTTOM_CENTER, 0, 0, 120, KH_STYLE_PLAIN, 10,
+                 KH_SHOW_ON_CHANGE } },
     .debug = 0,
     /* positional, as on the DS: the right face button is A, the bottom one B */
     .button = { SCE_CTRL_CIRCLE, SCE_CTRL_CROSS, SCE_CTRL_TRIANGLE, SCE_CTRL_SQUARE,
@@ -132,6 +138,9 @@ void config_save(void)
                "r_toggle = %d\n\n", kh_config.r_toggle);
     fprintf(f, "# Fast-forward speed, switched on and off with L+R+Square: 2 or 3.\n"
                "fast_forward = %d\n\n", kh_config.fast_forward);
+    fprintf(f, "# Field HUD size, 60 to 100 %%: the commands, the HP gauge, the chain and the\n"
+               "# target's name each drawn smaller in their corner.\n"
+               "hud_size = %d\n\n", kh_config.hud_size);
     fprintf(f, "# The game's language, taken at the next start: 1 English, 2 French, 3 German,\n"
                "# 4 Italian, 5 Spanish.\n"
                "language = %d\n\n", kh_config.language);
@@ -144,8 +153,9 @@ void config_save(void)
                "# (0 top-left, 1 top-right, 2 bottom-left, 3 bottom-right, 4 top-centre,\n"
                "# 5 bottom-centre), dx dy (Vita pixels from that corner), scale (%% of a DS\n"
                "# pixel; 100 = one Vita pixel), style (0 as is, 1 white to black, 2 greys\n"
-               "# inverted), corner radius (Vita pixels), autohide (1: shown for 7 s when it\n"
-               "# changes; Start or Select pins it). sw 0 turns a panel off.\n");
+               "# inverted), corner radius (Vita pixels), when it shows (0 always, 1 for 7 s\n"
+               "# when it changes and while paused, 2 only while paused, 3 while its top rows\n"
+               "# hold red; Select pins 1 and 2). sw 0 turns a panel off.\n");
     for (b = 0; b < KH_PANELS; b++) {
         const int *p = kh_config.panel[b];
         fprintf(f, "panel_%d = %d %d %d %d %d %d %d %d %d %d %d\n", b + 1, p[0], p[1], p[2], p[3],
@@ -228,6 +238,8 @@ static void set(const char *k, const char *v, int version)
         kh_config.fast_forward = clampi(atoi(v), 2, 3);
     else if (!strcmp(k, "debug"))
         kh_config.debug = atoi(v) != 0;
+    else if (!strcmp(k, "hud_size"))
+        kh_config.hud_size = clampi(atoi(v), 60, 100);
     else if (!strcmp(k, "language"))
         kh_config.language = clampi(atoi(v), 1, 5);
     else if (!strcmp(k, "single_screen"))
@@ -249,7 +261,7 @@ static void set(const char *k, const char *v, int version)
             d[KH_PANEL_SCALE] = clampi(p[7], 25, 400);
             d[KH_PANEL_STYLE] = clampi(p[8], 0, 2);
             d[KH_PANEL_RADIUS] = clampi(p[9], 0, 40);
-            d[KH_PANEL_AUTOHIDE] = p[10] != 0;
+            d[KH_PANEL_AUTOHIDE] = clampi(p[10], 0, 3);
         }
     }
     else if (!strncmp(k, "button_", 7))
@@ -295,7 +307,7 @@ void config_load(void)
             if (version < 2 && kh_config.render_scale == 2)
                 kh_config.render_scale = 3;
             /* the single-screen panels measured on the game (0.1.2 shipped estimates) */
-            if (version < 14)
+            if (version < 15)
                 memcpy(kh_config.panel, s_defaults.panel, sizeof(kh_config.panel));
             /* the smooth texture filter became the default with the port menu's tabs */
             if (version < 8)

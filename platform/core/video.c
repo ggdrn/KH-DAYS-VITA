@@ -45,7 +45,13 @@ static int s_inset = -1; /* the screen drawn small over the other one, -1 for no
 static volatile int s_pending = -1; /* a layout asked for from another thread (input) */
 static GLuint s_compose, s_compose_vbo;
 static GLint u_c2d, u_c3d, u_bright, u_hofs, u_blend, u_backdrop, u_prev, u_cap, u_flip, u_fx,
-    u_filt, u_panel, u_panel_rect;
+    u_filt, u_panel, u_panel_rect, u_hud_on, u_hud[4];
+/* config hud_size: the HUD's four blocks on the DS top screen (x0, y0, x1, y1), each drawn
+ * smaller in its own corner: hearts and chain, the target's name and HP, the commands, the HP
+ * gauge with the portraits */
+static const float s_hud_blocks[4][4] = {
+    { 0, 0, 64, 34 }, { 200, 0, 256, 18 }, { 0, 134, 92, 192 }, { 152, 112, 256, 192 } };
+static int s_hud_shrink, s_hud_mask; /* the field's HUD is shrunk; this pass masks it */
 /* the panel being drawn (draw_panels): style, radius, width, height; its texture rectangle */
 static float s_panel[4], s_panel_rect[4];
 static float s_hud_scale = 1.0f; /* < 1: the 2D kept 4:3 over a widescreen 3D (config hud) */
@@ -108,7 +114,9 @@ static const char s_compose_fs[] =
     "            uniform float2 uBright, uniform float uHofs, uniform float2 uBlend,\n"
     "            uniform float3 uBackdrop, uniform sampler2D uPrev, uniform float4 uCap,\n"
     "            uniform float uFlip, uniform float4 uFx, uniform float2 uFilt,\n"
-    "            uniform float4 uPanel, uniform float4 uPanelRect) : COLOR\n"
+    "            uniform float4 uPanel, uniform float4 uPanelRect, uniform float uHudOn,\n"
+    "            uniform float4 uHud0, uniform float4 uHud1, uniform float4 uHud2,\n"
+    "            uniform float4 uHud3) : COLOR\n"
     "{\n"
     "    float2 uv2 = vUv;\n"
     "    if (uFlip > 0.5)\n"
@@ -120,6 +128,16 @@ static const char s_compose_fs[] =
     "        b = tex2D(u2d, uv2);\n"
     "        if (uFilt.x > 0.5 && b.a > 0.99)\n"
     "            b.rgb = smooth2d(u2d, uv2, uFilt);\n"
+    "    }\n"
+    /* config hud_size: the four HUD blocks are drawn again smaller in their corners (a later
+     * pass); here their 2D pixels give way to the 3D over the backdrop */
+    "    if (uHudOn > 0.5 && b.a > 0.99) {\n"
+    "        float2 p = uv2 * float2(256.0, 192.0);\n"
+    "        if ((p.x >= uHud0.x && p.x < uHud0.z && p.y >= uHud0.y && p.y < uHud0.w) ||\n"
+    "            (p.x >= uHud1.x && p.x < uHud1.z && p.y >= uHud1.y && p.y < uHud1.w) ||\n"
+    "            (p.x >= uHud2.x && p.x < uHud2.z && p.y >= uHud2.y && p.y < uHud2.w) ||\n"
+    "            (p.x >= uHud3.x && p.x < uHud3.z && p.y >= uHud3.y && p.y < uHud3.w))\n"
+    "            b = float4(uBackdrop, 0.0);\n"
     "    }\n"
     "    float3 c = b.rgb;\n"
     "    float u = vUv.x + uHofs;\n"
@@ -169,7 +187,10 @@ static const char s_compose_fs[] =
     /* a single-screen panel (uPanel: style, corner radius, size in Vita pixels; uPanelRect its
      * texture rectangle): its colours, then its rounded corners */
     "    float a = uFx.z;\n"
-    "    if (uPanel.x > 1.5) {\n"
+    "    if (uPanel.x > 2.5) {\n"
+    "        if (b.a < 0.99)\n" /* a HUD block: its 2D pixels only */
+    "            a = 0.0;\n"
+    "    } else if (uPanel.x > 1.5) {\n"
     "        if (max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)) < 0.1)\n"
     "            c = 1.0 - c;\n"
     "    } else if (uPanel.x > 0.5) {\n"
@@ -346,6 +367,11 @@ static void compose_init(void)
     u_filt = glGetUniformLocation(s_compose, "uFilt");
     u_panel = glGetUniformLocation(s_compose, "uPanel");
     u_panel_rect = glGetUniformLocation(s_compose, "uPanelRect");
+    u_hud_on = glGetUniformLocation(s_compose, "uHudOn");
+    u_hud[0] = glGetUniformLocation(s_compose, "uHud0");
+    u_hud[1] = glGetUniformLocation(s_compose, "uHud1");
+    u_hud[2] = glGetUniformLocation(s_compose, "uHud2");
+    u_hud[3] = glGetUniformLocation(s_compose, "uHud3");
     glGenBuffers(1, &s_compose_vbo);
 }
 
@@ -399,8 +425,15 @@ static void compose_pass(const float *v, GLuint tex2d, int flip2d, GLuint tex3d,
     glUniform2f(u_filt, filter == FILTER_2D ? (float)kh_config.filter_2d : 0.0f,
                 fabsf(v[1] - v[9]) * (DISPLAY_H / 2.0f) / 192.0f);
     glUniform4f(u_panel, s_panel[0], s_panel[1], s_panel[2], s_panel[3]);
+    glUniform1f(u_hud_on, s_hud_mask ? 1.0f : 0.0f);
+    {
+        int k;
+        for (k = 0; k < 4; k++)
+            glUniform4f(u_hud[k], s_hud_blocks[k][0], s_hud_blocks[k][1], s_hud_blocks[k][2],
+                        s_hud_blocks[k][3]);
+    }
     glUniform4f(u_panel_rect, s_panel_rect[0], s_panel_rect[1], s_panel_rect[2], s_panel_rect[3]);
-    if (alpha < 0.999f || s_panel[1] > 0.5f) {
+    if (alpha < 0.999f || s_panel[1] > 0.5f || s_panel[0] > 2.5f) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     }
@@ -446,12 +479,54 @@ static float screen_alpha(int screen)
     return screen == s_inset ? (float)kh_config.inset_opacity / 100.0f : 1.0f;
 }
 
+void video_set_hud_shrink(int on)
+{
+    s_hud_shrink = on != 0;
+}
+
 static void draw_composed(int screen)
 {
     float v[16];
+    const float hud = screen == s_inset ? 1.0f : s_hud_scale;
+    const int shrink = s_hud_shrink && screen != s_inset && kh_config.hud_size < 100;
     screen_quad(screen, v);
-    compose_pass(v, s_tex_cur(screen), 0, s_3d_tex, s_3d_bright, 0,
-                 screen == s_inset ? 1.0f : s_hud_scale, screen_alpha(screen), FILTER_2D);
+    s_hud_mask = shrink;
+    compose_pass(v, s_tex_cur(screen), 0, s_3d_tex, s_3d_bright, 0, hud, screen_alpha(screen),
+                 FILTER_2D);
+    s_hud_mask = 0;
+    if (shrink) {
+        /* each block again, smaller, held to its corner of the screen */
+        const ScreenRect *r = &s_rect[screen];
+        const float k = (float)kh_config.hud_size / 100.0f;
+        int b;
+        for (b = 0; b < 4; b++) {
+            const float *q = s_hud_blocks[b];
+            const float u0 = q[0] / DS_SCREEN_W, u1 = q[2] / DS_SCREEN_W;
+            const float v0 = q[1] / DS_SCREEN_H, v1 = q[3] / DS_SCREEN_H;
+            float X0 = r->x + ((u0 - 0.5f) * hud + 0.5f) * r->w;
+            float X1 = r->x + ((u1 - 0.5f) * hud + 0.5f) * r->w;
+            float Y0 = r->y + v0 * r->h, Y1 = r->y + v1 * r->h;
+            const float w = (X1 - X0) * k, h = (Y1 - Y0) * k;
+            if (b & 1)
+                X0 = X1 - w; /* right blocks keep their right edge */
+            else
+                X1 = X0 + w;
+            if (b & 2)
+                Y0 = Y1 - h; /* bottom blocks keep their bottom edge */
+            else
+                Y1 = Y0 + h;
+            {
+                const float x0 = X0 / (DISPLAY_W / 2.0f) - 1.0f, x1 = X1 / (DISPLAY_W / 2.0f) - 1.0f;
+                const float y0 = 1.0f - Y0 / (DISPLAY_H / 2.0f), y1 = 1.0f - Y1 / (DISPLAY_H / 2.0f);
+                const float vq[16] = { x0, y0, u0, v0, x1, y0, u1, v0,
+                                       x0, y1, u0, v1, x1, y1, u1, v1 };
+                s_panel[0] = 3.0f; /* the block's 2D pixels only */
+                compose_pass(vq, s_tex_cur(screen), 0, 0, s_3d_bright, 0, 1.0f,
+                             screen_alpha(screen), FILTER_2D);
+                s_panel[0] = 0.0f;
+            }
+        }
+    }
 }
 
 void video_set_hud_scale(float scale)
