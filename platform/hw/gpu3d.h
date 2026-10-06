@@ -55,9 +55,6 @@ typedef struct {
     uint32_t tex_wanted, tex_none; /* polygons with a texture format; of them drawn without */
     uint32_t prepare_us, burst_max; /* parallel texture decoding: time, most in one frame */
     uint32_t interpolated; /* frames shown after a halfway mix (60 fps interpolation) */
-    uint32_t classify_us, classify_wait_us, classified_side; /* polygons sorted into batches:
-                                     time, the display thread's wait for the side thread, how
-                                     many frames there */
 } KhGpu3dStats;
 void kh_gpu3d_take_stats(KhGpu3dStats *out);
 
