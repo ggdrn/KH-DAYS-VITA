@@ -33,7 +33,9 @@ static int s_gpu_probing;
 int video_gpu_probe_begin(void)
 {
     static uint32_t n;
-    s_gpu_probing = kh_log_verbose && ++n % 60 == 0;
+    /* config debug = 2 only: draining the GPU costs frames, the logs of debug = 1 runs showed
+     * lower frame rates than the game had */
+    s_gpu_probing = kh_config.debug >= 2 && ++n % 60 == 0;
     if (s_gpu_probing)
         glFinish();
     return s_gpu_probing;
@@ -150,13 +152,16 @@ static const char s_compose_fs[] =
     "#ifdef HUDMASK\n"
     /* only the HUD's own layers (uHudLayer: BG1 the deck's text, BG3 its bars and the HP
      * gauge); the INFORMATION bar and the dialogues (BG2) stay where they are */
-    "    float lid = floor(tex2D(uLayer, uv2).r * 255.0 + 0.5);\n"
-    "    if ((lid == uHudLayer.x || lid == uHudLayer.y) && (b.a > 0.99 || b.a * 255.0 > 191.5)) {\n"
-    "        float2 p = uv2 * float2(256.0, 192.0);\n"
-    "        if ((p.x >= uHud0.x && p.x < uHud0.z && p.y >= uHud0.y && p.y < uHud0.w) ||\n"
-    "            (p.x >= uHud1.x && p.x < uHud1.z && p.y >= uHud1.y && p.y < uHud1.w) ||\n"
-    "            (p.x >= uHud2.x && p.x < uHud2.z && p.y >= uHud2.y && p.y < uHud2.w) ||\n"
-    "            (p.x >= uHud3.x && p.x < uHud3.z && p.y >= uHud3.y && p.y < uHud3.w))\n"
+    /* the corners first: the layer map is read only there (one more texture read over the
+     * whole screen cost 0.1.12 frames) */
+    "    float2 hp = uv2 * float2(256.0, 192.0);\n"
+    "    if ((b.a > 0.99 || b.a * 255.0 > 191.5) &&\n"
+    "        ((hp.x >= uHud0.x && hp.x < uHud0.z && hp.y >= uHud0.y && hp.y < uHud0.w) ||\n"
+    "         (hp.x >= uHud1.x && hp.x < uHud1.z && hp.y >= uHud1.y && hp.y < uHud1.w) ||\n"
+    "         (hp.x >= uHud2.x && hp.x < uHud2.z && hp.y >= uHud2.y && hp.y < uHud2.w) ||\n"
+    "         (hp.x >= uHud3.x && hp.x < uHud3.z && hp.y >= uHud3.y && hp.y < uHud3.w))) {\n"
+    "        float lid = floor(tex2D(uLayer, uv2).r * 255.0 + 0.5);\n"
+    "        if (lid == uHudLayer.x || lid == uHudLayer.y)\n"
     "            b = float4(uBackdrop, 0.0);\n"
     "    }\n"
     "#endif\n"

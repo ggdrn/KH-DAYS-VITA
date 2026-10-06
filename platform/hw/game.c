@@ -295,6 +295,9 @@ static struct {
     uint64_t seen_at[PANEL_RECENT];
 } s_panels[KH_PANELS];
 static int s_pin_select;
+/* HUD size: a dialogue box on the top screen (seen in the layer map), and that map's last hash */
+static int s_dialog_open;
+static uint32_t s_layer_hash;
 extern int PauseMenu_GetMode(void); /* the game's pause state: 0 running */
 
 /* MASTER_BRIGHT brightening or darkening by a non-zero factor */
@@ -463,11 +466,11 @@ static void present(void)
     /* not while paused: the pause menu's buttons reach into the HP gauge's corner. The 2D
      * then also records which layer is in front at each pixel: the HUD's own layers move,
      * nothing else in its corners (0.1.10 moved whatever passed there) */
-    const int hud_shrink = !dual && a_on_top && kh_overlay_loaded(22) &&
+    const int hud_wanted = !dual && a_on_top && kh_overlay_loaded(22) &&
                            PauseMenu_GetMode() == 0 && kh_config.hud_size < 100;
     static uint8_t layer_a[256 * 192];
-    video_set_hud_shrink(hud_shrink);
-    kh_gpu2d_layer_out[KH_ENGINE_A] = hud_shrink ? layer_a : NULL;
+    video_set_hud_shrink(hud_wanted && !s_dialog_open);
+    kh_gpu2d_layer_out[KH_ENGINE_A] = hud_wanted ? layer_a : NULL;
     kh_gpu2d_plain[KH_ENGINE_B] = single && PauseMenu_GetMode() != 0;
     /* with the detailed log, once a second: this frame's GPU time measured alone */
     video_gpu_probe_begin();
@@ -705,8 +708,24 @@ static void present(void)
         dump_2d(a_on_top);
     }
     update_panels(video_single_screen(), upload2d, s_bottom);
-    if (upload2d && kh_gpu2d_layer_out[KH_ENGINE_A])
-        video_set_layer_map(kh_gpu2d_layer_out[KH_ENGINE_A]);
+    if (upload2d && kh_gpu2d_layer_out[KH_ENGINE_A]) {
+        const uint8_t *l = kh_gpu2d_layer_out[KH_ENGINE_A];
+        uint32_t h = 2166136261u;
+        int x, y, n = 0;
+        /* a dialogue: its box (BG3, as the HUD's bars) spans the bottom of the screen, the
+         * middle too, where the HUD never is; the HUD keeps its size meanwhile */
+        for (y = 130; y < 186; y += 4)
+            for (x = 112; x < 144; x += 2)
+                n += l[y * 256 + x] == 3;
+        s_dialog_open = n >= 24;
+        /* sent to the GPU only when it changed */
+        for (x = 0; x < 256 * 192; x += 4)
+            h = (h ^ *(const uint32_t *)(l + x)) * 16777619u;
+        if (h != s_layer_hash) {
+            s_layer_hash = h;
+            video_set_layer_map(l);
+        }
+    }
     s_stage = "present";
     {
         uint64_t t = sceKernelGetProcessTimeWide();

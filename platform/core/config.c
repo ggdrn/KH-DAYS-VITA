@@ -171,6 +171,7 @@ void config_save(void)
                 s_vita_buttons[config_vita_button_index(kh_config.button[b])].name);
     fprintf(f, "\n# Diagnostics: 1 turns on the debug hotkeys (L+R+Start on-screen log,\n"
                "# L+R+Triangle frame dump, L+R+Circle 3D debug modes) and the detailed log.\n"
+               "# 2 also measures the GPU once a second (which costs frames).\n"
                "debug = %d\n", kh_config.debug);
     fclose(f);
 }
@@ -239,7 +240,7 @@ static void set(const char *k, const char *v, int version)
     else if (!strcmp(k, "fast_forward"))
         kh_config.fast_forward = clampi(atoi(v), 2, 3);
     else if (!strcmp(k, "debug"))
-        kh_config.debug = atoi(v) != 0;
+        kh_config.debug = clampi(atoi(v), 0, 2);
     else if (!strcmp(k, "hud_size"))
         kh_config.hud_size = clampi(atoi(v), 60, 100);
     else if (!strcmp(k, "language"))
