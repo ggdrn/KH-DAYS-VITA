@@ -460,7 +460,8 @@ static void present(void)
     const int tutorial = single && ((KH_IO32(0x04001000) >> 8) & 0x1f) == 0x0c;
     video_set_tutorial(tutorial);
     /* the field's HUD at config hud_size (engine A, with the 3D, on top in the field) */
-    video_set_hud_shrink(!dual && a_on_top && kh_overlay_loaded(22));
+    /* not while paused: the pause menu's buttons reach into the HP gauge's corner */
+    video_set_hud_shrink(!dual && a_on_top && kh_overlay_loaded(22) && PauseMenu_GetMode() == 0);
     kh_gpu2d_plain[KH_ENGINE_B] = single && PauseMenu_GetMode() != 0;
     /* with the detailed log, once a second: this frame's GPU time measured alone */
     video_gpu_probe_begin();
