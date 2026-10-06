@@ -55,19 +55,14 @@ typedef struct {
     GLint c2d, c3d, bright, hofs, blend, backdrop, prev, cap, flip, fx, filt, panel, panel_rect;
 } ComposeProg;
 static ComposeProg s_progs[PROGS];
-/* config hud_size: the HUD's blocks on the DS top screen (x0, y0, x1, y1), each drawn smaller
- * in its own corner (top-left, top-right, bottom-left, bottom-right): hearts and chain, none
- * (the target's name and HP keep their size), the command deck, the HP gauge with the
- * portraits */
+/* config hud_size: the HUD's corners on the DS top screen (x0, y0, x1, y1), as gpu2d's
+ * hud_codes marks them, each drawn smaller in its own corner (top-left, top-right,
+ * bottom-left, bottom-right): hearts and chain, none (the target's name and HP keep their
+ * size), the command deck, the HP gauge with the faces */
 static const float s_hud_blocks[4][4] = {
     { 0, 0, 120, 60 }, { 0, 0, 0, 0 }, { 0, 60, 140, 192 }, { 140, 90, 256, 192 } };
-/* The HUD's pixels, taken out of the screen with the 3D on the CPU (video_hud_split) and drawn
- * from their own texture, smaller in their corners. 0.1.12 and 0.1.13 sorted them out in the
- * shader over the whole display, and the GPU lost a third of the frames. */
-static GLuint s_hud_tex;
-static int s_hud_dirty;
-static uint32_t s_hud_rgba[DS_SCREEN_W * DS_SCREEN_H];
-static int s_hud_shrink; /* the field's HUD is shrunk (video_hud_split) */
+
+static int s_hud_shrink; /* the field's HUD corners are drawn smaller (gpu2d marks them) */
 /* the panel being drawn (draw_panels): style, radius, width, height; its texture rectangle */
 static float s_panel[4], s_panel_rect[4];
 static float s_hud_scale = 1.0f; /* < 1: the 2D kept 4:3 over a widescreen 3D (config hud) */
@@ -119,10 +114,10 @@ static const char s_compose_fs[] =
     "    float2 t1 = t0 + float2(1.0 / 256.0, 1.0 / 192.0);\n"
     "    float4 a = tex2D(s, t0), b = tex2D(s, float2(t1.x, t0.y));\n"
     "    float4 c = tex2D(s, float2(t0.x, t1.y)), d = tex2D(s, t1);\n"
-    "    float wa = (1.0 - f.x) * (1.0 - f.y) * step(0.99, a.a);\n"
-    "    float wb = f.x * (1.0 - f.y) * step(0.99, b.a);\n"
-    "    float wc = (1.0 - f.x) * f.y * step(0.99, c.a);\n"
-    "    float wd = f.x * f.y * step(0.99, d.a);\n"
+    "    float wa = (1.0 - f.x) * (1.0 - f.y) * step(0.999, a.a);\n"
+    "    float wb = f.x * (1.0 - f.y) * step(0.999, b.a);\n"
+    "    float wc = (1.0 - f.x) * f.y * step(0.999, c.a);\n"
+    "    float wd = f.x * f.y * step(0.999, d.a);\n"
     "    return (a.rgb * wa + b.rgb * wb + c.rgb * wc + d.rgb * wd) / max(wa + wb + wc + wd, 0.0001);\n"
     "}\n"
     "\n"
@@ -140,9 +135,18 @@ static const char s_compose_fs[] =
     "    float4 b = float4(0.0, 0.0, 0.0, 0.0);\n"
     "    if (uv2.x >= 0.0 && uv2.x <= 1.0) {\n"
     "        b = tex2D(u2d, uv2);\n"
-    "        if (uFilt.x > 0.5 && b.a > 0.99)\n"
+    "        if (uFilt.x > 0.5 && b.a > 0.999)\n"
     "            b.rgb = smooth2d(u2d, uv2, uFilt);\n"
     "    }\n"
+    /* the HUD size's codes (gpu2d hud_codes): left out here, drawn again smaller in the
+     * corners (a PANEL pass); the 3D over the backdrop in their place */
+    "#ifndef PANEL\n"
+    "    {\n"
+    "        float hc0 = floor(b.a * 255.0 + 0.5);\n"
+    "        if (hc0 == 254.0 || hc0 == 225.0 || (hc0 > 160.5 && hc0 < 176.5))\n"
+    "            b = float4(uBackdrop, 0.0);\n"
+    "    }\n"
+    "#endif\n"
     /* config hud_size: the four HUD blocks are drawn again smaller in their corners (a later
      * pass); here their 2D pixels give way to the 3D over the backdrop */
     "    float3 c = b.rgb;\n"
@@ -203,14 +207,13 @@ static const char s_compose_fs[] =
     /* a HUD block: its 2D pixels, and its pixels blended over the 3D blended over what is
      * already there with their weight (the 3D under the block's new place) */
     "        float hc = floor(b.a * 255.0 + 0.5);\n"
-    "        if (b.a < 0.99) {\n"
-    "            if (hc >= 192.0) {\n"
-    "                c = b.rgb;\n"
-    "                a = a * (hc < 224.0 ? (hc - 192.0) / 16.0 : uBlend.x);\n"
-    "            } else {\n"
-    "                a = 0.0;\n"
-    "            }\n"
-    "        }\n"
+    "        c = b.rgb;\n"
+    "        if (hc == 225.0)\n"
+    "            a = a * uBlend.x;\n"
+    "        else if (hc > 160.5 && hc < 176.5)\n"
+    "            a = a * (hc - 160.0) / 16.0;\n"
+    "        else if (hc != 254.0)\n"
+    "            a = 0.0;\n"
     "    } else if (uPanel.x > 1.5) {\n"
     "        if (max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b)) < 0.1)\n"
     "            c = 1.0 - c;\n"
@@ -512,32 +515,6 @@ static float screen_alpha(int screen)
     return screen == s_inset ? (float)kh_config.inset_opacity / 100.0f : 1.0f;
 }
 
-void video_hud_split(uint32_t *fb, const uint8_t *layers, uint32_t backdrop)
-{
-    int b, x, y, changed = 0;
-    for (b = 0; b < 4; b++) {
-        const int x0 = (int)s_hud_blocks[b][0], y0 = (int)s_hud_blocks[b][1];
-        const int x1 = (int)s_hud_blocks[b][2], y1 = (int)s_hud_blocks[b][3];
-        for (y = y0; y < y1; y++)
-            for (x = x0; x < x1; x++) {
-                const int i = y * DS_SCREEN_W + x;
-                const uint32_t c = fb[i], code = c >> 24;
-                /* BG1 (the deck's text) and BG3 (its bars, the HP gauge, the face), 2D or
-                 * blended over the 3D */
-                const uint32_t was = s_hud_rgba[i];
-                if ((layers[i] == 1 || layers[i] == 3) && (code == 0xff || code >= 0xc0)) {
-                    s_hud_rgba[i] = c;
-                    fb[i] = (backdrop & 0xffffffu); /* the 3D over the backdrop there */
-                } else {
-                    s_hud_rgba[i] = 0;
-                }
-                changed |= was != s_hud_rgba[i];
-            }
-    }
-    /* uploaded only when the HUD changed (most 2D pictures leave it as it was) */
-    s_hud_dirty |= changed;
-}
-
 void video_set_hud_shrink(int on)
 {
     s_hud_shrink = on != 0;
@@ -547,7 +524,7 @@ static void draw_composed(int screen)
 {
     float v[16];
     const float hud = screen == s_inset ? 1.0f : s_hud_scale;
-    const int shrink = s_hud_shrink && s_hud_tex && screen != s_inset && kh_config.hud_size < 100;
+    const int shrink = s_hud_shrink && screen != s_inset && kh_config.hud_size < 100;
     screen_quad(screen, v);
     compose_pass(v, s_tex_cur(screen), 0, s_3d_tex, s_3d_bright, 0, hud, screen_alpha(screen),
                  FILTER_2D);
@@ -580,8 +557,9 @@ static void draw_composed(int screen)
                 const float vq[16] = { x0, y0, u0, v0, x1, y0, u1, v0,
                                        x0, y1, u0, v1, x1, y1, u1, v1 };
                 s_panel[0] = 3.0f; /* the block's 2D pixels only */
-                compose_pass(vq, s_hud_tex, 0, 0, s_3d_bright, 0, 1.0f,
-                             screen_alpha(screen), FILTER_2D);
+                /* the same picture, its HUD codes only */
+                compose_pass(vq, s_tex_cur(screen), 0, 0, s_3d_bright, 0, 1.0f,
+                             screen_alpha(screen), FILTER_TEXEL);
                 s_panel[0] = 0.0f;
             }
         }
@@ -1005,14 +983,7 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
     }
     if (s_cap.pending)
         run_capture();
-    if (s_hud_dirty) {
-        s_hud_dirty = 0;
-        if (!s_hud_tex)
-            s_hud_tex = new_texture(DS_SCREEN_W, DS_SCREEN_H, GL_NEAREST);
-        glBindTexture(GL_TEXTURE_2D, s_hud_tex);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, DS_SCREEN_W, DS_SCREEN_H, GL_RGBA,
-                        GL_UNSIGNED_BYTE, s_hud_rgba);
-    }
+
     glViewport(0, 0, DISPLAY_W, DISPLAY_H);
     glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);

@@ -37,10 +37,7 @@ void video_set_panel_visibility(int i, float vis);
 void video_set_tutorial(int on);
 /* In the field: the top screen's HUD blocks drawn at config hud_size, each in its corner. */
 void video_set_hud_shrink(int on);
-/* HUD size: the HUD's pixels (layers BG1 and BG3, gpu2d kh_gpu2d_layer_out) inside its corners
- * moved out of fb (the screen with the 3D, RGBA with gpu2d codes) into the HUD's own texture,
- * left as the 3D over backdrop (RGBA). Before that fb is uploaded. */
-void video_hud_split(uint32_t *fb, const uint8_t *layers, uint32_t backdrop);
+
 int video_single_screen(void);
 /* Display pixel (960x544) -> DS touch-screen pixel; 0 when it is not on the touch screen. */
 int video_map_touch(int px, int py, int *x, int *y);

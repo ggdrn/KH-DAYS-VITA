@@ -420,25 +420,12 @@ static void update_panels(int single, int drawn, const uint32_t *bottom_fb)
     }
 }
 
-/* HUD size, after each 2D picture of engine A is finished (and before the next one can start
- * drawing into it): a dialogue box (BG3 as the HUD's bars, but across the bottom middle where
- * the HUD never is) keeps the HUD as it is; otherwise the HUD goes out of the picture into its
- * own texture (video_hud_split), the backdrop (palette 0) where it was */
-static void hud_after_2d(uint32_t *fb)
+/* HUD size, after each 2D picture of engine A is finished: a dialogue box (BG3 as the HUD's
+ * bars, but across the bottom middle where the HUD never is: gpu2d counted it) keeps the HUD
+ * as it is in the next pictures */
+static void hud_after_2d(void)
 {
-    const uint8_t *l = kh_gpu2d_layer_out[KH_ENGINE_A];
-    int x, y, n = 0;
-    if (!l)
-        return;
-    for (y = 130; y < 186; y += 4)
-        for (x = 112; x < 144; x += 2)
-            n += l[y * 256 + x] == 3;
-    s_dialog_open = n >= 24;
-    if (!s_dialog_open) {
-        const uint16_t bd = (uint16_t)(kh_ds_palette[0] | kh_ds_palette[1] << 8);
-        const uint32_t r = bd & 31, g = (bd >> 5) & 31, b = (bd >> 10) & 31;
-        video_hud_split(fb, l, (r << 3 | r >> 2) | (g << 3 | g >> 2) << 8 | (b << 3 | b >> 2) << 16);
-    }
+    s_dialog_open = __atomic_exchange_n(&kh_gpu2d_center_bg3, 0, __ATOMIC_RELAXED) >= 200;
 }
 
 static void present(void)
@@ -494,18 +481,21 @@ static void present(void)
     video_set_tutorial(tutorial);
     /* the field's HUD at config hud_size (engine A, with the 3D, on top in the field) */
     /* not while paused: the pause menu's buttons reach into the HP gauge's corner. The 2D
-     * then also records which layer is in front at each pixel: the HUD's own layers move,
-     * nothing else in its corners (0.1.10 moved whatever passed there) */
+     * gives the HUD's own layers (BG1, BG3) in its corners codes of their own (gpu2d
+     * hud_codes), which the composition leaves out and draws again smaller: no texture, no
+     * upload and no pass over the screen more than without it (0.1.12-0.1.15 sorted the HUD
+     * out with a layer map and a texture of its own, and lost up to 20 frames a second) */
     const int hud_wanted = !dual && a_on_top && kh_overlay_loaded(22) &&
                            PauseMenu_GetMode() == 0 && kh_config.hud_size < 100;
-    static uint8_t layer_a[256 * 192];
     const int hud_on = hud_wanted && !s_dialog_open;
     static int hud_was;
     /* the last 2D picture had its HUD taken out (or not): redrawn when that changes */
     const int hud_changed = hud_on != hud_was;
     hud_was = hud_on;
-    video_set_hud_shrink(hud_on);
-    kh_gpu2d_layer_out[KH_ENGINE_A] = hud_wanted ? layer_a : NULL;
+    /* the corners are drawn whenever the HUD size is on (with nothing marked, they draw
+     * nothing); gpu2d marks the HUD (2) or only watches for a dialogue (1) */
+    video_set_hud_shrink(hud_wanted);
+    kh_gpu2d_hud_mode = hud_on ? 2 : hud_wanted ? 1 : 0;
     kh_gpu2d_plain[KH_ENGINE_B] = single && PauseMenu_GetMode() != 0;
     /* with the detailed log, once a second: this frame's GPU time measured alone */
     video_gpu_probe_begin();
@@ -533,7 +523,7 @@ static void present(void)
             last_a3d = 0;
             for (i = 0; i < BANDS; i++)
                 last_a3d |= f2d.a3d[i];
-            hud_after_2d(f2d.fb[KH_ENGINE_A]);
+            hud_after_2d();
         }
         d = sceKernelGetProcessTimeWide() - t;
         s_join_total += d;
@@ -657,7 +647,7 @@ static void present(void)
                     last_a3d = 0;
                     for (i = 0; i < BANDS; i++)
                         last_a3d |= f2d.a3d[i];
-                    hud_after_2d(f2d.fb[KH_ENGINE_A]);
+                    hud_after_2d();
                 }
             }
         }

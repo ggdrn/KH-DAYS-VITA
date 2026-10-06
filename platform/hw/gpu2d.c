@@ -108,7 +108,44 @@ static int bank_is(int bank, int mst)
 
 volatile uint32_t kh_gpu2d_dispcnt_override[2];
 volatile int kh_gpu2d_plain[2];
-uint8_t *volatile kh_gpu2d_layer_out[2];
+volatile int kh_gpu2d_hud_mode;
+volatile uint32_t kh_gpu2d_center_bg3;
+
+/* the HUD's corners on the top screen (x0, y0, x1, y1): hearts and chain, the command deck
+ * with its submenus, the HP gauge with the faces (video.c draws them back from there) */
+static const int s_hud_zones[3][4] = { { 0, 0, 120, 60 }, { 0, 60, 140, 192 },
+                                       { 140, 90, 256, 192 } };
+
+/* HUD size (kh_gpu2d_hud_mode 2): engine A's pixels of BG1 (the deck's text) and BG3 (its bars,
+ * the HP gauge, the faces) in the HUD's corners take codes of their own, which the composition
+ * leaves out and draws again smaller in the corners: 2D 0xff -> 0xfe, blended over the 3D 0xe0
+ * -> 0xe1, a sprite over it 0xc1-0xd0 -> 0xa1-0xb0. Mode 1 or 2 also counts the BG3 pixels in
+ * the bottom middle, where only a dialogue box is (kh_gpu2d_center_bg3). */
+static void hud_codes(int line, const uint16_t *id0, uint8_t *code)
+{
+    int z, x;
+    if (line >= 130 && line < 186)
+        for (x = 112; x < 144; x++)
+            if (id0[x] == L_BG3)
+                __atomic_add_fetch(&kh_gpu2d_center_bg3, 1, __ATOMIC_RELAXED);
+    if (kh_gpu2d_hud_mode < 2)
+        return;
+    for (z = 0; z < 3; z++) {
+        if (line < s_hud_zones[z][1] || line >= s_hud_zones[z][3])
+            continue;
+        for (x = s_hud_zones[z][0]; x < s_hud_zones[z][2]; x++) {
+            const uint8_t c = code[x];
+            if (id0[x] != L_BG1 && id0[x] != L_BG3)
+                continue;
+            if (c == KH_GPU2D_2D)
+                code[x] = 0xfe;
+            else if (c == KH_GPU2D_BLEND_3D)
+                code[x] = 0xe1;
+            else if (c > KH_GPU2D_OVER_3D && c <= (KH_GPU2D_OVER_3D | 16))
+                code[x] = (uint8_t)(0xa0 | (c & 31));
+        }
+    }
+}
 
 static void engine_setup(Engine *e, int engine)
 {
@@ -949,8 +986,6 @@ static int render_lines(int engine, uint32_t *fb, int y0, int y1, int graphics)
 
     engine_setup(&e, engine);
     mode = graphics ? 1 : (e.dispcnt >> 16) & (e.is_a ? 3 : 1);
-    if (!graphics && kh_gpu2d_layer_out[engine] && (mode != 1 || (e.dispcnt & 0x80)))
-        memset(kh_gpu2d_layer_out[engine] + y0 * W, L_BD, (size_t)(y1 - y0) * W);
     fb += y0 * W;
     if (mode == 0 || (e.dispcnt & 0x80)) { /* display off, or forced blank: white */
         memset(fb, 0xff, (size_t)(y1 - y0) * W * sizeof(*fb));
@@ -981,16 +1016,12 @@ static int render_lines(int engine, uint32_t *fb, int y0, int y1, int graphics)
         compose_line(&e, line, row, code, &sc);
         if (e.has3d) {
             /* master brightness then comes after the composition, on the GPU */
+            if (!graphics && kh_gpu2d_hud_mode && e.is_a)
+                hud_codes(line, sc.id0, code);
             for (x = 0; x < W; x++)
                 fb[x] = (to_rgba(row[x]) & 0xffffffu) | (uint32_t)code[x] << 24;
         } else {
             row_out(row, fb, mmode, mf);
-        }
-        if (!graphics && kh_gpu2d_layer_out[engine]) {
-            /* the layer in front at each pixel (L_*), for the HUD size */
-            uint8_t *l = kh_gpu2d_layer_out[engine] + line * W;
-            for (x = 0; x < W; x++)
-                l[x] = (uint8_t)sc.id0[x];
         }
         if (sc.prof) /* the whole line: the composition is what BGs and sprites leave */
             prof_add(&s_prof_us[!e.is_a][2], (uint32_t)(prof_now(sc.prof) - t) * 8);
