@@ -427,6 +427,7 @@ static void hud_after_2d(void)
 {
     int z, boxes[3][4];
     s_dialog_open = __atomic_exchange_n(&kh_gpu2d_center_bg3, 0, __ATOMIC_RELAXED) >= 200;
+    kh_gpu2d_banner_last = __atomic_exchange_n(&kh_gpu2d_banner_now, 0, __ATOMIC_RELAXED);
     /* the boxes the HUD filled in this picture: the corners drawn again cover only those */
     for (z = 0; z < 3; z++) {
         boxes[z][0] = __atomic_exchange_n(&kh_gpu2d_hud_box[z][0], 256, __ATOMIC_RELAXED);
@@ -621,7 +622,12 @@ static void present(void)
         s_stage = "2d";
         if (f2d.neng)
             memset(f2d.a3d, 0, sizeof(f2d.a3d));
-        workers_begin(render_chunk, BANDS * f2d.neng, &f2d);
+        /* the 60 fps 2D is joined a frame later: the second helper, on the game's core, can
+         * take a share of it while the game waits for its next frame */
+        if (f2d.neng && kh_config.frame_interpolation && !dual)
+            workers_begin_spare(render_chunk, BANDS * f2d.neng, &f2d);
+        else
+            workers_begin(render_chunk, BANDS * f2d.neng, &f2d);
         if (f2d.neng && kh_config.frame_interpolation && !dual) {
             async_2d = 1;
             async_top = a_on_top;

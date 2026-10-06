@@ -54,6 +54,8 @@ extern volatile int kh_gpu2d_plain[2];
  * again smaller. */
 extern volatile int kh_gpu2d_hud_mode;
 extern volatile uint32_t kh_gpu2d_center_bg3;
+/* the INFORMATION bar along the top: seen in the picture being drawn / the last one */
+extern volatile int kh_gpu2d_banner_now, kh_gpu2d_banner_last;
 /* the box the marked HUD fills in each corner (top-left, bottom-left, bottom-right: x0 y0 x1
  * y1) in the pictures since it was last reset to { 256, 192, 0, 0 } */
 extern volatile int32_t kh_gpu2d_hud_box[3][4];

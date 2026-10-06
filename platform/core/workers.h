@@ -12,12 +12,17 @@
 #define KH_COMPUTE_PRIORITY (0x10000100 + 16)
 /* the display thread, above the helper whose 2D it waits for */
 #define KH_DISPLAY_PRIORITY (0x10000100 + 8)
+/* the second helper on the game's core: below the game's threads, it runs when they wait */
+#define KH_SPARE_PRIORITY (0x10000100 + 24)
 
 typedef void (*WorkFn)(int chunk, void *arg);
 
 void workers_init(void);
 /* Start fn(0..n-1, arg) on the helper; the caller may do other work, then join. */
 void workers_begin(WorkFn fn, int n, void *arg);
+/* The same, with the second helper on the game's core joining in: for jobs joined a frame
+ * later (the 60 fps 2D), which can wait a few milliseconds for a chunk it was taken from. */
+void workers_begin_spare(WorkFn fn, int n, void *arg);
 /* Pull the chunks still left without waiting for the ones in flight (the job stays open for
  * workers_join). */
 void workers_help(void);

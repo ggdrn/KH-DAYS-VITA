@@ -110,6 +110,7 @@ volatile uint32_t kh_gpu2d_dispcnt_override[2];
 volatile int kh_gpu2d_plain[2];
 volatile int kh_gpu2d_hud_mode;
 volatile uint32_t kh_gpu2d_center_bg3;
+volatile int kh_gpu2d_banner_now, kh_gpu2d_banner_last;
 volatile int32_t kh_gpu2d_hud_box[3][4] = { { 256, 192, 0, 0 }, { 256, 192, 0, 0 },
                                             { 256, 192, 0, 0 } };
 
@@ -144,11 +145,24 @@ static void hud_codes(int line, const uint16_t *id0, uint8_t *code)
         for (x = 112; x < 144; x++)
             if (id0[x] == L_BG3)
                 __atomic_add_fetch(&kh_gpu2d_center_bg3, 1, __ATOMIC_RELAXED);
+    /* the game's own INFORMATION bar (BG1/BG3 as the HUD, along the top, the whole width): a
+     * line of it reaches past the chain's corner, and while it was seen in the last picture
+     * the top-left corner keeps its size altogether (its narrow tab too) */
+    int banner_line = 0;
+    if (line < 40)
+        for (x = 124; x < 200; x++)
+            if (id0[x] == L_BG1 || id0[x] == L_BG3) {
+                banner_line = 1;
+                kh_gpu2d_banner_now = 1;
+                break;
+            }
     if (kh_gpu2d_hud_mode < 2)
         return;
     for (z = 0; z < 3; z++) {
         int x0 = W, x1 = -1;
         if (line < s_hud_zones[z][1] || line >= s_hud_zones[z][3])
+            continue;
+        if (z == 0 && (banner_line || kh_gpu2d_banner_last))
             continue;
         for (x = s_hud_zones[z][0]; x < s_hud_zones[z][2]; x++) {
             const uint8_t c = code[x];
