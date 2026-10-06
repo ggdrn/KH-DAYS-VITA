@@ -196,6 +196,16 @@ static int drew_a(const Frame2d *f)
     return 0;
 }
 
+/* which screens' pictures a finished 2D drawing renewed (bit 0 top, bit 1 bottom): only those
+ * are uploaded (each upload is about a millisecond of the display thread) */
+static int drawn_screens(const Frame2d *f, int a_on_top)
+{
+    int i, m = 0;
+    for (i = 0; i < f->neng; i++)
+        m |= (f->eng[i] == KH_ENGINE_A) == a_on_top ? 1 : 2;
+    return m;
+}
+
 /* per-stage display times since the last report, for the 10 s line */
 static uint64_t s_t3d_total, s_join_total, s_present_total;
 static uint32_t s_2d_async; /* 2D pictures drawn over two Vita frames (60 fps mode) */
@@ -508,8 +518,8 @@ static void present(void)
     /* 60 fps mode: the 2D of a new game frame is drawn by the helper over this Vita frame and
      * the next, and shown with the next one, where the new frame's 3D (after its halfway mix)
      * is shown too; it no longer has to fit in one frame with everything else */
-    static int async_2d;
-    int upload2d = 0;
+    static int async_2d, async_top;
+    int upload2d = 0, upload_mask = 0;
 
 
     if (async_2d) {
@@ -518,6 +528,7 @@ static void present(void)
         workers_join();
         async_2d = 0;
         upload2d = 1;
+        upload_mask = drawn_screens(&f2d, async_top);
         if (drew_a(&f2d)) {
             last_a3d = 0;
             for (i = 0; i < BANDS; i++)
@@ -614,6 +625,7 @@ static void present(void)
         workers_begin(render_chunk, BANDS * f2d.neng, &f2d);
         if (f2d.neng && kh_config.frame_interpolation && !dual) {
             async_2d = 1;
+            async_top = a_on_top;
             s_2d_async++;
         }
         s_stage = "3d";
@@ -638,6 +650,7 @@ static void present(void)
                 s_toggle_drawn = toggle_seq;
             if (f2d.neng) {
                 upload2d = 1;
+                upload_mask = drawn_screens(&f2d, a_on_top);
                 /* engine A on the small screen is drawn every other time: when only the
                  * other engine was, A's 3D pixels are where they were (0.0.78 flickered) */
                 if (drew_a(&f2d)) {
@@ -668,6 +681,7 @@ static void present(void)
         int i;
         for (i = 0; i < 256 * 192; i++)
             fb[i] |= 0xff000000u;
+        upload_mask |= a_on_top ? 1 : 2;
     }
     /* the display capture the game armed for this frame (dialogue screen blends) */
     s_stage = "capture";
@@ -734,12 +748,13 @@ static void present(void)
         s_dump_2d = 0;
         dump_2d(a_on_top);
     }
-    update_panels(video_single_screen(), upload2d, s_bottom);
+    update_panels(video_single_screen(), upload2d && (upload_mask & 2), s_bottom);
     s_stage = "present";
     {
         uint64_t t = sceKernelGetProcessTimeWide();
         /* unchanged screens are not uploaded again */
-        video_present(upload2d ? s_top : NULL, upload2d ? s_bottom : NULL);
+        video_present(upload2d && (upload_mask & 1) ? s_top : NULL,
+                      upload2d && (upload_mask & 2) ? s_bottom : NULL);
         if (dual)
             s_toggle_done = toggle_seq;
         t = sceKernelGetProcessTimeWide() - t;

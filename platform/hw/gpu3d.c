@@ -350,6 +350,8 @@ void kh_gpu3d_reload_textures(void)
 }
 
 /* requests from the port menu, applied on the thread that draws */
+static uint32_t s_batches_serial; /* below, with flush */
+
 static void apply_requests(void)
 {
     if (s_want_scale && s_want_scale != s_scale && s_prog) {
@@ -367,6 +369,7 @@ static void apply_requests(void)
     if (s_want_reload) {
         int i;
         s_want_reload = 0;
+        s_batches_serial = 0xffffffffu; /* the kept draws would skip the textures' decoding */
         for (i = 0; i < TEX_SLOTS; i++)
             s_tex[i].sx = 0; /* decoded again, with the filter now chosen, when next used */
         for (i = 0; i < TEX_SLOTS; i++)
@@ -493,10 +496,30 @@ static void apply_state(const DrawState *st)
     }
 }
 
+/* The frame's draws as last sent: the same frame is drawn twice at 60 fps (its halfway mix,
+ * then itself), with other vertices only; the second time these are sent again as they are,
+ * with no polygon sorted, grouped or indexed anew (that was half of the 3D's CPU time). */
+#define BATCHES_MAX 4096
+static struct {
+    DrawState st;
+    int first, count;
+} s_batches[BATCHES_MAX];
+static int s_nbatches;
+static uint32_t s_batches_serial = 0xffffffffu;
+static int s_replaying; /* sending the kept draws: not recorded again */
+
 static void flush(const DrawState *st, int first, int count)
 {
     if (!count)
         return;
+    if (!s_replaying) {
+        if (s_nbatches < BATCHES_MAX) {
+            s_batches[s_nbatches].st = *st;
+            s_batches[s_nbatches].first = first;
+            s_batches[s_nbatches].count = count;
+        }
+        s_nbatches++;
+    }
     if (st->shadow == 2) {
         /* first unmark the pixels whose opaque polygon has this shadow's ID */
         apply_state(st);
@@ -731,6 +754,16 @@ static unsigned draw_frame(const KhGxFrame *f, const KhGxVertex *vtx)
     glVertexAttribPointer(A_TEX, 2, GL_FLOAT, GL_FALSE, sizeof(KhGxVertex), (void *)16);
     glVertexAttribPointer(A_COL, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(KhGxVertex), (void *)24);
 
+    if (f->serial == s_batches_serial) {
+        /* this frame's draws again, with the vertices just uploaded */
+        int b;
+        s_replaying = 1;
+        for (b = 0; b < s_nbatches; b++)
+            flush(&s_batches[b].st, s_batches[b].first, s_batches[b].count);
+        s_replaying = 0;
+        goto drawn;
+    }
+    s_nbatches = 0;
     /* opaque polygons first, grouped by GL state (the z-buffer makes their order free; it
      * cuts the draw calls several times), then the translucent ones in the frame's order */
     {
@@ -859,6 +892,9 @@ static unsigned draw_frame(const KhGxFrame *f, const KhGxVertex *vtx)
     }
     if (have)
         flush(&cur, first, nidx - first);
+    /* kept for the frame's second draw when every batch fitted */
+    s_batches_serial = s_nbatches <= BATCHES_MAX ? f->serial : 0xffffffffu;
+drawn:
 
     glDisableVertexAttribArray(A_POS);
     glDisableVertexAttribArray(A_TEX);

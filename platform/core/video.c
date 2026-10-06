@@ -514,7 +514,7 @@ static float screen_alpha(int screen)
 
 void video_hud_split(uint32_t *fb, const uint8_t *layers, uint32_t backdrop)
 {
-    int b, x, y;
+    int b, x, y, changed = 0;
     for (b = 0; b < 4; b++) {
         const int x0 = (int)s_hud_blocks[b][0], y0 = (int)s_hud_blocks[b][1];
         const int x1 = (int)s_hud_blocks[b][2], y1 = (int)s_hud_blocks[b][3];
@@ -524,15 +524,18 @@ void video_hud_split(uint32_t *fb, const uint8_t *layers, uint32_t backdrop)
                 const uint32_t c = fb[i], code = c >> 24;
                 /* BG1 (the deck's text) and BG3 (its bars, the HP gauge, the face), 2D or
                  * blended over the 3D */
+                const uint32_t was = s_hud_rgba[i];
                 if ((layers[i] == 1 || layers[i] == 3) && (code == 0xff || code >= 0xc0)) {
                     s_hud_rgba[i] = c;
                     fb[i] = (backdrop & 0xffffffu); /* the 3D over the backdrop there */
                 } else {
                     s_hud_rgba[i] = 0;
                 }
+                changed |= was != s_hud_rgba[i];
             }
     }
-    s_hud_dirty = 1;
+    /* uploaded only when the HUD changed (most 2D pictures leave it as it was) */
+    s_hud_dirty |= changed;
 }
 
 void video_set_hud_shrink(int on)
@@ -1049,17 +1052,43 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
         }
     }
     if (s_overlay) {
-        static const ScreenRect full = { 0, 0, DISPLAY_W, DISPLAY_H };
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        /* only the overlay's drawn rows and columns: a frame-rate counter is a few dozen
+         * pixels, and the whole display drawn over (and uploaded) for it cost the GPU about
+         * as much as composing the screen once more (0.1.14) */
+        static int bx0, by0, bx1, by1;
         glBindTexture(GL_TEXTURE_2D, s_overlay_tex);
         if (s_overlay_dirty) {
+            int x, y;
             s_overlay_dirty = 0;
-            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, VIDEO_OVERLAY_W, VIDEO_OVERLAY_H, GL_RGBA,
-                            GL_UNSIGNED_BYTE, s_overlay);
+            bx0 = VIDEO_OVERLAY_W, by0 = VIDEO_OVERLAY_H, bx1 = by1 = 0;
+            for (y = 0; y < VIDEO_OVERLAY_H; y++)
+                for (x = 0; x < VIDEO_OVERLAY_W; x++)
+                    if (s_overlay[y * VIDEO_OVERLAY_W + x] >> 24) {
+                        if (x < bx0) bx0 = x;
+                        if (x >= bx1) bx1 = x + 1;
+                        if (y < by0) by0 = y;
+                        if (y >= by1) by1 = y + 1;
+                    }
+            if (by1 > by0)
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, by0, VIDEO_OVERLAY_W, by1 - by0, GL_RGBA,
+                                GL_UNSIGNED_BYTE, s_overlay + by0 * VIDEO_OVERLAY_W);
         }
-        draw_quad(&full);
-        glDisable(GL_BLEND);
+        if (bx1 > bx0 && by1 > by0) {
+            const float sx = (float)DISPLAY_W / VIDEO_OVERLAY_W, sy = (float)DISPLAY_H / VIDEO_OVERLAY_H;
+            const float x0 = bx0 * sx, y0 = by0 * sy, x1 = bx1 * sx, y1 = by1 * sy;
+            const float pos[] = { x0, y0, x1, y0, x0, y1, x1, y1 };
+            const float u0 = (float)bx0 / VIDEO_OVERLAY_W, u1 = (float)bx1 / VIDEO_OVERLAY_W;
+            const float v0 = (float)by0 / VIDEO_OVERLAY_H, v1 = (float)by1 / VIDEO_OVERLAY_H;
+            const float uv[] = { u0, v0, u1, v0, u0, v1, u1, v1 };
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glEnableClientState(GL_VERTEX_ARRAY);
+            glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+            glVertexPointer(2, GL_FLOAT, 0, pos);
+            glTexCoordPointer(2, GL_FLOAT, 0, uv);
+            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+            glDisable(GL_BLEND);
+        }
     }
     if (s_gpu_probing) {
         const uint64_t t = sceKernelGetProcessTimeWide();
