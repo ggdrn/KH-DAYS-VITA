@@ -1208,6 +1208,14 @@ void kh_game_run(void)
                             (unsigned)(s_help_cpu / 600),
                             (unsigned)((all - s_loop_cpu - s_present_cpu - s_help_cpu) / 600));
                         s_loop_cpu = all;
+                        {
+                            uint64_t sg[VIDEO_SEGMENTS];
+                            video_take_segments(sg);
+                            LOG("display: present per frame: capture %uus, clear %uus, screens "
+                                "%uus, overlay %uus, swap %uus", (unsigned)(sg[0] / 600),
+                                (unsigned)(sg[1] / 600), (unsigned)(sg[2] / 600),
+                                (unsigned)(sg[3] / 600), (unsigned)(sg[4] / 600));
+                        }
                         s_present_cpu = s_help_cpu = 0;
                     }
                     {

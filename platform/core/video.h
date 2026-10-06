@@ -87,6 +87,10 @@ void video_capture(const uint32_t *gfx, int src3d, unsigned tex3d, float ka, flo
  * bank (0-3, VIDEO_SCREEN_MEMORY + 0/1; -1 none), with its engine's master brightness (its 0x0400006c value). */
 void video_show_capture(int screen, int bank, uint16_t master_bright);
 /* The last video_present's time in its texture uploads and in the buffer swap (us). */
+/* video_present's wall time by step since the last call: the capture, the clear (the first
+ * draw into the display's buffer), the screens, the overlay (and the GPU probe), the swap */
+#define VIDEO_SEGMENTS 5
+void video_take_segments(uint64_t out[VIDEO_SEGMENTS]);
 /* the display thread's CPU time inside vglSwapBuffers, the wall time there, and the time in
  * the screens' uploads, since the last call */
 void video_take_swap_cpu(uint64_t *cpu_us, uint64_t *wall_us, uint64_t *upload_us);

@@ -30,6 +30,15 @@ static int s_tex_at[2];
 static uint32_t s_upload_us, s_swap_us;
 static uint64_t s_swap_cpu_total, s_swap_wall_total; /* for video_take_swap_cpu */
 static uint64_t s_upload_total;
+/* video_present's wall time by step (video_take_segments) */
+static uint64_t s_seg_total[VIDEO_SEGMENTS];
+static uint64_t s_seg_at;
+static void seg_mark(int i)
+{
+    const uint64_t now = sceKernelGetProcessTimeWide();
+    s_seg_total[i] += now - s_seg_at;
+    s_seg_at = now;
+}
 /* With the detailed log, one frame a second is drawn alone: the GPU is drained before it
  * (video_gpu_probe_begin) and waited for before its swap, which gives that frame's own GPU time.
  * 0.1.0 only waited at the swap, which also counted the frames queued for display. */
@@ -998,6 +1007,7 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
     uint64_t t_swap;
 
     s_upload_us = 0;
+    s_seg_at = sceKernelGetProcessTimeWide();
     if (s_pending >= 0) {
         s_layout = (ScreenLayout)s_pending;
         s_pending = -1;
@@ -1005,10 +1015,12 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
     }
     if (s_cap.pending)
         run_capture();
+    seg_mark(0);
 
     glViewport(0, 0, DISPLAY_W, DISPLAY_H);
     glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
+    seg_mark(1);
     for (k = 0; k < 2; k++) {
         /* the large screen first, the inset over it */
         const int i = s_inset == 0 ? 1 - k : k;
@@ -1047,6 +1059,7 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
             draw_quad(&s_rect[i]);
         }
     }
+    seg_mark(2);
     if (s_overlay) {
         /* only the overlay's drawn rows and columns: a frame-rate counter is a few dozen
          * pixels, and the whole display drawn over (and uploaded) for it cost the GPU about
@@ -1086,6 +1099,7 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
             glDisable(GL_BLEND);
         }
     }
+    seg_mark(3);
     if (s_gpu_probing) {
         const uint64_t t = sceKernelGetProcessTimeWide();
         uint32_t d;
@@ -1104,6 +1118,16 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
         s_swap_us = (uint32_t)(sceKernelGetProcessTimeWide() - t_swap);
         s_swap_wall_total += s_swap_us;
         s_swap_cpu_total += threadstat_self_us() - c;
+    }
+    seg_mark(4);
+}
+
+void video_take_segments(uint64_t out[VIDEO_SEGMENTS])
+{
+    int i;
+    for (i = 0; i < VIDEO_SEGMENTS; i++) {
+        out[i] = s_seg_total[i];
+        s_seg_total[i] = 0;
     }
 }
 
