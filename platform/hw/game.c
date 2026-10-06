@@ -295,9 +295,8 @@ static struct {
     uint64_t seen_at[PANEL_RECENT];
 } s_panels[KH_PANELS];
 static int s_pin_select;
-/* HUD size: a dialogue box on the top screen (seen in the layer map), and that map's last hash */
+/* HUD size: a dialogue box on the top screen (seen in the layer map) */
 static int s_dialog_open;
-static uint32_t s_layer_hash;
 extern int PauseMenu_GetMode(void); /* the game's pause state: 0 running */
 
 /* MASTER_BRIGHT brightening or darkening by a non-zero factor */
@@ -411,6 +410,27 @@ static void update_panels(int single, int drawn, const uint32_t *bottom_fb)
     }
 }
 
+/* HUD size, after each 2D picture of engine A is finished (and before the next one can start
+ * drawing into it): a dialogue box (BG3 as the HUD's bars, but across the bottom middle where
+ * the HUD never is) keeps the HUD as it is; otherwise the HUD goes out of the picture into its
+ * own texture (video_hud_split), the backdrop (palette 0) where it was */
+static void hud_after_2d(uint32_t *fb)
+{
+    const uint8_t *l = kh_gpu2d_layer_out[KH_ENGINE_A];
+    int x, y, n = 0;
+    if (!l)
+        return;
+    for (y = 130; y < 186; y += 4)
+        for (x = 112; x < 144; x += 2)
+            n += l[y * 256 + x] == 3;
+    s_dialog_open = n >= 24;
+    if (!s_dialog_open) {
+        const uint16_t bd = (uint16_t)(kh_ds_palette[0] | kh_ds_palette[1] << 8);
+        const uint32_t r = bd & 31, g = (bd >> 5) & 31, b = (bd >> 10) & 31;
+        video_hud_split(fb, l, (r << 3 | r >> 2) | (g << 3 | g >> 2) << 8 | (b << 3 | b >> 2) << 16);
+    }
+}
+
 static void present(void)
 {
     /* POWCNT1 bit 15: engine A on the top screen */
@@ -469,7 +489,12 @@ static void present(void)
     const int hud_wanted = !dual && a_on_top && kh_overlay_loaded(22) &&
                            PauseMenu_GetMode() == 0 && kh_config.hud_size < 100;
     static uint8_t layer_a[256 * 192];
-    video_set_hud_shrink(hud_wanted && !s_dialog_open);
+    const int hud_on = hud_wanted && !s_dialog_open;
+    static int hud_was;
+    /* the last 2D picture had its HUD taken out (or not): redrawn when that changes */
+    const int hud_changed = hud_on != hud_was;
+    hud_was = hud_on;
+    video_set_hud_shrink(hud_on);
     kh_gpu2d_layer_out[KH_ENGINE_A] = hud_wanted ? layer_a : NULL;
     kh_gpu2d_plain[KH_ENGINE_B] = single && PauseMenu_GetMode() != 0;
     /* with the detailed log, once a second: this frame's GPU time measured alone */
@@ -497,6 +522,7 @@ static void present(void)
             last_a3d = 0;
             for (i = 0; i < BANDS; i++)
                 last_a3d |= f2d.a3d[i];
+            hud_after_2d(f2d.fb[KH_ENGINE_A]);
         }
         d = sceKernelGetProcessTimeWide() - t;
         s_join_total += d;
@@ -517,7 +543,7 @@ static void present(void)
         }
         /* dual 3D: the engines change screens with every toggle, so both are drawn each
          * time (a skipped one left the other engine's picture on its screen, 0.0.88) */
-        draw2d = dual || (pending && vb != serial_vb) || vb - drawn_vb >= 4;
+        draw2d = dual || hud_changed || (pending && vb != serial_vb) || vb - drawn_vb >= 4;
         if (draw2d) {
             pending = 0;
             drawn_vb = vb;
@@ -618,6 +644,7 @@ static void present(void)
                     last_a3d = 0;
                     for (i = 0; i < BANDS; i++)
                         last_a3d |= f2d.a3d[i];
+                    hud_after_2d(f2d.fb[KH_ENGINE_A]);
                 }
             }
         }
@@ -708,24 +735,6 @@ static void present(void)
         dump_2d(a_on_top);
     }
     update_panels(video_single_screen(), upload2d, s_bottom);
-    if (upload2d && kh_gpu2d_layer_out[KH_ENGINE_A]) {
-        const uint8_t *l = kh_gpu2d_layer_out[KH_ENGINE_A];
-        uint32_t h = 2166136261u;
-        int x, y, n = 0;
-        /* a dialogue: its box (BG3, as the HUD's bars) spans the bottom of the screen, the
-         * middle too, where the HUD never is; the HUD keeps its size meanwhile */
-        for (y = 130; y < 186; y += 4)
-            for (x = 112; x < 144; x += 2)
-                n += l[y * 256 + x] == 3;
-        s_dialog_open = n >= 24;
-        /* sent to the GPU only when it changed */
-        for (x = 0; x < 256 * 192; x += 4)
-            h = (h ^ *(const uint32_t *)(l + x)) * 16777619u;
-        if (h != s_layer_hash) {
-            s_layer_hash = h;
-            video_set_layer_map(l);
-        }
-    }
     s_stage = "present";
     {
         uint64_t t = sceKernelGetProcessTimeWide();

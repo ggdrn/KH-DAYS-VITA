@@ -49,11 +49,10 @@ static GLuint s_compose, s_compose_vbo;
 /* The composition shader in four builds, each with only what its passes use: the screens
  * (covering the whole display every frame), the screens with the HUD blocks masked, the panels
  * and HUD blocks, the display captures. One build with everything cost the GPU frames (0.1.8). */
-enum { PROG_SCREEN, PROG_HUDMASK, PROG_PANEL, PROG_CAP, PROGS };
+enum { PROG_SCREEN, PROG_PANEL, PROG_CAP, PROGS };
 typedef struct {
     GLuint id;
-    GLint c2d, c3d, bright, hofs, blend, backdrop, prev, cap, flip, fx, filt, panel, panel_rect,
-        hud[4], layer, hud_layer;
+    GLint c2d, c3d, bright, hofs, blend, backdrop, prev, cap, flip, fx, filt, panel, panel_rect;
 } ComposeProg;
 static ComposeProg s_progs[PROGS];
 /* config hud_size: the HUD's blocks on the DS top screen (x0, y0, x1, y1), each drawn smaller
@@ -62,13 +61,13 @@ static ComposeProg s_progs[PROGS];
  * portraits */
 static const float s_hud_blocks[4][4] = {
     { 0, 0, 120, 60 }, { 0, 0, 0, 0 }, { 0, 60, 140, 192 }, { 140, 90, 256, 192 } };
-/* the HUD's layers (gpu2d: 1 BG1, 3 BG3), and which layer is in front at each pixel of the
- * screen with the 3D (video_set_layer_map), as a texture */
-static GLuint s_layer_tex;
-static const uint8_t *s_layer_src;
-static int s_layer_dirty;
-static uint32_t s_layer_rgba[DS_SCREEN_W * DS_SCREEN_H];
-static int s_hud_shrink, s_hud_mask; /* the field's HUD is shrunk; this pass masks it */
+/* The HUD's pixels, taken out of the screen with the 3D on the CPU (video_hud_split) and drawn
+ * from their own texture, smaller in their corners. 0.1.12 and 0.1.13 sorted them out in the
+ * shader over the whole display, and the GPU lost a third of the frames. */
+static GLuint s_hud_tex;
+static int s_hud_dirty;
+static uint32_t s_hud_rgba[DS_SCREEN_W * DS_SCREEN_H];
+static int s_hud_shrink; /* the field's HUD is shrunk (video_hud_split) */
 /* the panel being drawn (draw_panels): style, radius, width, height; its texture rectangle */
 static float s_panel[4], s_panel_rect[4];
 static float s_hud_scale = 1.0f; /* < 1: the 2D kept 4:3 over a widescreen 3D (config hud) */
@@ -131,10 +130,7 @@ static const char s_compose_fs[] =
     "            uniform float2 uBright, uniform float uHofs, uniform float2 uBlend,\n"
     "            uniform float3 uBackdrop, uniform sampler2D uPrev, uniform float4 uCap,\n"
     "            uniform float uFlip, uniform float4 uFx, uniform float2 uFilt,\n"
-    "            uniform float4 uPanel, uniform float4 uPanelRect, uniform sampler2D uLayer,\n"
-    "            uniform float2 uHudLayer,\n"
-    "            uniform float4 uHud0, uniform float4 uHud1, uniform float4 uHud2,\n"
-    "            uniform float4 uHud3) : COLOR\n"
+    "            uniform float4 uPanel, uniform float4 uPanelRect) : COLOR\n"
     "{\n"
     "    float2 uv2 = vUv;\n"
     "    if (uFlip > 0.5)\n"
@@ -149,22 +145,6 @@ static const char s_compose_fs[] =
     "    }\n"
     /* config hud_size: the four HUD blocks are drawn again smaller in their corners (a later
      * pass); here their 2D pixels give way to the 3D over the backdrop */
-    "#ifdef HUDMASK\n"
-    /* only the HUD's own layers (uHudLayer: BG1 the deck's text, BG3 its bars and the HP
-     * gauge); the INFORMATION bar and the dialogues (BG2) stay where they are */
-    /* the corners first: the layer map is read only there (one more texture read over the
-     * whole screen cost 0.1.12 frames) */
-    "    float2 hp = uv2 * float2(256.0, 192.0);\n"
-    "    if ((b.a > 0.99 || b.a * 255.0 > 191.5) &&\n"
-    "        ((hp.x >= uHud0.x && hp.x < uHud0.z && hp.y >= uHud0.y && hp.y < uHud0.w) ||\n"
-    "         (hp.x >= uHud1.x && hp.x < uHud1.z && hp.y >= uHud1.y && hp.y < uHud1.w) ||\n"
-    "         (hp.x >= uHud2.x && hp.x < uHud2.z && hp.y >= uHud2.y && hp.y < uHud2.w) ||\n"
-    "         (hp.x >= uHud3.x && hp.x < uHud3.z && hp.y >= uHud3.y && hp.y < uHud3.w))) {\n"
-    "        float lid = floor(tex2D(uLayer, uv2).r * 255.0 + 0.5);\n"
-    "        if (lid == uHudLayer.x || lid == uHudLayer.y)\n"
-    "            b = float4(uBackdrop, 0.0);\n"
-    "    }\n"
-    "#endif\n"
     "    float3 c = b.rgb;\n"
     "    float u = vUv.x + uHofs;\n"
     "    float4 t = tex2D(u3d, float2(u, 1.0 - vUv.y));\n"
@@ -223,10 +203,7 @@ static const char s_compose_fs[] =
     /* a HUD block: its 2D pixels, and its pixels blended over the 3D blended over what is
      * already there with their weight (the 3D under the block's new place) */
     "        float hc = floor(b.a * 255.0 + 0.5);\n"
-    "        float hl = floor(tex2D(uLayer, vUv).r * 255.0 + 0.5);\n"
-    "        if (hl != uHudLayer.x && hl != uHudLayer.y) {\n"
-    "            a = 0.0;\n"
-    "        } else if (b.a < 0.99) {\n"
+    "        if (b.a < 0.99) {\n"
     "            if (hc >= 192.0) {\n"
     "                c = b.rgb;\n"
     "                a = a * (hc < 224.0 ? (hc - 192.0) / 16.0 : uBlend.x);\n"
@@ -394,8 +371,7 @@ unsigned video_build_program(const char *vs_src, const char *fs_src, const char 
 static void compose_init(void)
 {
     static const char *const attribs[] = { "aPos", "aUv" };
-    static const char *const defines[PROGS] = { "", "#define HUDMASK\n", "#define PANEL\n",
-                                                "#define CAP\n" };
+    static const char *const defines[PROGS] = { "", "#define PANEL\n", "#define CAP\n" };
     int k;
     for (k = 0; k < PROGS; k++) {
         ComposeProg *g = &s_progs[k];
@@ -423,12 +399,7 @@ static void compose_init(void)
         g->filt = glGetUniformLocation(g->id, "uFilt");
         g->panel = glGetUniformLocation(g->id, "uPanel");
         g->panel_rect = glGetUniformLocation(g->id, "uPanelRect");
-        g->hud[0] = glGetUniformLocation(g->id, "uHud0");
-        g->hud[1] = glGetUniformLocation(g->id, "uHud1");
-        g->hud[2] = glGetUniformLocation(g->id, "uHud2");
-        g->hud[3] = glGetUniformLocation(g->id, "uHud3");
-        g->layer = glGetUniformLocation(g->id, "uLayer");
-        g->hud_layer = glGetUniformLocation(g->id, "uHudLayer");
+
     }
     s_compose = s_progs[PROG_SCREEN].id;
     glGenBuffers(1, &s_compose_vbo);
@@ -462,7 +433,7 @@ static void compose_pass(const float *v, GLuint tex2d, int flip2d, GLuint tex3d,
         f = 16;
     const ComposeProg *g = &s_progs[cap ? PROG_CAP
                                     : (s_panel[0] > 0.5f || s_panel[1] > 0.5f) ? PROG_PANEL
-                                    : s_hud_mask ? PROG_HUDMASK : PROG_SCREEN];
+                                    : PROG_SCREEN];
 /* a uniform the build leaves out (not used there) has no location */
 #define SET(loc, call) do { if ((loc) >= 0) call; } while (0)
     glUseProgram(g->id);
@@ -472,10 +443,6 @@ static void compose_pass(const float *v, GLuint tex2d, int flip2d, GLuint tex3d,
                   : s_cap.srcb ? s_cap_srcb
                   : s_cap.srcb_bank >= 0 && s_bank_valid[s_cap.srcb_bank]
                       ? s_cap_tex[s_bank_slot[s_cap.srcb_bank]] : s_clear_tex);
-    if (g->layer >= 0) {
-        glActiveTexture(GL_TEXTURE3);
-        glBindTexture(GL_TEXTURE_2D, s_layer_tex ? s_layer_tex : s_clear_tex);
-    }
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, tex3d ? tex3d : s_clear_tex);
     glActiveTexture(GL_TEXTURE0);
@@ -486,8 +453,6 @@ static void compose_pass(const float *v, GLuint tex2d, int flip2d, GLuint tex3d,
     SET(g->c2d, glUniform1i(g->c2d, 0));
     SET(g->c3d, glUniform1i(g->c3d, 1));
     SET(g->prev, glUniform1i(g->prev, 2));
-    SET(g->layer, glUniform1i(g->layer, 3));
-    SET(g->hud_layer, glUniform2f(g->hud_layer, 1.0f, 3.0f));
     SET(g->hofs, glUniform1f(g->hofs, s_3d_hofs));
     SET(g->flip, glUniform1f(g->flip, flip2d ? 1.0f : 0.0f));
     SET(g->fx, glUniform4f(g->fx, cap ? 0.0f : (float)kh_config.screen_effect, hud, alpha, 0.0f));
@@ -497,12 +462,6 @@ static void compose_pass(const float *v, GLuint tex2d, int flip2d, GLuint tex3d,
     SET(g->panel, glUniform4f(g->panel, s_panel[0], s_panel[1], s_panel[2], s_panel[3]));
     SET(g->panel_rect, glUniform4f(g->panel_rect, s_panel_rect[0], s_panel_rect[1],
                                    s_panel_rect[2], s_panel_rect[3]));
-    {
-        int k;
-        for (k = 0; k < 4; k++)
-            SET(g->hud[k], glUniform4f(g->hud[k], s_hud_blocks[k][0], s_hud_blocks[k][1],
-                                       s_hud_blocks[k][2], s_hud_blocks[k][3]));
-    }
     if (alpha < 0.999f || s_panel[1] > 0.5f || s_panel[0] > 2.5f) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -553,10 +512,27 @@ static float screen_alpha(int screen)
     return screen == s_inset ? (float)kh_config.inset_opacity / 100.0f : 1.0f;
 }
 
-void video_set_layer_map(const uint8_t *layers)
+void video_hud_split(uint32_t *fb, const uint8_t *layers, uint32_t backdrop)
 {
-    s_layer_src = layers;
-    s_layer_dirty = 1;
+    int b, x, y;
+    for (b = 0; b < 4; b++) {
+        const int x0 = (int)s_hud_blocks[b][0], y0 = (int)s_hud_blocks[b][1];
+        const int x1 = (int)s_hud_blocks[b][2], y1 = (int)s_hud_blocks[b][3];
+        for (y = y0; y < y1; y++)
+            for (x = x0; x < x1; x++) {
+                const int i = y * DS_SCREEN_W + x;
+                const uint32_t c = fb[i], code = c >> 24;
+                /* BG1 (the deck's text) and BG3 (its bars, the HP gauge, the face), 2D or
+                 * blended over the 3D */
+                if ((layers[i] == 1 || layers[i] == 3) && (code == 0xff || code >= 0xc0)) {
+                    s_hud_rgba[i] = c;
+                    fb[i] = (backdrop & 0xffffffu); /* the 3D over the backdrop there */
+                } else {
+                    s_hud_rgba[i] = 0;
+                }
+            }
+    }
+    s_hud_dirty = 1;
 }
 
 void video_set_hud_shrink(int on)
@@ -568,12 +544,10 @@ static void draw_composed(int screen)
 {
     float v[16];
     const float hud = screen == s_inset ? 1.0f : s_hud_scale;
-    const int shrink = s_hud_shrink && screen != s_inset && kh_config.hud_size < 100;
+    const int shrink = s_hud_shrink && s_hud_tex && screen != s_inset && kh_config.hud_size < 100;
     screen_quad(screen, v);
-    s_hud_mask = shrink;
     compose_pass(v, s_tex_cur(screen), 0, s_3d_tex, s_3d_bright, 0, hud, screen_alpha(screen),
                  FILTER_2D);
-    s_hud_mask = 0;
     if (shrink) {
         /* each block again, smaller, held to its corner of the screen */
         const ScreenRect *r = &s_rect[screen];
@@ -603,7 +577,7 @@ static void draw_composed(int screen)
                 const float vq[16] = { x0, y0, u0, v0, x1, y0, u1, v0,
                                        x0, y1, u0, v1, x1, y1, u1, v1 };
                 s_panel[0] = 3.0f; /* the block's 2D pixels only */
-                compose_pass(vq, s_tex_cur(screen), 0, 0, s_3d_bright, 0, 1.0f,
+                compose_pass(vq, s_hud_tex, 0, 0, s_3d_bright, 0, 1.0f,
                              screen_alpha(screen), FILTER_2D);
                 s_panel[0] = 0.0f;
             }
@@ -1028,20 +1002,13 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
     }
     if (s_cap.pending)
         run_capture();
-    if (s_layer_dirty && s_layer_src) {
-        int i;
-        s_layer_dirty = 0;
-        if (!s_layer_tex) {
-            s_layer_tex = new_texture(DS_SCREEN_W, DS_SCREEN_H, GL_NEAREST);
-            glBindTexture(GL_TEXTURE_2D, s_layer_tex);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        }
-        for (i = 0; i < DS_SCREEN_W * DS_SCREEN_H; i++)
-            s_layer_rgba[i] = s_layer_src[i] | 0xff000000u;
-        glBindTexture(GL_TEXTURE_2D, s_layer_tex);
+    if (s_hud_dirty) {
+        s_hud_dirty = 0;
+        if (!s_hud_tex)
+            s_hud_tex = new_texture(DS_SCREEN_W, DS_SCREEN_H, GL_NEAREST);
+        glBindTexture(GL_TEXTURE_2D, s_hud_tex);
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, DS_SCREEN_W, DS_SCREEN_H, GL_RGBA,
-                        GL_UNSIGNED_BYTE, s_layer_rgba);
+                        GL_UNSIGNED_BYTE, s_hud_rgba);
     }
     glViewport(0, 0, DISPLAY_W, DISPLAY_H);
     glClearColor(0, 0, 0, 1);

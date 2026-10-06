@@ -324,8 +324,10 @@ void config_load(void)
     }
     kh_log_verbose = kh_config.debug;
     LOG("config: render_scale %d, fps %d, aspect %d, layout %d, inset %d, texture_filter %d, "
-        "camera %d/%d, dpad_deck %d, volume %d, debug %d", kh_config.render_scale,
+        "camera %d/%d, dpad_deck %d, volume %d, debug %d, hud %d%%, single %d, 2d filter %d",
+        kh_config.render_scale,
         kh_config.frame_interpolation ? 60 : 30, kh_config.aspect, kh_config.layout,
         kh_config.inset_width, kh_config.texture_filter, kh_config.camera_stick,
-        kh_config.camera_speed, kh_config.dpad_deck, kh_config.volume, kh_config.debug);
+        kh_config.camera_speed, kh_config.dpad_deck, kh_config.volume, kh_config.debug,
+        kh_config.hud_size, kh_config.single_screen, kh_config.filter_2d);
 }
