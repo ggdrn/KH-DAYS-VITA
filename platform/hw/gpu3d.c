@@ -41,7 +41,7 @@ static const char s_fs[] =
     "float4 main(float4 vCol : COLOR, float2 vTex : TEXCOORD0,\n"
     "            uniform sampler2D uTex, uniform sampler2D uToon,\n"
     "            uniform float uMode, uniform float uTextured, uniform float uAlphaRef,\n"
-    "            uniform float uCutout) : COLOR\n"
+    "            uniform float uCutout, uniform float uSplit) : COLOR\n"
     "{\n"
     "    float4 t = float4(1.0, 1.0, 1.0, 1.0);\n"
     "    float4 r;\n"
@@ -78,6 +78,15 @@ static const char s_fs[] =
     "#ifndef OPAQUE\n"
     "    if (r.a <= uAlphaRef)\n"
     "        discard;\n"
+    /* uSplit: a polygon translucent only through its texture's alpha, in two passes (see
+     * flush): 1 its opaque texels alone, 2 the others */
+    "    if (uSplit > 1.5) {\n"
+    "        if (r.a > 0.984)\n"
+    "            discard;\n"
+    "    } else if (uSplit > 0.5) {\n"
+    "        if (r.a <= 0.984)\n"
+    "            discard;\n"
+    "    }\n"
     "#endif\n"
     "    return float4(r.rgb * r.a, r.a);\n"
     "}\n";
@@ -89,7 +98,7 @@ static GLuint s_prog, s_fbo, s_color, s_depth, s_vbo, s_toon_tex;
 /* the two builds of the polygon shader: [0] with the alpha test, [1] OPAQUE without */
 typedef struct {
     GLuint id;
-    GLint tex_scale, mode, textured, alpha_ref, tex, toon, cutout;
+    GLint tex_scale, mode, textured, alpha_ref, tex, toon, cutout, split;
 } Prog3d;
 static Prog3d s_p3[2];
 static const Prog3d *s_cur3; /* the one in use while a frame is drawn */
@@ -424,6 +433,7 @@ int kh_gpu3d_init(int scale)
             g->mode = glGetUniformLocation(g->id, "uMode");
             g->textured = glGetUniformLocation(g->id, "uTextured");
             g->cutout = glGetUniformLocation(g->id, "uCutout");
+            g->split = glGetUniformLocation(g->id, "uSplit");
             g->alpha_ref = glGetUniformLocation(g->id, "uAlphaRef");
             g->tex = glGetUniformLocation(g->id, "uTex");
             g->toon = glGetUniformLocation(g->id, "uToon");
@@ -456,6 +466,8 @@ typedef struct {
     int shadow;     /* 0 no, 1 shadow mask (polygon ID 0), 2 shadow colour */
     int id;         /* POLYGON_ATTR 24-29, the polygon ID */
     int opaque_prog; /* 1: drawn with the OPAQUE shader (nothing in it can be discarded) */
+    int tex_alpha;  /* alpha 31, translucent only through its texture (A3I5, A5I3) */
+    int pass;       /* flush's passes for those: 1 the opaque texels, 2 the others */
 } DrawState;
 
 static uint16_t s_idx[KH_GX_MAX_POLYGONS * 6];
@@ -499,6 +511,7 @@ static void apply_state(const DrawState *st)
         SET3(g->cutout, glUniform1f(g->cutout, 0.0f));
     }
     SET3(g->mode, glUniform1f(g->mode, st->mode == 3 ? 0.0f : (float)st->mode));
+    SET3(g->split, glUniform1f(g->split, (float)st->pass));
     if (st->blend)
         glEnable(GL_BLEND);
     else
@@ -539,29 +552,50 @@ static void apply_state(const DrawState *st)
     }
 }
 
-/* The frame's draws as last sent: the same frame is drawn twice at 60 fps (its halfway mix,
- * then itself), with other vertices only; the second time these are sent again as they are,
- * with no polygon sorted, grouped or indexed anew (that was half of the 3D's CPU time). */
-#define BATCHES_MAX 4096
+/* The frame's draws, worked out once per frame by classify (no GL in it: on the side thread
+ * while this one mixes and uploads the vertices) and sent as they are for each of its draws:
+ * at 60 fps the same frame is drawn twice (its halfway mix, then itself) with other vertices
+ * only. At least a polygon a batch: never more batches than polygons. */
+#define BATCHES_MAX KH_GX_MAX_POLYGONS
 static struct {
     DrawState st;
     int first, count;
 } s_batches[BATCHES_MAX];
 static int s_nbatches;
 static uint32_t s_batches_serial = 0xffffffffu;
-static int s_replaying; /* sending the kept draws: not recorded again */
+
+static void add_batch(const DrawState *st, int first, int count)
+{
+    if (!count || s_nbatches >= BATCHES_MAX)
+        return;
+    s_batches[s_nbatches].st = *st;
+    s_batches[s_nbatches].first = first;
+    s_batches[s_nbatches].count = count;
+    s_nbatches++;
+}
 
 static void flush(const DrawState *st, int first, int count)
 {
-    if (!count)
+    if (st->tex_alpha) {
+        /* a pixel of alpha 31 is opaque on the DS whatever its polygon: it writes depth and
+         * hides what comes after it behind. Hair drawn with A3I5/A5I3 textures (Larxene's,
+         * Marluxia's, Xion's) wrote no depth at all here, and its back layers, drawn later,
+         * came through the front ones in patches. Its opaque texels first, as opaque, then
+         * the translucent ones as before. */
+        DrawState o = *st;
+        o.tex_alpha = 0;
+        o.pass = 1;
+        o.blend = 0;
+        o.depth_write = 1;
+        apply_state(&o);
+        glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, s_idx + first);
+        o = *st;
+        o.tex_alpha = 0;
+        o.pass = 2;
+        apply_state(&o);
+        glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, s_idx + first);
+        s_stats.batches += 2;
         return;
-    if (!s_replaying) {
-        if (s_nbatches < BATCHES_MAX) {
-            s_batches[s_nbatches].st = *st;
-            s_batches[s_nbatches].first = first;
-            s_batches[s_nbatches].count = count;
-        }
-        s_nbatches++;
     }
     if (st->shadow == 2) {
         /* first unmark the pixels whose opaque polygon has this shadow's ID */
@@ -688,6 +722,7 @@ static void dump_frame(const KhGxFrame *f)
 }
 
 static uint32_t s_setup_serial;
+static uint32_t s_prepared_serial; /* every texture of that frame looked up (see classify) */
 
 /* once per new frame, by kh_gpu3d_prepare or else kh_gpu3d_render */
 static void frame_setup(const KhGxFrame *f)
@@ -720,6 +755,7 @@ void kh_gpu3d_prepare(const KhGxFrame *f)
             tex_get(p->teximage, p->pltt);
     }
     s_deferring = 0;
+    s_prepared_serial = f->serial;
     if (!s_njobs)
         return;
     {
@@ -739,84 +775,19 @@ void kh_gpu3d_prepare(const KhGxFrame *f)
     s_njobs = 0;
 }
 
-/* The frame's polygons drawn with the vertices vtx (the frame's own, or a mix of two). */
-static unsigned draw_frame(const KhGxFrame *f, const KhGxVertex *vtx)
+/* The frame's polygons into batches (s_batches, s_idx): opaque polygons first, grouped by
+ * GL state (the z-buffer makes their order free; it cuts the draw calls several times), then
+ * the translucent ones in the frame's order. No GL here: run on the side thread when the
+ * frame's textures were all looked up by kh_gpu3d_prepare (tex_get then only finds them). */
+static void classify(const KhGxFrame *f)
 {
-    uint64_t t0;
-    const int textures_on = f && (f->disp3dcnt & 1);
-    const int blending_on = f && (f->disp3dcnt & 8);
+    const uint64_t t0 = sceKernelGetProcessTimeWide();
+    const int textures_on = (f->disp3dcnt & 1) != 0;
+    const int blending_on = (f->disp3dcnt & 8) != 0;
     DrawState cur = { 0 }, st;
     int i, nidx = 0, first = 0, have = 0;
 
-    s_stats.disp3dcnt = f->disp3dcnt;
-    t0 = sceKernelGetProcessTimeWide();
-    frame_setup(f);
-    if (s_dump_request) {
-        s_dump_request = 0;
-        s_dump_color = 1;
-        dump_frame(f);
-    }
-
-    glBindFramebuffer(GL_FRAMEBUFFER, s_fbo);
-    glViewport(0, 0, s_w, s_h);
-    glDisable(GL_SCISSOR_TEST);
-    glDisable(GL_CULL_FACE);
-    {
-        const uint32_t cc = reg32(f, 0x04000350);
-        const float a = (float)((cc >> 16) & 31) / 31.0f;
-        const float r = (float)(cc & 31) / 31.0f, g = (float)((cc >> 5) & 31) / 31.0f,
-                    b = (float)((cc >> 10) & 31) / 31.0f;
-        const uint32_t cd = reg32(f, 0x04000354) & 0x7fff;
-        glClearColor(r * a, g * a, b * a, a);
-        glClearDepthf((float)(cd * 0x200 + 0x1ff) / 16777215.0f);
-        glDepthMask(GL_TRUE);
-        glStencilMask(0xff);
-        glClearStencil(0);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-    }
-    if (!f->npoly)
-        goto done;
-
-    {
-        /* the frame's uniforms in both builds; the first draw picks its own */
-        int k;
-        for (k = 1; k >= 0; k--) {
-            const Prog3d *g = &s_p3[k];
-            const int ref = reg32(f, 0x04000340) & 31;
-            glUseProgram(g->id);
-            SET3(g->tex, glUniform1i(g->tex, 0));
-            SET3(g->toon, glUniform1i(g->toon, 1));
-            SET3(g->alpha_ref, glUniform1f(g->alpha_ref, (f->disp3dcnt & 4)
-                                                        ? ((float)ref + 0.5f) / 31.0f
-                                                        : 0.5f / 31.0f));
-        }
-        s_cur3 = &s_p3[0];
-    }
-    upload_toon(f);
-    glEnable(GL_DEPTH_TEST);
-    glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-
-    glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
-    glBufferData(GL_ARRAY_BUFFER, f->nvtx * (int)sizeof(KhGxVertex), vtx, GL_DYNAMIC_DRAW);
-    glEnableVertexAttribArray(A_POS);
-    glEnableVertexAttribArray(A_TEX);
-    glEnableVertexAttribArray(A_COL);
-    glVertexAttribPointer(A_POS, 4, GL_FLOAT, GL_FALSE, sizeof(KhGxVertex), (void *)0);
-    glVertexAttribPointer(A_TEX, 2, GL_FLOAT, GL_FALSE, sizeof(KhGxVertex), (void *)16);
-    glVertexAttribPointer(A_COL, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(KhGxVertex), (void *)24);
-
-    if (f->serial == s_batches_serial) {
-        /* this frame's draws again, with the vertices just uploaded */
-        int b;
-        s_replaying = 1;
-        for (b = 0; b < s_nbatches; b++)
-            flush(&s_batches[b].st, s_batches[b].first, s_batches[b].count);
-        s_replaying = 0;
-        goto drawn;
-    }
     s_nbatches = 0;
-    /* opaque polygons first, grouped by GL state (the z-buffer makes their order free; it
-     * cuts the draw calls several times), then the translucent ones in the frame's order */
     {
         int nop = 0, k;
         for (i = 0; i < f->npoly; i++) {
@@ -858,10 +829,14 @@ static unsigned draw_frame(const KhGxFrame *f, const KhGxVertex *vtx)
             ps->opaque_prog = !p->translucent && alpha == 31 && kh_gpu3d_debug != 1 &&
                               (!ps->tex || ps->tex->opaque);
             ps->depth_write = !p->translucent || (p->attr & (1u << 11));
+            ps->tex_alpha = p->translucent && alpha == 31 && ps->tex && !ps->tex->opaque &&
+                            (fmt == 1 || fmt == 6);
+            ps->pass = 0;
             ps->depth_equal = (p->attr >> 14) & 1;
             s_stats.depth_equal += ps->depth_equal;
             if (ps->shadow) {
                 ps->opaque_prog = 0;
+                ps->tex_alpha = 0;
                 /* shadows draw over the finished opaque scene, in the frame's order, blended
                  * as translucent polygons are, never writing depth */
                 ps->blend = blending_on;
@@ -931,7 +906,7 @@ static unsigned draw_frame(const KhGxFrame *f, const KhGxVertex *vtx)
             p = &f->poly[f->order[idx]];
             st = s_pstate[idx];
             if (have && memcmp(&st, &cur, sizeof(st))) {
-                flush(&cur, first, nidx - first);
+                add_batch(&cur, first, nidx - first);
                 first = nidx;
             }
             cur = st;
@@ -947,10 +922,113 @@ static unsigned draw_frame(const KhGxFrame *f, const KhGxVertex *vtx)
         }
     }
     if (have)
-        flush(&cur, first, nidx - first);
-    /* kept for the frame's second draw when every batch fitted */
-    s_batches_serial = s_nbatches <= BATCHES_MAX ? f->serial : 0xffffffffu;
-drawn:
+        add_batch(&cur, first, nidx - first);
+    s_batches_serial = f->serial;
+    s_stats.classify_us += (uint32_t)(sceKernelGetProcessTimeWide() - t0);
+}
+
+/* classify on the side thread, from kh_gpu3d_render's start to the draw that needs it */
+static int s_classify_pending;
+
+static void classify_side(void *arg)
+{
+    classify((const KhGxFrame *)arg);
+}
+
+static void classify_begin(const KhGxFrame *f)
+{
+    if (!f->npoly || s_classify_pending)
+        return;
+    frame_setup(f);
+    /* textures on: tex_get must find every one ready (no GL off this thread) */
+    if ((f->disp3dcnt & 1) && s_prepared_serial != f->serial)
+        return;
+    if (workers_side_begin(classify_side, (void *)f)) {
+        s_classify_pending = 1;
+        s_stats.classified_side++;
+    }
+}
+
+static void classify_end(const KhGxFrame *f)
+{
+    if (s_classify_pending) {
+        const uint64_t t = sceKernelGetProcessTimeWide();
+        workers_side_join();
+        s_classify_pending = 0;
+        s_stats.classify_wait_us += (uint32_t)(sceKernelGetProcessTimeWide() - t);
+    }
+    if (s_batches_serial != f->serial)
+        classify(f);
+}
+
+/* The frame's polygons drawn with the vertices vtx (the frame's own, or a mix of two). */
+static unsigned draw_frame(const KhGxFrame *f, const KhGxVertex *vtx)
+{
+    uint64_t t0;
+
+    s_stats.disp3dcnt = f->disp3dcnt;
+    t0 = sceKernelGetProcessTimeWide();
+    frame_setup(f);
+    if (s_dump_request) {
+        s_dump_request = 0;
+        s_dump_color = 1;
+        dump_frame(f);
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, s_fbo);
+    glViewport(0, 0, s_w, s_h);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_CULL_FACE);
+    {
+        const uint32_t cc = reg32(f, 0x04000350);
+        const float a = (float)((cc >> 16) & 31) / 31.0f;
+        const float r = (float)(cc & 31) / 31.0f, g = (float)((cc >> 5) & 31) / 31.0f,
+                    b = (float)((cc >> 10) & 31) / 31.0f;
+        const uint32_t cd = reg32(f, 0x04000354) & 0x7fff;
+        glClearColor(r * a, g * a, b * a, a);
+        glClearDepthf((float)(cd * 0x200 + 0x1ff) / 16777215.0f);
+        glDepthMask(GL_TRUE);
+        glStencilMask(0xff);
+        glClearStencil(0);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+    }
+    if (!f->npoly)
+        goto done;
+
+    {
+        /* the frame's uniforms in both builds; the first draw picks its own */
+        int k;
+        for (k = 1; k >= 0; k--) {
+            const Prog3d *g = &s_p3[k];
+            const int ref = reg32(f, 0x04000340) & 31;
+            glUseProgram(g->id);
+            SET3(g->tex, glUniform1i(g->tex, 0));
+            SET3(g->toon, glUniform1i(g->toon, 1));
+            SET3(g->alpha_ref, glUniform1f(g->alpha_ref, (f->disp3dcnt & 4)
+                                                        ? ((float)ref + 0.5f) / 31.0f
+                                                        : 0.5f / 31.0f));
+        }
+        s_cur3 = &s_p3[0];
+    }
+    upload_toon(f);
+    glEnable(GL_DEPTH_TEST);
+    glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+
+    glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
+    glBufferData(GL_ARRAY_BUFFER, f->nvtx * (int)sizeof(KhGxVertex), vtx, GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(A_POS);
+    glEnableVertexAttribArray(A_TEX);
+    glEnableVertexAttribArray(A_COL);
+    glVertexAttribPointer(A_POS, 4, GL_FLOAT, GL_FALSE, sizeof(KhGxVertex), (void *)0);
+    glVertexAttribPointer(A_TEX, 2, GL_FLOAT, GL_FALSE, sizeof(KhGxVertex), (void *)16);
+    glVertexAttribPointer(A_COL, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(KhGxVertex), (void *)24);
+
+    classify_end(f);
+    {
+        int b;
+        for (b = 0; b < s_nbatches; b++)
+            flush(&s_batches[b].st, s_batches[b].first, s_batches[b].count);
+    }
 
     glDisableVertexAttribArray(A_POS);
     glDisableVertexAttribArray(A_TEX);
@@ -997,6 +1075,7 @@ static uint32_t s_prev_disp3dcnt;
 static int s_shown_count;  /* renders of the current serial so far */
 static int s_final_pending; /* the mix (or A again) was shown: B itself next */
 static int s_was_mixed;     /* that was a mix, for the statistics */
+static uint8_t s_snapped[KH_GX_MAX_VERTICES]; /* mix_vertices: the vertex kept unmixed */
 
 /* How many vertices from the start of the frame are the previous frame's again (same tag in
  * the same place): the scene is sent in the same order every frame -- the field, the
@@ -1029,6 +1108,7 @@ static int mix_vertices(const KhGxFrame *f)
                 jumps++;
             snap = d2 > 0.25f || a->w > 4.0f * b->w || b->w > 4.0f * a->w;
         }
+        s_snapped[i] = (uint8_t)snap;
         if (snap) {
             *m = *b;
             continue;
@@ -1047,6 +1127,23 @@ static int mix_vertices(const KhGxFrame *f)
     }
     if (jumps * 2 >= p)
         return 0;
+    /* a polygon with one corner snapped and the others halved was stretched between the two
+     * frames: a particle reborn a little way off (a Heartless's smoke dying) drew a white
+     * streak. Such a polygon is the new frame's whole */
+    {
+        int k;
+        for (i = 0; i < f->npoly; i++) {
+            const KhGxPolygon *q = &f->poly[i];
+            int any = 0;
+            for (k = 0; k < q->count; k++)
+                any |= q->v[k] >= p || s_snapped[q->v[k]];
+            if (!any)
+                continue;
+            for (k = 0; k < q->count; k++)
+                if (q->v[k] < p)
+                    s_mix_vtx[q->v[k]] = f->vtx[q->v[k]];
+        }
+    }
     memcpy(s_mix_vtx + p, f->vtx + p, sizeof(KhGxVertex) * (size_t)(f->nvtx - p));
     return 1;
 }
@@ -1087,6 +1184,8 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
         return s_color; /* same frame as last time: the target still holds it */
     }
     s_last_serial = f->serial;
+    /* the polygons sorted into batches on the side thread meanwhile */
+    classify_begin(f);
     {
         const int was_shown = s_shown_count;
         unsigned tex;
@@ -1104,6 +1203,7 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
                 tex = draw_frame(f, s_mix_vtx);
             } else {
                 tex = s_color; /* the target still holds A */
+                classify_end(f); /* nothing of the frame's kept off this call */
             }
             s_final_pending = 1;
         } else {

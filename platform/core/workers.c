@@ -10,6 +10,10 @@ static SceUID s_go = -1, s_done = -1;
  * jobs with a frame to spare (workers_begin_spare): taken over by the game in the middle of a
  * chunk, it can hold that chunk for a few milliseconds */
 static SceUID s_go_spare = -1;
+/* the side thread: one job at a time, beside the chunk jobs */
+static SceUID s_side_go = -1, s_side_done = -1;
+static void (*volatile s_side_fn)(void *);
+static void *volatile s_side_arg;
 static WorkFn s_fn;
 static void *s_arg;
 static int s_n;
@@ -40,6 +44,32 @@ static int worker(SceSize args, void *argp)
     return 0;
 }
 
+static int side_worker(SceSize args, void *argp)
+{
+    (void)args, (void)argp;
+    for (;;) {
+        sceKernelWaitSema(s_side_go, 1, NULL);
+        s_side_fn(s_side_arg);
+        sceKernelSignalSema(s_side_done, 1);
+    }
+    return 0;
+}
+
+int workers_side_begin(void (*fn)(void *), void *arg)
+{
+    if (s_side_go < 0)
+        return 0;
+    s_side_fn = fn;
+    s_side_arg = arg;
+    sceKernelSignalSema(s_side_go, 1);
+    return 1;
+}
+
+void workers_side_join(void)
+{
+    sceKernelWaitSema(s_side_done, 1, NULL);
+}
+
 void workers_init(void)
 {
     SceUID th;
@@ -58,8 +88,17 @@ void workers_init(void)
                                                 0x10000, 0, SCE_KERNEL_CPU_MASK_USER_1, NULL);
     if (th < 0 || sceKernelStartThread(th, sizeof(s_go_spare), &s_go_spare) < 0)
         s_go_spare = -1;
-    LOG("workers: helper thread on core 2%s",
-        s_go_spare >= 0 ? ", and one on core 1 below the game" : "");
+    s_side_go = sceKernelCreateSema("kh_side_go", 0, 0, 1, NULL);
+    s_side_done = sceKernelCreateSema("kh_side_done", 0, 0, 1, NULL);
+    th = s_side_go < 0 || s_side_done < 0
+             ? -1
+             : sceKernelCreateThread("kh_worker_side", side_worker, KH_SIDE_PRIORITY, 0x10000, 0,
+                                     SCE_KERNEL_CPU_MASK_USER_1 | SCE_KERNEL_CPU_MASK_USER_2, NULL);
+    if (th < 0 || sceKernelStartThread(th, 0, NULL) < 0)
+        s_side_go = -1;
+    LOG("workers: helper thread on core 2%s%s",
+        s_go_spare >= 0 ? ", and one on core 1 below the game" : "",
+        s_side_go >= 0 ? ", a side one on cores 1-2" : "");
 }
 
 void workers_begin(WorkFn fn, int n, void *arg)

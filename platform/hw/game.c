@@ -1223,6 +1223,11 @@ void kh_game_run(void)
                 if (rs.interpolated)
                     LOG("gpu3d: 10 s: %u frames shown after a halfway mix (60 fps)",
                         (unsigned)rs.interpolated);
+                if (rs.classified_side)
+                    LOG("gpu3d: 10 s: %u frames sorted on the side thread, %uus each, the "
+                        "display waiting %uus", (unsigned)rs.classified_side,
+                        (unsigned)(rs.classify_us / rs.classified_side),
+                        (unsigned)(rs.classify_wait_us / rs.classified_side));
                 if (rs.textures_decoded)
                     LOG("gpu3d: 10 s: %u textures decoded (%u live), %u ms decoding in parallel, "
                         "at most %u in one frame", (unsigned)rs.textures_decoded,
