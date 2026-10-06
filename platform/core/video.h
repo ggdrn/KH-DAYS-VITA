@@ -37,6 +37,9 @@ void video_set_panel_visibility(int i, float vis);
 void video_set_tutorial(int on);
 /* In the field: the top screen's HUD blocks drawn at config hud_size, each in its corner. */
 void video_set_hud_shrink(int on);
+/* the boxes (x0 y0 x1 y1, DS pixels) the HUD fills in its top-left, bottom-left and
+ * bottom-right corners in the picture about to be shown (gpu2d kh_gpu2d_hud_box) */
+void video_set_hud_boxes(const int boxes[3][4]);
 
 int video_single_screen(void);
 /* Display pixel (960x544) -> DS touch-screen pixel; 0 when it is not on the touch screen. */

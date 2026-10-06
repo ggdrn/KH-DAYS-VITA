@@ -110,6 +110,22 @@ volatile uint32_t kh_gpu2d_dispcnt_override[2];
 volatile int kh_gpu2d_plain[2];
 volatile int kh_gpu2d_hud_mode;
 volatile uint32_t kh_gpu2d_center_bg3;
+volatile int32_t kh_gpu2d_hud_box[3][4] = { { 256, 192, 0, 0 }, { 256, 192, 0, 0 },
+                                            { 256, 192, 0, 0 } };
+
+static inline void amin(volatile int32_t *p, int32_t v)
+{
+    int32_t o = *p;
+    while (v < o && !__atomic_compare_exchange_n(p, &o, v, 0, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+        ;
+}
+
+static inline void amax(volatile int32_t *p, int32_t v)
+{
+    int32_t o = *p;
+    while (v > o && !__atomic_compare_exchange_n(p, &o, v, 0, __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+        ;
+}
 
 /* the HUD's corners on the top screen (x0, y0, x1, y1): hearts and chain, the command deck
  * with its submenus, the HP gauge with the faces (video.c draws them back from there) */
@@ -131,6 +147,7 @@ static void hud_codes(int line, const uint16_t *id0, uint8_t *code)
     if (kh_gpu2d_hud_mode < 2)
         return;
     for (z = 0; z < 3; z++) {
+        int x0 = W, x1 = -1;
         if (line < s_hud_zones[z][1] || line >= s_hud_zones[z][3])
             continue;
         for (x = s_hud_zones[z][0]; x < s_hud_zones[z][2]; x++) {
@@ -143,6 +160,18 @@ static void hud_codes(int line, const uint16_t *id0, uint8_t *code)
                 code[x] = 0xe1;
             else if (c > KH_GPU2D_OVER_3D && c <= (KH_GPU2D_OVER_3D | 16))
                 code[x] = (uint8_t)(0xa0 | (c & 31));
+            else
+                continue;
+            if (x < x0)
+                x0 = x;
+            x1 = x;
+        }
+        /* the box the HUD really fills in this corner: only that is drawn again */
+        if (x1 >= 0) {
+            amin(&kh_gpu2d_hud_box[z][0], x0);
+            amax(&kh_gpu2d_hud_box[z][2], x1 + 1);
+            amin(&kh_gpu2d_hud_box[z][1], line);
+            amax(&kh_gpu2d_hud_box[z][3], line + 1);
         }
     }
 }

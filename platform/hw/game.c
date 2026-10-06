@@ -425,7 +425,16 @@ static void update_panels(int single, int drawn, const uint32_t *bottom_fb)
  * as it is in the next pictures */
 static void hud_after_2d(void)
 {
+    int z, boxes[3][4];
     s_dialog_open = __atomic_exchange_n(&kh_gpu2d_center_bg3, 0, __ATOMIC_RELAXED) >= 200;
+    /* the boxes the HUD filled in this picture: the corners drawn again cover only those */
+    for (z = 0; z < 3; z++) {
+        boxes[z][0] = __atomic_exchange_n(&kh_gpu2d_hud_box[z][0], 256, __ATOMIC_RELAXED);
+        boxes[z][1] = __atomic_exchange_n(&kh_gpu2d_hud_box[z][1], 192, __ATOMIC_RELAXED);
+        boxes[z][2] = __atomic_exchange_n(&kh_gpu2d_hud_box[z][2], 0, __ATOMIC_RELAXED);
+        boxes[z][3] = __atomic_exchange_n(&kh_gpu2d_hud_box[z][3], 0, __ATOMIC_RELAXED);
+    }
+    video_set_hud_boxes(boxes);
 }
 
 static void present(void)

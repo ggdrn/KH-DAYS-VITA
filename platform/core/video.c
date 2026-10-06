@@ -515,6 +515,17 @@ static float screen_alpha(int screen)
     return screen == s_inset ? (float)kh_config.inset_opacity / 100.0f : 1.0f;
 }
 
+/* per s_hud_blocks entry: the box the HUD fills there (x1 <= x0: nothing) */
+static int s_hud_box[4][4];
+
+void video_set_hud_boxes(const int boxes[3][4])
+{
+    static const int block_of[3] = { 0, 2, 3 }; /* gpu2d's corners -> s_hud_blocks */
+    int z;
+    for (z = 0; z < 3; z++)
+        memcpy(s_hud_box[block_of[z]], boxes[z], sizeof(s_hud_box[0]));
+}
+
 void video_set_hud_shrink(int on)
 {
     s_hud_shrink = on != 0;
@@ -535,22 +546,20 @@ static void draw_composed(int screen)
         int b;
         for (b = 0; b < 4; b++) {
             const float *q = s_hud_blocks[b];
-            if (q[2] <= q[0])
+            const int *bx = s_hud_box[b];
+            if (q[2] <= q[0] || bx[2] <= bx[0] || bx[3] <= bx[1])
                 continue;
-            const float u0 = q[0] / DS_SCREEN_W, u1 = q[2] / DS_SCREEN_W;
-            const float v0 = q[1] / DS_SCREEN_H, v1 = q[3] / DS_SCREEN_H;
-            float X0 = r->x + ((u0 - 0.5f) * hud + 0.5f) * r->w;
-            float X1 = r->x + ((u1 - 0.5f) * hud + 0.5f) * r->w;
-            float Y0 = r->y + v0 * r->h, Y1 = r->y + v1 * r->h;
-            const float w = (X1 - X0) * k, h = (Y1 - Y0) * k;
-            if (b & 1)
-                X0 = X1 - w; /* right blocks keep their right edge */
-            else
-                X1 = X0 + w;
-            if (b & 2)
-                Y0 = Y1 - h; /* bottom blocks keep their bottom edge */
-            else
-                Y1 = Y0 + h;
+            /* the corner shrunk to its own edges, then only the box the HUD fills in it */
+            const float zx0 = r->x + ((q[0] / DS_SCREEN_W - 0.5f) * hud + 0.5f) * r->w;
+            const float zx1 = r->x + ((q[2] / DS_SCREEN_W - 0.5f) * hud + 0.5f) * r->w;
+            const float zy0 = r->y + q[1] / DS_SCREEN_H * r->h, zy1 = r->y + q[3] / DS_SCREEN_H * r->h;
+            const float sx = (zx1 - zx0) / (q[2] - q[0]) * k, sy = (zy1 - zy0) / (q[3] - q[1]) * k;
+            const float ox = (b & 1) ? zx1 - (q[2] - q[0]) * sx : zx0; /* right ones keep their right edge */
+            const float oy = (b & 2) ? zy1 - (q[3] - q[1]) * sy : zy0; /* bottom ones their bottom */
+            const float u0 = (float)bx[0] / DS_SCREEN_W, u1 = (float)bx[2] / DS_SCREEN_W;
+            const float v0 = (float)bx[1] / DS_SCREEN_H, v1 = (float)bx[3] / DS_SCREEN_H;
+            const float X0 = ox + (bx[0] - q[0]) * sx, X1 = ox + (bx[2] - q[0]) * sx;
+            const float Y0 = oy + (bx[1] - q[1]) * sy, Y1 = oy + (bx[3] - q[1]) * sy;
             {
                 const float x0 = X0 / (DISPLAY_W / 2.0f) - 1.0f, x1 = X1 / (DISPLAY_W / 2.0f) - 1.0f;
                 const float y0 = 1.0f - Y0 / (DISPLAY_H / 2.0f), y1 = 1.0f - Y1 / (DISPLAY_H / 2.0f);
