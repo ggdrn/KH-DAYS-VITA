@@ -50,6 +50,7 @@ static const char s_fs[] =
     /* a filtered cut-out's edge (uCutout): on an opaque polygon, where the DS's own texel
      * edge is (drawn wherever alpha was above 0, the edge was half a texel too thick and
      * dark); blended, a third of a texel wide instead of a whole one */
+    "#ifndef OPAQUE\n"
     "    if (uCutout > 1.5) {\n"
     "        if (t.a < 0.5)\n"
     "            discard;\n"
@@ -57,6 +58,7 @@ static const char s_fs[] =
     "    } else if (uCutout > 0.5) {\n"
     "        t.a = saturate((t.a - 0.5) * 3.0 + 0.5);\n"
     "    }\n"
+    "#endif\n"
     "    if (uMode < 0.5) {\n"
     "        r = vCol * t;\n"
     "    } else if (uMode < 1.5) {\n"
@@ -69,8 +71,14 @@ static const char s_fs[] =
     "        else\n"
     "            r = float4(min(t.rgb * vCol.rrr + toon, 1.0), vCol.a * t.a);\n"
     "    }\n"
+    /* OPAQUE: the build for opaque polygons with no texture or one with no clear texel, which
+     * can never be discarded: a shader with a discard keeps the GPU from skipping the pixels a
+     * nearer polygon hides (the Vita's GPU does that before shading), and the whole scene paid
+     * for every layer of it */
+    "#ifndef OPAQUE\n"
     "    if (r.a <= uAlphaRef)\n"
     "        discard;\n"
+    "#endif\n"
     "    return float4(r.rgb * r.a, r.a);\n"
     "}\n";
 
@@ -78,7 +86,13 @@ enum { A_POS, A_TEX, A_COL };
 
 static int s_scale, s_w, s_h;
 static GLuint s_prog, s_fbo, s_color, s_depth, s_vbo, s_toon_tex;
-static GLint u_tex_scale, u_mode, u_textured, u_alpha_ref, u_tex, u_toon, u_cutout;
+/* the two builds of the polygon shader: [0] with the alpha test, [1] OPAQUE without */
+typedef struct {
+    GLuint id;
+    GLint tex_scale, mode, textured, alpha_ref, tex, toon, cutout;
+} Prog3d;
+static Prog3d s_p3[2];
+static const Prog3d *s_cur3; /* the one in use while a frame is drawn */
 static uint32_t s_frame;
 static uint32_t s_last_serial;
 static KhGpu3dStats s_stats;
@@ -100,6 +114,7 @@ typedef struct {
     GLint ws, wt;     /* the DS's wrap modes */
     int clamped;      /* the GL texture clamps instead (see wrap_for_frame) */
     uint32_t wrapped; /* the last frame a polygon used it beyond its edges */
+    int opaque;       /* no texel less than opaque: never discarded (the OPAQUE shader) */
 } TexEntry;
 
 static TexEntry s_tex[TEX_SLOTS];
@@ -207,6 +222,15 @@ static void tex_put(TexEntry *e, uint32_t teximage, const uint32_t *px, int cuto
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, ws);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wt);
     e->ws = ws, e->wt = wt, e->clamped = 0;
+    {
+        int i;
+        e->opaque = 1;
+        for (i = 0; i < w * h; i++)
+            if ((px[i] >> 24) != 0xff) {
+                e->opaque = 0;
+                break;
+            }
+    }
     e->cutout = cutout ? 1.0f : 0.0f;
     e->sx = 1.0f / (float)w;
     e->sy = 1.0f / (float)h;
@@ -385,18 +409,28 @@ int kh_gpu3d_init(int scale)
     s_w = 256 * s_scale;
     s_h = 192 * s_scale;
 
-    s_prog = video_build_program(s_vs, s_fs, attribs, 3);
-    if (!s_prog) {
-        LOG("gpu3d: shaders did not build: no 3D");
-        return 0;
+    {
+        static char opaque_fs[sizeof(s_fs) + 32];
+        int k;
+        snprintf(opaque_fs, sizeof(opaque_fs), "#define OPAQUE\n%s", s_fs);
+        for (k = 0; k < 2; k++) {
+            Prog3d *g = &s_p3[k];
+            g->id = video_build_program(s_vs, k ? opaque_fs : s_fs, attribs, 3);
+            if (!g->id) {
+                LOG("gpu3d: shaders did not build: no 3D");
+                return 0;
+            }
+            g->tex_scale = glGetUniformLocation(g->id, "uTexScale");
+            g->mode = glGetUniformLocation(g->id, "uMode");
+            g->textured = glGetUniformLocation(g->id, "uTextured");
+            g->cutout = glGetUniformLocation(g->id, "uCutout");
+            g->alpha_ref = glGetUniformLocation(g->id, "uAlphaRef");
+            g->tex = glGetUniformLocation(g->id, "uTex");
+            g->toon = glGetUniformLocation(g->id, "uToon");
+        }
+        s_prog = s_p3[0].id;
+        s_cur3 = &s_p3[0];
     }
-    u_tex_scale = glGetUniformLocation(s_prog, "uTexScale");
-    u_mode = glGetUniformLocation(s_prog, "uMode");
-    u_textured = glGetUniformLocation(s_prog, "uTextured");
-    u_cutout = glGetUniformLocation(s_prog, "uCutout");
-    u_alpha_ref = glGetUniformLocation(s_prog, "uAlphaRef");
-    u_tex = glGetUniformLocation(s_prog, "uTex");
-    u_toon = glGetUniformLocation(s_prog, "uToon");
 
     make_target();
 
@@ -421,6 +455,7 @@ typedef struct {
     int depth_equal;
     int shadow;     /* 0 no, 1 shadow mask (polygon ID 0), 2 shadow colour */
     int id;         /* POLYGON_ATTR 24-29, the polygon ID */
+    int opaque_prog; /* 1: drawn with the OPAQUE shader (nothing in it can be discarded) */
 } DrawState;
 
 static uint16_t s_idx[KH_GX_MAX_POLYGONS * 6];
@@ -442,20 +477,28 @@ static void wrap_for_frame(TexEntry *t)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, clamp ? GL_CLAMP_TO_EDGE : t->wt);
 }
 
+/* a location the build leaves out (not used there) is -1 */
+#define SET3(loc, call) do { if ((loc) >= 0) call; } while (0)
+
 static void apply_state(const DrawState *st)
 {
+    const Prog3d *g = &s_p3[st->opaque_prog];
+    if (g != s_cur3) {
+        s_cur3 = g;
+        glUseProgram(g->id);
+    }
     if (st->tex) {
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, st->tex->tex);
         wrap_for_frame(st->tex);
-        glUniform2f(u_tex_scale, st->tex->sx, st->tex->sy);
-        glUniform1f(u_textured, 1.0f);
-        glUniform1f(u_cutout, st->tex->cutout > 0.5f ? (st->blend ? 1.0f : 2.0f) : 0.0f);
+        SET3(g->tex_scale, glUniform2f(g->tex_scale, st->tex->sx, st->tex->sy));
+        SET3(g->textured, glUniform1f(g->textured, 1.0f));
+        SET3(g->cutout, glUniform1f(g->cutout, st->tex->cutout > 0.5f ? (st->blend ? 1.0f : 2.0f) : 0.0f));
     } else {
-        glUniform1f(u_textured, 0.0f);
-        glUniform1f(u_cutout, 0.0f);
+        SET3(g->textured, glUniform1f(g->textured, 0.0f));
+        SET3(g->cutout, glUniform1f(g->cutout, 0.0f));
     }
-    glUniform1f(u_mode, st->mode == 3 ? 0.0f : (float)st->mode);
+    SET3(g->mode, glUniform1f(g->mode, st->mode == 3 ? 0.0f : (float)st->mode));
     if (st->blend)
         glEnable(GL_BLEND);
     else
@@ -734,12 +777,20 @@ static unsigned draw_frame(const KhGxFrame *f, const KhGxVertex *vtx)
     if (!f->npoly)
         goto done;
 
-    glUseProgram(s_prog);
-    glUniform1i(u_tex, 0);
-    glUniform1i(u_toon, 1);
     {
-        const int ref = reg32(f, 0x04000340) & 31;
-        glUniform1f(u_alpha_ref, (f->disp3dcnt & 4) ? ((float)ref + 0.5f) / 31.0f : 0.5f / 31.0f);
+        /* the frame's uniforms in both builds; the first draw picks its own */
+        int k;
+        for (k = 1; k >= 0; k--) {
+            const Prog3d *g = &s_p3[k];
+            const int ref = reg32(f, 0x04000340) & 31;
+            glUseProgram(g->id);
+            SET3(g->tex, glUniform1i(g->tex, 0));
+            SET3(g->toon, glUniform1i(g->toon, 1));
+            SET3(g->alpha_ref, glUniform1f(g->alpha_ref, (f->disp3dcnt & 4)
+                                                        ? ((float)ref + 0.5f) / 31.0f
+                                                        : 0.5f / 31.0f));
+        }
+        s_cur3 = &s_p3[0];
     }
     upload_toon(f);
     glEnable(GL_DEPTH_TEST);
@@ -802,10 +853,15 @@ static unsigned draw_frame(const KhGxFrame *f, const KhGxVertex *vtx)
                     s_stats.flat_st++;
             }
             ps->blend = p->translucent && blending_on;
+            /* opaque, and no texture or one with no clear texel: no alpha test can drop a
+             * pixel of it */
+            ps->opaque_prog = !p->translucent && alpha == 31 && kh_gpu3d_debug != 1 &&
+                              (!ps->tex || ps->tex->opaque);
             ps->depth_write = !p->translucent || (p->attr & (1u << 11));
             ps->depth_equal = (p->attr >> 14) & 1;
             s_stats.depth_equal += ps->depth_equal;
             if (ps->shadow) {
+                ps->opaque_prog = 0;
                 /* shadows draw over the finished opaque scene, in the frame's order, blended
                  * as translucent polygons are, never writing depth */
                 ps->blend = blending_on;
