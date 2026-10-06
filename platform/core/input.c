@@ -4,11 +4,15 @@
 
 #include "log.h"
 #include "video.h"
+#include "nitro/overlay.h"
 
 #include <psp2/ctrl.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/touch.h>
 #include <string.h>
+
+/* kept by the game's lock-on code (Ov022_SetSelectionEnabled, Ov022_ReadSelectionInput) */
+volatile int kh_lockon_active;
 
 #define STICK_DEADZONE 48
 
@@ -188,16 +192,30 @@ void input_poll(InputState *out)
         }
     }
 
-    /* R as a toggle (config r_toggle): each press latches or releases the lock-on */
+    /* One-click lock-on (config r_toggle), in the field (ov022): the game locks on with a tap
+     * of R and lets go with a quick double tap (Ov022_ReadSelectionInput; a single tap while
+     * locked changes target). A click of R becomes the tap when nothing is locked, the double
+     * tap when something is (kh_lockon_active, which the game's lock-on code keeps). Each step
+     * lasts 3 VBlanks, so the game sees it at 30 fps too. 0.1.8 latched R down instead: a
+     * second click let it go, and letting go needed two more. */
     {
-        static int latched, was;
+        static int was, step, steps;
+        static uint8_t pattern[12];
         const int now_r = (held & DS_KEY_R) != 0;
-        if (kh_config.r_toggle) {
-            if (now_r && !was)
-                latched ^= 1;
-            held = (uint16_t)((held & ~DS_KEY_R) | (latched ? DS_KEY_R : 0));
+        if (kh_config.r_toggle && kh_overlay_loaded(22)) {
+            if (now_r && !was && step >= steps) {
+                static const uint8_t tap[] = { 1, 1, 1 };
+                static const uint8_t double_tap[] = { 1, 1, 1, 0, 0, 0, 1, 1, 1 };
+                const uint8_t *p = kh_lockon_active ? double_tap : tap;
+                steps = kh_lockon_active ? (int)sizeof(double_tap) : (int)sizeof(tap);
+                memcpy(pattern, p, (size_t)steps);
+                step = 0;
+            }
+            held = (uint16_t)((held & ~DS_KEY_R) | (step < steps && pattern[step] ? DS_KEY_R : 0));
+            if (step < steps)
+                step++;
         } else {
-            latched = 0;
+            step = steps = 0;
         }
         was = now_r;
     }

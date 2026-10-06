@@ -70,7 +70,7 @@ static const Item s_controls[] = {
     { IT_INVY, 0, "Invert camera Y", NULL },
     { IT_DEADZONE, 0, "Stick dead zone", "How far the sticks move before they count." },
     { IT_DPAD, 0, "D-pad on command deck", "On: the d-pad moves the command cursor." },
-    { IT_RMODE, 0, "R button (lock-on)", "Toggle: one press locks on, the next lets go." },
+    { IT_RMODE, 0, "R button (lock-on)", "One click: a click locks on, the next lets go." },
     { IT_REAR, 0, "Rear touchpad", "The rear touchpad's halves as two more buttons." },
 };
 static const Item s_buttons[] = {
@@ -184,7 +184,7 @@ static void value(const Item *it, char *out, size_t n)
     case IT_INVY: snprintf(out, n, "%s", kh_config.camera_invert_y ? "Yes" : "No"); break;
     case IT_DEADZONE: snprintf(out, n, "%s", zones[kh_config.stick_deadzone & 3]); break;
     case IT_DPAD: snprintf(out, n, "%s", kh_config.dpad_deck ? "On" : "Off"); break;
-    case IT_RMODE: snprintf(out, n, "%s", kh_config.r_toggle ? "Toggle" : "Hold"); break;
+    case IT_RMODE: snprintf(out, n, "%s", kh_config.r_toggle ? "One click" : "As on DS"); break;
     case IT_REAR: snprintf(out, n, "%s", rear[kh_config.rear_touch % 3]); break;
     case IT_BUTTON:
         snprintf(out, n, "%s", s_vita_names[config_vita_button_index(kh_config.button[it->arg])]);

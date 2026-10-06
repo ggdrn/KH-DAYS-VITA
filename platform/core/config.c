@@ -134,7 +134,8 @@ void config_save(void)
                "rear_touch = %d\n\n", kh_config.rear_touch);
     fprintf(f, "# Analog stick dead zone: 1 small, 2 normal, 3 large.\n"
                "stick_deadzone = %d\n\n", kh_config.stick_deadzone);
-    fprintf(f, "# The DS's R (lock-on): 0 held as on the DS, 1 toggled by each press.\n"
+    fprintf(f, "# Lock-on (R) in the field: 0 as on the DS (a tap locks on, a quick double\n"
+               "# tap lets go), 1 one click locks on and the next lets go.\n"
                "r_toggle = %d\n\n", kh_config.r_toggle);
     fprintf(f, "# Fast-forward speed, switched on and off with L+R+Square: 2 or 3.\n"
                "fast_forward = %d\n\n", kh_config.fast_forward);
