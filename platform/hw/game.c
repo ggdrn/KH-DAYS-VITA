@@ -460,8 +460,14 @@ static void present(void)
     const int tutorial = single && ((KH_IO32(0x04001000) >> 8) & 0x1f) == 0x0c;
     video_set_tutorial(tutorial);
     /* the field's HUD at config hud_size (engine A, with the 3D, on top in the field) */
-    /* not while paused: the pause menu's buttons reach into the HP gauge's corner */
-    video_set_hud_shrink(!dual && a_on_top && kh_overlay_loaded(22) && PauseMenu_GetMode() == 0);
+    /* not while paused: the pause menu's buttons reach into the HP gauge's corner. The 2D
+     * then also records which layer is in front at each pixel: the HUD's own layers move,
+     * nothing else in its corners (0.1.10 moved whatever passed there) */
+    const int hud_shrink = !dual && a_on_top && kh_overlay_loaded(22) &&
+                           PauseMenu_GetMode() == 0 && kh_config.hud_size < 100;
+    static uint8_t layer_a[256 * 192];
+    video_set_hud_shrink(hud_shrink);
+    kh_gpu2d_layer_out[KH_ENGINE_A] = hud_shrink ? layer_a : NULL;
     kh_gpu2d_plain[KH_ENGINE_B] = single && PauseMenu_GetMode() != 0;
     /* with the detailed log, once a second: this frame's GPU time measured alone */
     video_gpu_probe_begin();
@@ -699,6 +705,8 @@ static void present(void)
         dump_2d(a_on_top);
     }
     update_panels(video_single_screen(), upload2d, s_bottom);
+    if (upload2d && kh_gpu2d_layer_out[KH_ENGINE_A])
+        video_set_layer_map(kh_gpu2d_layer_out[KH_ENGINE_A]);
     s_stage = "present";
     {
         uint64_t t = sceKernelGetProcessTimeWide();

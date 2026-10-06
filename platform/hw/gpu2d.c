@@ -108,6 +108,7 @@ static int bank_is(int bank, int mst)
 
 volatile uint32_t kh_gpu2d_dispcnt_override[2];
 volatile int kh_gpu2d_plain[2];
+uint8_t *volatile kh_gpu2d_layer_out[2];
 
 static void engine_setup(Engine *e, int engine)
 {
@@ -948,6 +949,8 @@ static int render_lines(int engine, uint32_t *fb, int y0, int y1, int graphics)
 
     engine_setup(&e, engine);
     mode = graphics ? 1 : (e.dispcnt >> 16) & (e.is_a ? 3 : 1);
+    if (!graphics && kh_gpu2d_layer_out[engine] && (mode != 1 || (e.dispcnt & 0x80)))
+        memset(kh_gpu2d_layer_out[engine] + y0 * W, L_BD, (size_t)(y1 - y0) * W);
     fb += y0 * W;
     if (mode == 0 || (e.dispcnt & 0x80)) { /* display off, or forced blank: white */
         memset(fb, 0xff, (size_t)(y1 - y0) * W * sizeof(*fb));
@@ -982,6 +985,12 @@ static int render_lines(int engine, uint32_t *fb, int y0, int y1, int graphics)
                 fb[x] = (to_rgba(row[x]) & 0xffffffu) | (uint32_t)code[x] << 24;
         } else {
             row_out(row, fb, mmode, mf);
+        }
+        if (!graphics && kh_gpu2d_layer_out[engine]) {
+            /* the layer in front at each pixel (L_*), for the HUD size */
+            uint8_t *l = kh_gpu2d_layer_out[engine] + line * W;
+            for (x = 0; x < W; x++)
+                l[x] = (uint8_t)sc.id0[x];
         }
         if (sc.prof) /* the whole line: the composition is what BGs and sprites leave */
             prof_add(&s_prof_us[!e.is_a][2], (uint32_t)(prof_now(sc.prof) - t) * 8);

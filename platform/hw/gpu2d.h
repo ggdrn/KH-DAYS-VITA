@@ -48,6 +48,9 @@ extern volatile uint32_t kh_gpu2d_dispcnt_override[2];
 /* An engine drawn without its fades (master brightness, brighten/darken): the single screen's
  * panels while the game is paused, which the game dims behind its pause menu. */
 extern volatile int kh_gpu2d_plain[2];
+/* When set, an engine's rendering also writes there, per pixel (256x192), the layer in front:
+ * 0-3 BG0-BG3, 4 sprites, 5 backdrop. The HUD size picks the HUD's layers with it. */
+extern uint8_t *volatile kh_gpu2d_layer_out[2];
 
 /* Diagnosis, with kh_gpu2d_profiling set: since the last call, per engine, the CPU time (us)
  * of the BGs, the sprites and whole lines, and the sprite lines drawn as tiles, bitmaps and
