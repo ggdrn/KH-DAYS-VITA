@@ -42,6 +42,11 @@ static uint64_t run_us(SceUID thid)
     return info.runClocks; /* microseconds */
 }
 
+uint64_t threadstat_self_us(void)
+{
+    return run_us(sceKernelGetThreadId());
+}
+
 void threadstat_log(void)
 {
     const char *names[16];

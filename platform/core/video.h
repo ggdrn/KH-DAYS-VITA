@@ -87,6 +87,9 @@ void video_capture(const uint32_t *gfx, int src3d, unsigned tex3d, float ka, flo
  * bank (0-3, VIDEO_SCREEN_MEMORY + 0/1; -1 none), with its engine's master brightness (its 0x0400006c value). */
 void video_show_capture(int screen, int bank, uint16_t master_bright);
 /* The last video_present's time in its texture uploads and in the buffer swap (us). */
+/* the display thread's CPU time inside vglSwapBuffers and the wall time there, since the
+ * last call */
+void video_take_swap_cpu(uint64_t *cpu_us, uint64_t *wall_us);
 void video_present_times(uint32_t *upload_us, uint32_t *swap_us);
 /* With the detailed log: at the start of a display frame, drains the GPU once a second and
  * returns 1 for that frame, whose GPU time video_present then measures; the time the GPU still

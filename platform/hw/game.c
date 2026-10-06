@@ -209,6 +209,7 @@ static int drawn_screens(const Frame2d *f, int a_on_top)
 
 /* per-stage display times since the last report, for the 10 s line */
 static uint64_t s_t3d_total, s_join_total, s_present_total;
+static uint64_t s_present_cpu, s_help_cpu, s_loop_cpu; /* the display thread's CPU time */
 static uint32_t s_2d_async; /* 2D pictures drawn over two Vita frames (60 fps mode) */
 static uint32_t s_t3d_max, s_join_max, s_present_max, s_prep_max; /* the worst frame's */
 
@@ -293,8 +294,8 @@ void kh_dual3d_toggled(void)
 /* The single screen's autohide panels (config panel autohide: the INFORMATION bar, the mission
  * gauge): each one slides in for 7 s when what it shows changes to something new -- a picture
  * seen in the last few seconds (a marker blinking) does not count -- and stays while the game
- * is paused (its own pause state, however the pause menu was opened or closed) or Select has
- * pinned it. */
+ * is paused (its own pause state, however the pause menu was opened or closed) or the camera
+ * is in its look view (Select's zoom on the player, from Ov002_Camera_UpdateFollow). */
 #define PANEL_SHOW_US 7000000u
 #define PANEL_SLIDE_US 300000.0f
 #define PANEL_RECENT 8
@@ -305,7 +306,21 @@ static struct {
     uint32_t seen[PANEL_RECENT];
     uint64_t seen_at[PANEL_RECENT];
 } s_panels[KH_PANELS];
-static int s_pin_select;
+volatile int kh_camera_look;
+volatile unsigned int kh_camera_look_seq;
+
+/* the look view, while the field camera is still being updated (the flag is left as it was
+ * when the field stops: a menu, a cutscene) */
+static int camera_look(uint64_t now)
+{
+    static unsigned int seq;
+    static uint64_t seq_at;
+    if (kh_camera_look_seq != seq) {
+        seq = kh_camera_look_seq;
+        seq_at = now;
+    }
+    return kh_camera_look && now - seq_at < 200000u;
+}
 /* HUD size: a dialogue box on the top screen (seen in the layer map) */
 static int s_dialog_open;
 extern int PauseMenu_GetMode(void); /* the game's pause state: 0 running */
@@ -344,18 +359,14 @@ static void update_panels(int single, int drawn, const uint32_t *bottom_fb)
 {
     static int was_single;
     static uint64_t last;
-    static uint16_t keys_prev = 0x3ff;
     static int was_paused;
     static uint64_t quiet_until;
     const uint64_t now = sceKernelGetProcessTimeWide();
-    const uint16_t keys = KH_IO16(0x04000130), pressed = (uint16_t)(keys_prev & ~keys);
     const float step = last ? (float)(now - last) / PANEL_SLIDE_US : 0.0f;
-    int i, k, paused;
-    keys_prev = keys;
+    int i, k, paused, look;
     last = now;
     if (!single) {
         was_single = 0;
-        s_pin_select = 0;
         return;
     }
     if (!was_single) {
@@ -364,9 +375,7 @@ static void update_panels(int single, int drawn, const uint32_t *bottom_fb)
         was_single = 1;
         quiet_until = now + 2000000u;
     }
-    /* KEYINPUT, active low: Select is bit 2 */
-    if (pressed & 4)
-        s_pin_select ^= 1;
+    look = camera_look(now);
     paused = PauseMenu_GetMode() != 0;
     /* a screen fading (an area change, a cutscene): nothing it shows meanwhile counts */
     if (fading(KH_IO16(0x0400006c)) || fading(KH_IO16(0x0400106c)))
@@ -411,7 +420,7 @@ static void update_panels(int single, int drawn, const uint32_t *bottom_fb)
                     s_panels[i].until = now + PANEL_SHOW_US;
             }
         }
-        target = (paused || s_pin_select || now < s_panels[i].until) ? 1.0f : 0.0f;
+        target = (paused || look || now < s_panels[i].until) ? 1.0f : 0.0f;
     slide:
         if (s_panels[i].vis < target)
             s_panels[i].vis = s_panels[i].vis + step > target ? target : s_panels[i].vis + step;
@@ -790,12 +799,14 @@ static void present(void)
     s_stage = "present";
     {
         uint64_t t = sceKernelGetProcessTimeWide();
+        const uint64_t c = threadstat_self_us();
         /* unchanged screens are not uploaded again */
         video_present(upload2d && (upload_mask & 1) ? s_top : NULL,
                       upload2d && (upload_mask & 2) ? s_bottom : NULL);
         if (dual)
             s_toggle_done = toggle_seq;
         t = sceKernelGetProcessTimeWide() - t;
+        s_present_cpu += threadstat_self_us() - c;
         s_present_total += t;
         stage_max(&s_present_max, t);
         s_cur.present = (uint32_t)t;
@@ -819,8 +830,10 @@ static void present(void)
      * its share of the chunks rather than leave them all to the helper (which shares its
      * core with the sound) */
     if (async_2d) {
+        const uint64_t c = threadstat_self_us();
         s_stage = "2d help";
         workers_help();
+        s_help_cpu += threadstat_self_us() - c;
     }
     s_stage = "loop";
     s_beats++;
@@ -1174,7 +1187,8 @@ void kh_game_run(void)
                      * of both engines: a screen that turns dark or bright shows here */
                     static uint64_t halt_last;
                     const uint64_t halt = kh_cpu_halt_us;
-                    const unsigned busy = 1000 - (unsigned)((halt - halt_last) * 1000 / (now - s_window_start + 1));
+                    const uint64_t idle = (halt - halt_last) * 1000 / (now - s_window_start + 1);
+                    const unsigned busy = idle >= 1000 ? 0 : 1000 - (unsigned)idle;
                     halt_last = halt;
                     LOG("display: per frame 3d submit %uus, 2d after it %uus, present %uus; 2d "
                         "reused in %u of 600, %u drawn over two frames; game core %u.%u%% busy",
@@ -1182,6 +1196,19 @@ void kh_game_run(void)
                         (unsigned)(s_present_total / 600), (unsigned)s_2d_skipped,
                         (unsigned)s_2d_async, busy / 10, busy % 10);
                     s_2d_async = 0;
+                    {
+                        uint64_t sc, sw;
+                        const uint64_t all = threadstat_self_us();
+                        video_take_swap_cpu(&sc, &sw);
+                        LOG("display: thread cpu per frame %uus: present %uus (in the swap %uus "
+                            "of its %uus), 2d help %uus, the rest (3d, 2d set-up) %uus",
+                            (unsigned)((all - s_loop_cpu) / 600), (unsigned)(s_present_cpu / 600),
+                            (unsigned)(sc / 600), (unsigned)(sw / 600),
+                            (unsigned)(s_help_cpu / 600),
+                            (unsigned)((all - s_loop_cpu - s_present_cpu - s_help_cpu) / 600));
+                        s_loop_cpu = all;
+                        s_present_cpu = s_help_cpu = 0;
+                    }
                     {
                         uint32_t ga, gm;
                         video_take_gpu_probe(&ga, &gm);

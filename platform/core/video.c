@@ -3,6 +3,7 @@
 #include "config.h"
 #include "log.h"
 #include "paths.h"
+#include "threadstat.h"
 
 #include <math.h>
 #include <string.h>
@@ -24,6 +25,7 @@ static int s_tex_at[2];
 #define s_tex_cur(i) (s_tex_ring[i][s_tex_at[i]])
 /* the last video_present's time in its uploads and in vglSwapBuffers (us), for the log */
 static uint32_t s_upload_us, s_swap_us;
+static uint64_t s_swap_cpu_total, s_swap_wall_total; /* for video_take_swap_cpu */
 /* With the detailed log, one frame a second is drawn alone: the GPU is drained before it
  * (video_gpu_probe_begin) and waited for before its swap, which gives that frame's own GPU time.
  * 0.1.0 only waited at the swap, which also counted the frames queued for display. */
@@ -1090,9 +1092,14 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
             s_gpu_max = d;
         s_gpu_probing = 0;
     }
-    t_swap = sceKernelGetProcessTimeWide();
-    vglSwapBuffers(GL_FALSE);
-    s_swap_us = (uint32_t)(sceKernelGetProcessTimeWide() - t_swap);
+    {
+        const uint64_t c = threadstat_self_us();
+        t_swap = sceKernelGetProcessTimeWide();
+        vglSwapBuffers(GL_FALSE);
+        s_swap_us = (uint32_t)(sceKernelGetProcessTimeWide() - t_swap);
+        s_swap_wall_total += s_swap_us;
+        s_swap_cpu_total += threadstat_self_us() - c;
+    }
 }
 
 void video_take_gpu_probe(uint32_t *avg_us, uint32_t *max_us)
@@ -1100,6 +1107,13 @@ void video_take_gpu_probe(uint32_t *avg_us, uint32_t *max_us)
     *avg_us = s_gpu_n ? s_gpu_total / s_gpu_n : 0;
     *max_us = s_gpu_max;
     s_gpu_total = s_gpu_max = s_gpu_n = 0;
+}
+
+void video_take_swap_cpu(uint64_t *cpu_us, uint64_t *wall_us)
+{
+    *cpu_us = s_swap_cpu_total;
+    *wall_us = s_swap_wall_total;
+    s_swap_cpu_total = s_swap_wall_total = 0;
 }
 
 void video_present_times(uint32_t *upload_us, uint32_t *swap_us)
