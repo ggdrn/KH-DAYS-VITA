@@ -41,7 +41,7 @@ static const char s_fs[] =
     "float4 main(float4 vCol : COLOR, float2 vTex : TEXCOORD0,\n"
     "            uniform sampler2D uTex, uniform sampler2D uToon,\n"
     "            uniform float uMode, uniform float uTextured, uniform float uAlphaRef,\n"
-    "            uniform float uCutout) : COLOR\n"
+    "            uniform float uCutout, uniform float uSplit) : COLOR\n"
     "{\n"
     "    float4 t = float4(1.0, 1.0, 1.0, 1.0);\n"
     "    float4 r;\n"
@@ -78,6 +78,15 @@ static const char s_fs[] =
     "#ifndef OPAQUE\n"
     "    if (r.a <= uAlphaRef)\n"
     "        discard;\n"
+    /* uSplit: a polygon translucent only through its texture's alpha, in two passes (see
+     * flush): 1 its opaque texels alone, 2 the others */
+    "    if (uSplit > 1.5) {\n"
+    "        if (r.a > 0.984)\n"
+    "            discard;\n"
+    "    } else if (uSplit > 0.5) {\n"
+    "        if (r.a <= 0.984)\n"
+    "            discard;\n"
+    "    }\n"
     "#endif\n"
     "    return float4(r.rgb * r.a, r.a);\n"
     "}\n";
@@ -89,7 +98,7 @@ static GLuint s_prog, s_fbo, s_color, s_depth, s_vbo, s_toon_tex;
 /* the two builds of the polygon shader: [0] with the alpha test, [1] OPAQUE without */
 typedef struct {
     GLuint id;
-    GLint tex_scale, mode, textured, alpha_ref, tex, toon, cutout;
+    GLint tex_scale, mode, textured, alpha_ref, tex, toon, cutout, split;
 } Prog3d;
 static Prog3d s_p3[2];
 static const Prog3d *s_cur3; /* the one in use while a frame is drawn */
@@ -424,6 +433,7 @@ int kh_gpu3d_init(int scale)
             g->mode = glGetUniformLocation(g->id, "uMode");
             g->textured = glGetUniformLocation(g->id, "uTextured");
             g->cutout = glGetUniformLocation(g->id, "uCutout");
+            g->split = glGetUniformLocation(g->id, "uSplit");
             g->alpha_ref = glGetUniformLocation(g->id, "uAlphaRef");
             g->tex = glGetUniformLocation(g->id, "uTex");
             g->toon = glGetUniformLocation(g->id, "uToon");
@@ -456,6 +466,8 @@ typedef struct {
     int shadow;     /* 0 no, 1 shadow mask (polygon ID 0), 2 shadow colour */
     int id;         /* POLYGON_ATTR 24-29, the polygon ID */
     int opaque_prog; /* 1: drawn with the OPAQUE shader (nothing in it can be discarded) */
+    int tex_alpha;  /* alpha 31, translucent only through its texture (A3I5, A5I3) */
+    int pass;       /* flush's passes for those: 1 the opaque texels, 2 the others */
 } DrawState;
 
 static uint16_t s_idx[KH_GX_MAX_POLYGONS * 6];
@@ -499,6 +511,7 @@ static void apply_state(const DrawState *st)
         SET3(g->cutout, glUniform1f(g->cutout, 0.0f));
     }
     SET3(g->mode, glUniform1f(g->mode, st->mode == 3 ? 0.0f : (float)st->mode));
+    SET3(g->split, glUniform1f(g->split, (float)st->pass));
     if (st->blend)
         glEnable(GL_BLEND);
     else
@@ -563,6 +576,27 @@ static void flush(const DrawState *st, int first, int count)
         }
         s_nbatches++;
     }
+    if (st->tex_alpha) {
+        /* a pixel of alpha 31 is opaque on the DS whatever its polygon: it writes depth and
+         * hides what comes after it. Hair is drawn so (Marluxia's frame dump: 129 polygons,
+         * A3I5, alpha 31, both sides, no depth write; their texels mostly fully opaque);
+         * writing no depth here, its back layers, drawn later, came through the front ones.
+         * Its opaque texels first, as opaque, then the translucent ones as before. */
+        DrawState o = *st;
+        o.tex_alpha = 0;
+        o.pass = 1;
+        o.blend = 0;
+        o.depth_write = 1;
+        apply_state(&o);
+        glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, s_idx + first);
+        o = *st;
+        o.tex_alpha = 0;
+        o.pass = 2;
+        apply_state(&o);
+        glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, s_idx + first);
+        s_stats.batches += 2;
+        return;
+    }
     if (st->shadow == 2) {
         /* first unmark the pixels whose opaque polygon has this shadow's ID */
         apply_state(st);
@@ -596,7 +630,17 @@ static void upload_toon(const KhGxFrame *f)
     }
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, s_toon_tex);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 32, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
+    {
+        /* the same table as last time: no upload (vitaGL copies a texture drawn in the last
+         * frames whole before writing it) */
+        static uint32_t last[32];
+        static int have;
+        if (!have || memcmp(last, px, sizeof(px))) {
+            memcpy(last, px, sizeof(px));
+            have = 1;
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 32, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
+        }
+    }
     glActiveTexture(GL_TEXTURE0);
 }
 
@@ -858,10 +902,14 @@ static unsigned draw_frame(const KhGxFrame *f, const KhGxVertex *vtx)
             ps->opaque_prog = !p->translucent && alpha == 31 && kh_gpu3d_debug != 1 &&
                               (!ps->tex || ps->tex->opaque);
             ps->depth_write = !p->translucent || (p->attr & (1u << 11));
+            ps->tex_alpha = p->translucent && alpha == 31 && ps->tex && !ps->tex->opaque &&
+                            (fmt == 1 || fmt == 6);
+            ps->pass = 0;
             ps->depth_equal = (p->attr >> 14) & 1;
             s_stats.depth_equal += ps->depth_equal;
             if (ps->shadow) {
                 ps->opaque_prog = 0;
+                ps->tex_alpha = 0;
                 /* shadows draw over the finished opaque scene, in the frame's order, blended
                  * as translucent polygons are, never writing depth */
                 ps->blend = blending_on;

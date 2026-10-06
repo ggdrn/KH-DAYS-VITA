@@ -17,15 +17,19 @@
 #define DISPLAY_W 960
 #define DISPLAY_H 544
 
-/* The two DS screens' 2D, three textures each used in turn: a texture the GPU may still be
- * reading for a frame not yet shown is not written (vitaGL could wait for it in the upload) */
-#define TEX_RING 3
+/* The two DS screens' 2D, several textures each used in turn: a texture the GPU may still be
+ * reading for a frame not yet shown is not written. vitaGL copies a texture whole (read back
+ * from video memory, slow for the CPU) before a glTexSubImage2D when it was drawn in the last
+ * 4 frames (FRAME_PURGE_FREQ): with 3 a screen, every upload paid that copy. With 6, the
+ * texture written was last drawn at least 6 frames before. */
+#define TEX_RING 6
 static GLuint s_tex_ring[2][TEX_RING], s_overlay_tex;
 static int s_tex_at[2];
 #define s_tex_cur(i) (s_tex_ring[i][s_tex_at[i]])
 /* the last video_present's time in its uploads and in vglSwapBuffers (us), for the log */
 static uint32_t s_upload_us, s_swap_us;
 static uint64_t s_swap_cpu_total, s_swap_wall_total; /* for video_take_swap_cpu */
+static uint64_t s_upload_total;
 /* With the detailed log, one frame a second is drawn alone: the GPU is drained before it
  * (video_gpu_probe_begin) and waited for before its swap, which gives that frame's own GPU time.
  * 0.1.0 only waited at the swap, which also counted the frames queued for display. */
@@ -1015,6 +1019,7 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, DS_SCREEN_W, DS_SCREEN_H, GL_RGBA,
                             GL_UNSIGNED_BYTE, src[i]);
             s_upload_us += (uint32_t)(sceKernelGetProcessTimeWide() - t);
+            s_upload_total += (uint32_t)(sceKernelGetProcessTimeWide() - t);
         }
         glBindTexture(GL_TEXTURE_2D, s_tex_cur(i));
         if (i == s_inset && i == 1 && s_inset_blank)
@@ -1109,11 +1114,12 @@ void video_take_gpu_probe(uint32_t *avg_us, uint32_t *max_us)
     s_gpu_total = s_gpu_max = s_gpu_n = 0;
 }
 
-void video_take_swap_cpu(uint64_t *cpu_us, uint64_t *wall_us)
+void video_take_swap_cpu(uint64_t *cpu_us, uint64_t *wall_us, uint64_t *upload_us)
 {
     *cpu_us = s_swap_cpu_total;
     *wall_us = s_swap_wall_total;
-    s_swap_cpu_total = s_swap_wall_total = 0;
+    *upload_us = s_upload_total;
+    s_swap_cpu_total = s_swap_wall_total = s_upload_total = 0;
 }
 
 void video_present_times(uint32_t *upload_us, uint32_t *swap_us)

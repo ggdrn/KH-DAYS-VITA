@@ -1197,13 +1197,14 @@ void kh_game_run(void)
                         (unsigned)s_2d_async, busy / 10, busy % 10);
                     s_2d_async = 0;
                     {
-                        uint64_t sc, sw;
+                        uint64_t sc, sw, su;
                         const uint64_t all = threadstat_self_us();
-                        video_take_swap_cpu(&sc, &sw);
-                        LOG("display: thread cpu per frame %uus: present %uus (in the swap %uus "
-                            "of its %uus), 2d help %uus, the rest (3d, 2d set-up) %uus",
+                        video_take_swap_cpu(&sc, &sw, &su);
+                        LOG("display: thread cpu per frame %uus: present %uus (uploads %uus, in "
+                            "the swap %uus of its %uus), 2d help %uus, the rest (3d, 2d set-up) "
+                            "%uus",
                             (unsigned)((all - s_loop_cpu) / 600), (unsigned)(s_present_cpu / 600),
-                            (unsigned)(sc / 600), (unsigned)(sw / 600),
+                            (unsigned)(su / 600), (unsigned)(sc / 600), (unsigned)(sw / 600),
                             (unsigned)(s_help_cpu / 600),
                             (unsigned)((all - s_loop_cpu - s_present_cpu - s_help_cpu) / 600));
                         s_loop_cpu = all;
