@@ -30,6 +30,9 @@ int video_on_inset(int px, int py);
 /* Experimental single screen (config single_screen): on, the top screen alone over the display
  * and the config's panels (parts of the bottom screen) over it; game.c turns it on in missions. */
 void video_set_single_screen(int on);
+/* The bottom screen's picture is all black: as the small screen it is left out (a black box in
+ * the corner during the field's conversations looked like a fault). */
+void video_set_inset_blank(int blank);
 /* An autohide panel's visibility, 0 hidden .. 1 shown: in between, it slides in from its edge. */
 void video_set_panel_visibility(int i, float vis);
 /* Single screen: the bottom screen holds a tutorial page, shown whole in the middle instead of

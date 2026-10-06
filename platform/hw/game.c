@@ -428,6 +428,31 @@ static void hud_after_2d(void)
     int z, boxes[3][4];
     s_dialog_open = __atomic_exchange_n(&kh_gpu2d_center_bg3, 0, __ATOMIC_RELAXED) >= 200;
     kh_gpu2d_banner_last = __atomic_exchange_n(&kh_gpu2d_banner_now, 0, __ATOMIC_RELAXED);
+    {
+        /* each corner's HUD: the block of lines joined to the screen's edge, gaps of a few
+         * lines allowed (between the deck's bars); anything further away is a notice */
+        static const int zone_y[3][2] = { { 0, 60 }, { 60, 192 }, { 90, 192 } };
+        int y, last, found;
+        /* top-left: down from the top (the first lines may be empty) */
+        last = -1, found = 0;
+        for (y = zone_y[0][0]; y < zone_y[0][1]; y++)
+            if (kh_gpu2d_zone_rows[0][y])
+                last = y, found = 1;
+            else if (found ? y - last > 6 : y > 16)
+                break;
+        kh_gpu2d_zone_lim[0][0] = 0, kh_gpu2d_zone_lim[0][1] = last + 1;
+        /* bottom ones: up from the bottom */
+        for (z = 1; z < 3; z++) {
+            last = zone_y[z][1], found = 0;
+            for (y = zone_y[z][1] - 1; y >= zone_y[z][0]; y--)
+                if (kh_gpu2d_zone_rows[z][y])
+                    last = y, found = 1;
+                else if (found ? last - y > 8 : zone_y[z][1] - y > 24)
+                    break;
+            kh_gpu2d_zone_lim[z][0] = last, kh_gpu2d_zone_lim[z][1] = zone_y[z][1];
+        }
+        memset((void *)kh_gpu2d_zone_rows, 0, sizeof(kh_gpu2d_zone_rows));
+    }
     /* the boxes the HUD filled in this picture: the corners drawn again cover only those */
     for (z = 0; z < 3; z++) {
         boxes[z][0] = __atomic_exchange_n(&kh_gpu2d_hud_box[z][0], 256, __ATOMIC_RELAXED);
@@ -754,6 +779,13 @@ static void present(void)
         dump_2d(a_on_top);
     }
     update_panels(video_single_screen(), upload2d && (upload_mask & 2), s_bottom);
+    if (upload2d && (upload_mask & 2)) {
+        /* the bottom screen all black (sampled): the small screen is not drawn */
+        int k, lit = 0;
+        for (k = 0; k < 256 * 192 && !lit; k += 7)
+            lit = (s_bottom[k] & 0xe0e0e0u) != 0;
+        video_set_inset_blank(a_on_top && !lit);
+    }
     s_stage = "present";
     {
         uint64_t t = sceKernelGetProcessTimeWide();

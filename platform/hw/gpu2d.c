@@ -111,6 +111,8 @@ volatile int kh_gpu2d_plain[2];
 volatile int kh_gpu2d_hud_mode;
 volatile uint32_t kh_gpu2d_center_bg3;
 volatile int kh_gpu2d_banner_now, kh_gpu2d_banner_last;
+volatile uint8_t kh_gpu2d_zone_rows[3][192];
+volatile int kh_gpu2d_zone_lim[3][2] = { { 0, 60 }, { 60, 192 }, { 90, 192 } };
 volatile int32_t kh_gpu2d_hud_box[3][4] = { { 256, 192, 0, 0 }, { 256, 192, 0, 0 },
                                             { 256, 192, 0, 0 } };
 
@@ -156,11 +158,25 @@ static void hud_codes(int line, const uint16_t *id0, uint8_t *code)
                 kh_gpu2d_banner_now = 1;
                 break;
             }
+    /* which lines of each corner hold the HUD's layers: the HUD is the block joined to the
+     * screen's edge there (the deck and its submenus from the bottom, the chain from the top);
+     * a notice standing apart ("BACKPACK FULL", an item's name) is not part of it */
+    for (z = 0; z < 3; z++) {
+        if (line < s_hud_zones[z][1] || line >= s_hud_zones[z][3])
+            continue;
+        for (x = s_hud_zones[z][0]; x < s_hud_zones[z][2]; x++)
+            if (id0[x] == L_BG1 || id0[x] == L_BG3) {
+                kh_gpu2d_zone_rows[z][line] = 1;
+                break;
+            }
+    }
     if (kh_gpu2d_hud_mode < 2)
         return;
     for (z = 0; z < 3; z++) {
         int x0 = W, x1 = -1;
         if (line < s_hud_zones[z][1] || line >= s_hud_zones[z][3])
+            continue;
+        if (line < kh_gpu2d_zone_lim[z][0] || line >= kh_gpu2d_zone_lim[z][1])
             continue;
         if (z == 0 && (banner_line || kh_gpu2d_banner_last))
             continue;

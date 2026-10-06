@@ -688,6 +688,8 @@ static void run_capture(void)
 /* Experimental single screen (config single_screen, game.c decides when): the top screen alone
  * over the display, and the config's panels -- rectangles of the bottom screen -- over it. */
 static int s_single;
+/* the bottom screen is all black (the field's conversations): as the small screen, not shown */
+static int s_inset_blank;
 static int s_tutorial; /* the bottom screen holds a tutorial page: shown whole, in the middle */
 /* the tutorial page: the whole bottom screen, two Vita pixels per DS pixel, centred */
 static const int s_tutorial_panel[KH_PANEL_FIELDS] = { 0, 0, 256, 192, KH_PANEL_TOP_CENTER, 0, 80,
@@ -821,10 +823,15 @@ void video_swap_screens(void)
     video_set_layout(video_layout() == LAYOUT_TOP_MAIN ? LAYOUT_BOTTOM_MAIN : LAYOUT_TOP_MAIN);
 }
 
+void video_set_inset_blank(int blank)
+{
+    s_inset_blank = blank != 0;
+}
+
 int video_on_inset(int px, int py)
 {
     const ScreenRect *r;
-    if (s_inset < 0 || s_pending >= 0)
+    if (s_inset < 0 || s_pending >= 0 || (s_inset == 1 && s_inset_blank))
         return 0;
     r = &s_rect[s_inset];
     return px >= r->x && px < r->x + r->w && py >= r->y && py < r->y + r->h;
@@ -1008,6 +1015,8 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
             s_upload_us += (uint32_t)(sceKernelGetProcessTimeWide() - t);
         }
         glBindTexture(GL_TEXTURE_2D, s_tex_cur(i));
+        if (i == s_inset && i == 1 && s_inset_blank)
+            continue; /* the small screen is the bottom one, all black: not shown */
         if (i == 1 && s_single) {
             if (s_compose)
                 draw_panels();

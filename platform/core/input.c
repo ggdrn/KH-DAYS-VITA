@@ -13,6 +13,8 @@
 
 /* kept by the game's lock-on code (Ov022_SetSelectionEnabled, Ov022_ReadSelectionInput) */
 volatile int kh_lockon_active;
+/* config r_toggle in the field: R does not turn the camera (Ov002_Camera_UpdateFollow) */
+volatile int kh_r_one_click;
 
 #define STICK_DEADZONE 48
 
@@ -192,23 +194,23 @@ void input_poll(InputState *out)
         }
     }
 
-    /* One-click lock-on (config r_toggle), in the field (ov022): the game locks on with a tap
-     * of R and lets go with a quick double tap (Ov022_ReadSelectionInput; a single tap while
-     * locked changes target). A click of R becomes the tap when nothing is locked, the double
-     * tap when something is (kh_lockon_active, which the game's lock-on code keeps). Each step
-     * lasts 3 VBlanks, so the game sees it at 30 fps too. 0.1.8 latched R down instead: a
-     * second click let it go, and letting go needed two more. */
+    /* One-click lock-on (config r_toggle), in the field (ov022): the game locks on, and lets
+     * go, with a quick double tap of R (Ov022_ReadSelectionInput), and a single tap turns the
+     * camera behind the player (Ov002_Camera_UpdateFollow, which kh_r_one_click turns off).
+     * A click of R becomes that double tap, each step 3 VBlanks long so that the game sees it
+     * at 30 fps too. */
     {
         static int was, step, steps;
         static uint8_t pattern[12];
         const int now_r = (held & DS_KEY_R) != 0;
-        if (kh_config.r_toggle && kh_overlay_loaded(22)) {
+        kh_r_one_click = kh_config.r_toggle && kh_overlay_loaded(22);
+        if (kh_r_one_click) {
             if (now_r && !was && step >= steps) {
-                static const uint8_t tap[] = { 1, 1, 1 };
+                /* the game locks on, and lets go, with a quick double tap of R (a single tap
+                 * turned the camera: 0.1.9 sent one to lock on) */
                 static const uint8_t double_tap[] = { 1, 1, 1, 0, 0, 0, 1, 1, 1 };
-                const uint8_t *p = kh_lockon_active ? double_tap : tap;
-                steps = kh_lockon_active ? (int)sizeof(double_tap) : (int)sizeof(tap);
-                memcpy(pattern, p, (size_t)steps);
+                steps = (int)sizeof(double_tap);
+                memcpy(pattern, double_tap, (size_t)steps);
                 step = 0;
             }
             held = (uint16_t)((held & ~DS_KEY_R) | (step < steps && pattern[step] ? DS_KEY_R : 0));

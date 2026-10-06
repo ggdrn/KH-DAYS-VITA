@@ -15497,17 +15497,20 @@ index 09328f6ad..b5d206002 100644
      int nOwner;                         /* +0x30 */
  } Ov002PoolEntry;
 diff --git a/src/overlays/scenes/ov002_field/Ov002_Camera_UpdateFollow.c b/src/overlays/scenes/ov002_field/Ov002_Camera_UpdateFollow.c
-index a34a3af7b..d36113706 100644
+index a34a3af7b..af703480f 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_Camera_UpdateFollow.c
 +++ b/src/overlays/scenes/ov002_field/Ov002_Camera_UpdateFollow.c
-@@ -1,3 +1,6 @@
+@@ -1,3 +1,9 @@
 +/* PLATFORM_VITA: shared-address overlay calls (tools/ovdisp.py) */
 +#define Ov022_IsBit2SetVia0x20 kh_ovd_Ov022_IsBit2SetVia0x20
 +#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_ALIGN64 */
++#ifdef PLATFORM_VITA
++extern volatile int kh_r_one_click; /* platform/core/input.c */
++#endif
  #include "nitro/fx_types.h"
  
  #include "game/config.h"
-@@ -45,7 +48,7 @@ typedef union {
+@@ -45,7 +51,7 @@ typedef union {
  } Ov002WorldState;
  
  typedef struct {
@@ -15516,7 +15519,7 @@ index a34a3af7b..d36113706 100644
    unsigned char unknown08[4];
    int kind;
    unsigned char unknown10[0x10];
-@@ -97,6 +100,10 @@ extern void Ov002_TickScriptedCamera(void);
+@@ -97,6 +103,10 @@ extern void Ov002_TickScriptedCamera(void);
  extern void Ov002_ResetCamera(void);
  extern unsigned char data_0204be04;
  extern unsigned short gPadHeld;
@@ -15527,7 +15530,19 @@ index a34a3af7b..d36113706 100644
  extern unsigned short gPadPressed;
  extern unsigned char data_0204c240;
  extern const short data_0203d210[];
-@@ -564,6 +571,11 @@ LAB_arm9_ov002__0204d9ac:
+@@ -493,6 +503,11 @@ LAB_arm9_ov002__0204d9ac:
+       if (((iVar11 != 2) || (sVar5 = Session_GetLocalPlayerIndex(), sVar5 != 0)) &&
+          (((gPadPressed & 0x100) != 0 && ((gPadPressed & 0x200) == 0))))
+       {
++#ifdef PLATFORM_VITA
++        /* the port's one-click lock-on sends R as the lock-on's double tap: R then does not
++         * also turn the camera behind the player */
++        if (!kh_r_one_click)
++#endif
+         piVar7[0xe] = piVar7[0xe] | 8;
+       }
+       if ((piVar7[0xe] & 0x4000U) != 0) {
+@@ -564,6 +579,11 @@ LAB_arm9_ov002__0204d9ac:
    }
    else {
      piVar7[0xe] = uVar16 & 0xffffffef;
@@ -15539,7 +15554,7 @@ index a34a3af7b..d36113706 100644
    }
    iVar11 = func_ov022_020886d0(idx);
    if (iVar11 != 0) {
-@@ -607,6 +619,9 @@ LAB_arm9_ov002__0204d9ac:
+@@ -607,6 +627,9 @@ LAB_arm9_ov002__0204d9ac:
      piVar7[1] = data_0203d210[((int)(uint)*(ushort *)((int)piVar7 + 0xa2) >> 4) * 2 + 1];
    }
    if ((piVar7[0xe] & 0x200U) == 0) {
