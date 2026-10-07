@@ -60,7 +60,7 @@ static ScreenLayout s_layout = LAYOUT_TOP_MAIN;
 static ScreenRect s_rect[2];
 static int s_inset = -1; /* the screen drawn small over the other one, -1 for none */
 static volatile int s_pending = -1; /* a layout asked for from another thread (input) */
-static GLuint s_compose, s_compose_vbo;
+static GLuint s_compose, s_compose_vbo, s_overlay_prog;
 /* The composition shader in four builds, each with only what its passes use: the screens
  * (covering the whole display every frame), the screens with the HUD blocks masked, the panels
  * and HUD blocks, the display captures. One build with everything cost the GPU frames (0.1.8). */
@@ -421,6 +421,29 @@ static void compose_init(void)
     }
     s_compose = s_progs[PROG_SCREEN].id;
     glGenBuffers(1, &s_compose_vbo);
+    {
+        /* the overlay (frame-rate counter, port menu): a texture over the display. Drawn
+         * through vitaGL's fixed-function path, that one quad took about 11 ms of this
+         * thread's time a frame (0.1.26's log), most of the display thread's load */
+        static const char vs[] =
+            "void main(float2 aPos, float2 aUv, out float4 vPos : POSITION,\n"
+            "          out float2 vUv : TEXCOORD0)\n"
+            "{\n"
+            "    vPos = float4(aPos, 0.0, 1.0);\n"
+            "    vUv = aUv;\n"
+            "}\n";
+        static const char fs[] =
+            "float4 main(float2 vUv : TEXCOORD0, uniform sampler2D uTex) : COLOR\n"
+            "{\n"
+            "    return tex2D(uTex, vUv);\n"
+            "}\n";
+        s_overlay_prog = video_build_program(vs, fs, attribs, 2);
+        if (s_overlay_prog) {
+            glUseProgram(s_overlay_prog);
+            glUniform1i(glGetUniformLocation(s_overlay_prog, "uTex"), 0);
+            glUseProgram(0);
+        }
+    }
 }
 
 void video_set_3d(int screen, unsigned tex, uint16_t master_bright, int hofs, uint16_t bldalpha,
@@ -1091,11 +1114,35 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
             const float uv[] = { u0, v0, u1, v0, u0, v1, u1, v1 };
             glEnable(GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            glEnableClientState(GL_VERTEX_ARRAY);
-            glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-            glVertexPointer(2, GL_FLOAT, 0, pos);
-            glTexCoordPointer(2, GL_FLOAT, 0, uv);
-            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+            if (s_overlay_prog) {
+                /* position (NDC) and texture coordinates interleaved, as compose_pass */
+                float v[16];
+                int k;
+                for (k = 0; k < 4; k++) {
+                    v[k * 4] = pos[k * 2] / (DISPLAY_W / 2.0f) - 1.0f;
+                    v[k * 4 + 1] = 1.0f - pos[k * 2 + 1] / (DISPLAY_H / 2.0f);
+                    v[k * 4 + 2] = uv[k * 2];
+                    v[k * 4 + 3] = uv[k * 2 + 1];
+                }
+                glUseProgram(s_overlay_prog);
+                glBindBuffer(GL_ARRAY_BUFFER, s_compose_vbo);
+                glBufferData(GL_ARRAY_BUFFER, sizeof(v), v, GL_DYNAMIC_DRAW);
+                glEnableVertexAttribArray(0);
+                glEnableVertexAttribArray(1);
+                glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, (void *)0);
+                glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, (void *)8);
+                glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+                glDisableVertexAttribArray(0);
+                glDisableVertexAttribArray(1);
+                glBindBuffer(GL_ARRAY_BUFFER, 0);
+                glUseProgram(0);
+            } else {
+                glEnableClientState(GL_VERTEX_ARRAY);
+                glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+                glVertexPointer(2, GL_FLOAT, 0, pos);
+                glTexCoordPointer(2, GL_FLOAT, 0, uv);
+                glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+            }
             glDisable(GL_BLEND);
         }
     }
