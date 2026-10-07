@@ -550,8 +550,8 @@ static void present(void)
     static Frame2d f2d;
     static uint32_t seen_serial, serial_vb, drawn_vb, pending;
     static int last_a3d;
-    /* 60 fps mode: the 2D of a new game frame is drawn by the helper over this Vita frame and
-     * the next, and shown with the next one, where the new frame's 3D (after its halfway mix)
+    /* the 2D of a new game frame is drawn by the helpers over this Vita frame and the next,
+     * and shown with the next one, where the new frame's 3D (after its halfway mix at 60 fps)
      * is shown too; it no longer has to fit in one frame with everything else */
     static int async_2d, async_top;
     int upload2d = 0, upload_mask = 0;
@@ -657,13 +657,15 @@ static void present(void)
         s_stage = "2d";
         if (f2d.neng)
             memset(f2d.a3d, 0, sizeof(f2d.a3d));
-        /* the 60 fps 2D is joined a frame later: the second helper, on the game's core, can
-         * take a share of it while the game waits for its next frame */
-        if (f2d.neng && kh_config.frame_interpolation && !dual)
+        /* the 2D is joined a frame later (the 3D waits a frame for it, gpu3d.c): the second
+         * helper, on the game's core, can take a share of it while the game waits for its
+         * next frame. At 30 fps too since 0.4.0: joined at once there, the display thread
+         * waited about 4 ms a frame for it (0.1.27's log) */
+        if (f2d.neng && !dual)
             workers_begin_spare(render_chunk, BANDS * f2d.neng, &f2d);
         else
             workers_begin(render_chunk, BANDS * f2d.neng, &f2d);
-        if (f2d.neng && kh_config.frame_interpolation && !dual) {
+        if (f2d.neng && !dual) {
             async_2d = 1;
             async_top = a_on_top;
             s_2d_async++;

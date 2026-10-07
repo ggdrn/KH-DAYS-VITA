@@ -21,6 +21,8 @@ void (*portmenu_on_volume)(int percent);
 #define H VIDEO_OVERLAY_H
 
 static uint32_t s_px[W * H];
+/* s_px holds the frame-rate label (not the menu, which draws over it) */
+static int s_px_fps;
 static volatile int s_open;
 static int s_boot_language; /* the language this run started with (config language) */
 static int s_tab, s_sel[8];
@@ -46,7 +48,7 @@ typedef struct {
 static const Item s_video[] = {
     { IT_PRESET, 0, "Quality preset", "Sets resolution, frame rate and filter at once." },
     { IT_SCALE, 0, "3D resolution", "Internal 3D resolution. 4x smooths edges (more GPU)." },
-    { IT_FPS, 0, "3D frame rate", "60: frames mixed between the game's. 30: original." },
+    { IT_FPS, 0, "3D frame rate", "30: original. 60 (experimental): may shake and glitch." },
     { IT_TEXFILTER, 0, "Texture filter", "Smooth: bilinear filtering. Sharp: as on the DS." },
     { IT_FILTER2D, 0, "2D filter", "Sprites and text. Sharp: square pixels, smooth edges." },
     { IT_EFFECT, 0, "Screen effect", "Scanlines or an LCD grid over the DS's pixels." },
@@ -111,8 +113,8 @@ static const struct {
     int scale, fps60, filter;
 } s_presets[] = {
     { "Performance", 2, 0, 1 },
-    { "Balanced", 3, 1, 1 },
-    { "Quality", 4, 1, 1 },
+    { "Balanced", 3, 0, 1 },
+    { "Quality", 4, 0, 1 },
 };
 #define NPRESETS 3
 
@@ -160,7 +162,7 @@ static void value(const Item *it, char *out, size_t n)
     }
     case IT_SCALE: snprintf(out, n, "%dx (%dx%d)", kh_config.render_scale,
                             256 * kh_config.render_scale, 192 * kh_config.render_scale); break;
-    case IT_FPS: snprintf(out, n, "%d", kh_config.frame_interpolation ? 60 : 30); break;
+    case IT_FPS: snprintf(out, n, "%s", kh_config.frame_interpolation ? "60 (experimental)" : "30"); break;
     case IT_TEXFILTER: snprintf(out, n, "%s", kh_config.texture_filter ? "Smooth" : "Sharp"); break;
     case IT_FILTER2D: {
         static const char *const f2d[] = { "Pixel", "Sharp", "Smooth" };
@@ -455,6 +457,7 @@ const uint32_t *portmenu_render(void)
         text(8, H - 30, items[sel].help, C_HELP);
     text(8, H - 14, "L/R tab  Up/Down pick  Left/Right change  L+R+Select exit", C_HINT);
     video_overlay_changed();
+    s_px_fps = 0;
     return s_px;
 }
 
@@ -462,7 +465,11 @@ const uint32_t *portmenu_render(void)
 const uint32_t *portmenu_render_fps(const char *label)
 {
     static char last[48];
-    if (strcmp(last, label) != 0 || s_px[0] != 0) {
+    /* redrawn when the label changes (once a second) or the menu was drawn: before, the
+     * label's own background at (0, 0) made it redrawn and uploaded every frame, and vitaGL
+     * copied the whole overlay texture for each upload, 10 ms a frame (0.1.27's log) */
+    if (strcmp(last, label) != 0 || !s_px_fps) {
+        s_px_fps = 1;
         snprintf(last, sizeof(last), "%s", label);
         memset(s_px, 0, sizeof(s_px));
         fill(0, 0, 8 + (int)strlen(label) * 8, 12, 0x90000000u);

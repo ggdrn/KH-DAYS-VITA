@@ -8,11 +8,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define CONFIG_VERSION 16
+#define CONFIG_VERSION 17
 
 static const KhConfig s_defaults = {
     .render_scale = 3, .layout = 0, .inset_width = 224, .aspect = KH_ASPECT_WIDE,
-    .frame_interpolation = 1, .texture_filter = 1, .filter_2d = 2, .hud = 0, .screen_effect = 0,
+    .frame_interpolation = 0, .texture_filter = 1, .filter_2d = 2, .hud = 0, .screen_effect = 0,
     .inset_corner = 0, .inset_opacity = 100, .rear_touch = 0, .stick_deadzone = 2, .r_toggle = 0,
     .fast_forward = 2, .camera_stick = 1, .camera_speed = 2,
     .camera_invert_x = 0, .camera_invert_y = 0, .dpad_deck = 1, .show_fps = 0, .volume = 100,
@@ -92,7 +92,8 @@ void config_save(void)
     fprintf(f, "# 3D internal resolution, as a multiple of the DS's 256x192: 1, 2, 3 or 4.\n"
                "# 3 (768x576) covers the Vita's 544 lines; 4 smooths edges for more GPU time.\n"
                "render_scale = %d\n\n", kh_config.render_scale);
-    fprintf(f, "# 3D frame rate: 60 (frames mixed in between, one Vita frame later) or 30.\n"
+    fprintf(f, "# 3D frame rate: 30 (the game's own) or 60, experimental: frames mixed in\n"
+               "# between, the scenery can shake when the camera turns and effects glitch.\n"
                "fps = %d\n\n", kh_config.frame_interpolation ? 60 : 30);
     fprintf(f, "# How the large screen fills the display: wide (the 3D drawn for 16:9 in the\n"
                "# field, true proportions), stretch (the DS picture stretched), 4:3 (as on the\n"
@@ -318,6 +319,10 @@ void config_load(void)
             /* and the smooth 2D filter with 0.0.97 */
             if (version < 10)
                 kh_config.filter_2d = 2;
+            /* 60 fps became experimental with 0.4.0 (the scenery shakes when the camera
+             * turns): 30, the game's own rate, by default */
+            if (version < 17)
+                kh_config.frame_interpolation = 0;
             config_save();
             LOG("config: upgraded from version %d", version);
         }

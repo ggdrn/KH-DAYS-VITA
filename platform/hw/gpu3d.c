@@ -1141,12 +1141,12 @@ unsigned kh_gpu3d_render(const KhGxFrame *f)
         s_shown_count = 0;
         if (kh_gpu3d_direct)
             s_prev_nvtx = -1; /* frames for the two screens in turn: none to mix with */
-        if (kh_config.frame_interpolation && !kh_gpu3d_direct && s_prev_vtx && was_shown >= 1 &&
-            !s_final_pending) {
+        if (!kh_gpu3d_direct && was_shown >= 1 && !s_final_pending) {
             /* B one Vita frame from now either way, after the mix or after A once more: shown
              * at once when no mix is possible, B would come a frame early and the motion
-             * stutter (0.0.74 alternated between the two in the field) */
-            s_was_mixed = mix_vertices(f);
+             * stutter (0.0.74 alternated between the two in the field). At 30 fps too (no
+             * mix): B comes with its 2D, drawn over two Vita frames (game.c) */
+            s_was_mixed = kh_config.frame_interpolation && s_prev_vtx && mix_vertices(f);
             if (s_was_mixed) {
                 kh_gpu3d_mixes++;
                 tex = draw_frame(f, s_mix_vtx);

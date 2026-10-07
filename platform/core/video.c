@@ -23,7 +23,9 @@
  * 4 frames (FRAME_PURGE_FREQ): with 3 a screen, every upload paid that copy. With 6, the
  * texture written was last drawn at least 6 frames before. */
 #define TEX_RING 6
-static GLuint s_tex_ring[2][TEX_RING], s_overlay_tex;
+static GLuint s_tex_ring[2][TEX_RING], s_overlay_ring[TEX_RING];
+static int s_overlay_at;
+#define s_overlay_tex (s_overlay_ring[s_overlay_at])
 static int s_tex_at[2];
 #define s_tex_cur(i) (s_tex_ring[i][s_tex_at[i]])
 /* the last video_present's time in its uploads and in vglSwapBuffers (us), for the log */
@@ -928,12 +930,14 @@ void video_init(void)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
 
-    glGenTextures(1, &s_overlay_tex);
-    glBindTexture(GL_TEXTURE_2D, s_overlay_tex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, VIDEO_OVERLAY_W, VIDEO_OVERLAY_H, 0, GL_RGBA,
-                 GL_UNSIGNED_BYTE, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glGenTextures(TEX_RING, s_overlay_ring);
+    for (i = 0; i < TEX_RING; i++) {
+        glBindTexture(GL_TEXTURE_2D, s_overlay_ring[i]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, VIDEO_OVERLAY_W, VIDEO_OVERLAY_H, 0, GL_RGBA,
+                     GL_UNSIGNED_BYTE, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    }
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
@@ -1088,10 +1092,12 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
          * pixels, and the whole display drawn over (and uploaded) for it cost the GPU about
          * as much as composing the screen once more (0.1.14) */
         static int bx0, by0, bx1, by1;
-        glBindTexture(GL_TEXTURE_2D, s_overlay_tex);
         if (s_overlay_dirty) {
             int x, y;
             s_overlay_dirty = 0;
+            /* the next texture of the ring, last drawn frames ago (see TEX_RING) */
+            s_overlay_at = (s_overlay_at + 1) % TEX_RING;
+            glBindTexture(GL_TEXTURE_2D, s_overlay_tex);
             bx0 = VIDEO_OVERLAY_W, by0 = VIDEO_OVERLAY_H, bx1 = by1 = 0;
             for (y = 0; y < VIDEO_OVERLAY_H; y++)
                 for (x = 0; x < VIDEO_OVERLAY_W; x++)
@@ -1105,6 +1111,7 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
                 glTexSubImage2D(GL_TEXTURE_2D, 0, 0, by0, VIDEO_OVERLAY_W, by1 - by0, GL_RGBA,
                                 GL_UNSIGNED_BYTE, s_overlay + by0 * VIDEO_OVERLAY_W);
         }
+        glBindTexture(GL_TEXTURE_2D, s_overlay_tex);
         if (bx1 > bx0 && by1 > by0) {
             const float sx = (float)DISPLAY_W / VIDEO_OVERLAY_W, sy = (float)DISPLAY_H / VIDEO_OVERLAY_H;
             const float x0 = bx0 * sx, y0 = by0 * sy, x1 = bx1 * sx, y1 = by1 * sy;
