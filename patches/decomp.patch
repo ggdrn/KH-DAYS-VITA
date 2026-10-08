@@ -22080,8 +22080,45 @@ index 29e3c30a7..36139b162 100644
  
  void Ov024_MobiClip_StepScreenFade(struct MobiClipPlayer *player) {
      int step;
+diff --git a/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_TickSlot.c b/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_TickSlot.c
+index 58cf2139f..9dab64a54 100644
+--- a/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_TickSlot.c
++++ b/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_TickSlot.c
+@@ -57,6 +57,10 @@ extern int Ov024_MobiClip_DecodeAudioEntryChecked(void *pStream);
+ extern void Ov024_AdvanceNodeAnim(struct MobiClipFrameTimer *pTimer);
+ extern void Ov024_MobiClip_FlushAudioRing(struct MobiClipAudioStream *pAudio);
+ extern void Ov024_MobiClip_FrameAlarm(struct MobiClipFrameTimer *pTimer);
++#ifdef PLATFORM_VITA
++/* platform/nitro/mobiclip.c: a slot moved on (see Ov024_MobiClip_UpdatePlayback) */
++extern volatile int kh_mobiclip_progress;
++#endif
+ 
+ int Ov024_MobiClip_TickSlot(struct MobiClipFrameTimer *pTimer)
+ {
+@@ -74,6 +78,11 @@ int Ov024_MobiClip_TickSlot(struct MobiClipFrameTimer *pTimer)
+         bOwnsAudio = 1;
+     }
+     nState = pTimer->nState;
++#ifdef PLATFORM_VITA
++    /* states 1 and 2 always do work; 3 when it decodes a frame (below) */
++    if (nState == 1 || nState == 2)
++        kh_mobiclip_progress = 1;
++#endif
+     if (bOwnsAudio == 0) {
+         pAudio = 0;
+     }
+@@ -106,6 +115,9 @@ int Ov024_MobiClip_TickSlot(struct MobiClipFrameTimer *pTimer)
+ 
+     case 3:
+         if (pTimer->nDecoded - pTimer->nConsumed < QUEUE_DEPTH) {
++#ifdef PLATFORM_VITA
++            kh_mobiclip_progress = 1;
++#endif
+             Ov024_AdvanceNodeAnim(pTimer);
+             if (pAudio != 0) {
+                 Ov024_MobiClip_FlushAudioRing(pAudio);
 diff --git a/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_UpdatePlayback.c b/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_UpdatePlayback.c
-index e0e5d07f9..78cd66ad6 100644
+index e0e5d07f9..035b22f46 100644
 --- a/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_UpdatePlayback.c
 +++ b/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_UpdatePlayback.c
 @@ -1,3 +1,4 @@
@@ -22100,7 +22137,39 @@ index e0e5d07f9..78cd66ad6 100644
  #define KEY_MASK       0x2fff
  #define KEY_START      0x0008
  #define LID_CLOSED     0x8000
-@@ -153,7 +154,7 @@ teardown:
+@@ -56,6 +57,11 @@ extern void Table_TailCallWithEntry(int nChannel, int nFrames);
+ extern void MsgQueue_SetMoviePlaying(int bOn);
+ extern void Session_SetMoviePlaying(int bOn);
+ extern void OS_WaitVBlankIntr(void);
++#ifdef PLATFORM_VITA
++/* platform/nitro/mobiclip.c: set by Ov024_MobiClip_TickSlot when a slot did some work */
++extern volatile int kh_mobiclip_progress;
++extern void kh_cpu_wait_irq(unsigned int max_us);
++#endif
+ 
+ void *Ov024_MobiClip_UpdatePlayback(void)
+ {
+@@ -67,7 +73,19 @@ void *Ov024_MobiClip_UpdatePlayback(void)
+ 
+     if ((player->wFlags & 2) == 0
+         && (player->nStream0State == 2 || player->nStream1State == 2)) {
++#ifdef PLATFORM_VITA
++        kh_mobiclip_progress = 1;
++#endif
+         while (Ov024_TickStreamSlots() == 0) {
++#ifdef PLATFORM_VITA
++            /* The loop spins until the movie ends; with the frame queue full (or the last
++             * frames shown) nothing moves until the frame alarm, an interrupt, takes a frame:
++             * the game's core sleeps until one instead of running this at 100% the whole
++             * movie (0.4.1's log). Keys, the lid and the script below still run every pass. */
++            if (!kh_mobiclip_progress)
++                kh_cpu_wait_irq(2000);
++            kh_mobiclip_progress = 0;
++#endif
+             if (player->wFlags & 4) {
+                 if (Ov024_MobiClip_PlayerPollAbort() != 0) {
+                     if (player->wFlags & 1) {
+@@ -153,7 +171,7 @@ teardown:
      player->nFadeStep = 0xf;
      OS_WaitVBlankIntr();
      Ov024_MobiClip_StepScreenFade(player);

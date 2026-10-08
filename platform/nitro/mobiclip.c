@@ -26,3 +26,8 @@ int func_ov024_02087318_unk(void *track)
         LOG("mobiclip: FastAudio stream: not available, track left silent");
     return 0;
 }
+
+/* The movie player's busy-wait (Ov024_MobiClip_UpdatePlayback): whether its last pass over the
+ * stream slots did any work (Ov024_MobiClip_TickSlot sets it); with none, it sleeps until an
+ * interrupt (kh_cpu_wait_irq) instead of spinning. */
+volatile int kh_mobiclip_progress;

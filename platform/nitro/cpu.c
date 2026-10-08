@@ -296,6 +296,27 @@ void OS_Halt(void)
     }
 }
 
+/* A busy-wait loop of the game's at rest (the movie player's, while its queue of decoded
+ * frames is full): sleep until an interrupt can be delivered, max_us at most, then deliver it.
+ * On the DS that loop spun the ARM9 for nothing; here it held the game's core at 100% for
+ * the whole movie. Called with interrupts enabled from the running NitroSDK thread. */
+void kh_cpu_wait_irq(uint32_t max_us)
+{
+    const uint64_t t0 = sceKernelGetProcessTimeWide();
+    uint32_t timeout = kh_timers_next_event_us();
+    if (!deliverable() && !data_02044330.isNeedRescheduling) {
+        sceKernelClearEventFlag(s_event, 0);
+        if (!deliverable()) {
+            if (timeout > max_us)
+                timeout = max_us;
+            sceKernelWaitEventFlag(s_event, 1, SCE_EVENT_WAITOR, NULL, &timeout);
+        }
+        kh_timers_update();
+    }
+    kh_cpu_halt_us += sceKernelGetProcessTimeWide() - t0;
+    kh_cpu_poll();
+}
+
 /* ---- interrupt mask (CPSR) --------------------------------------------------------------- */
 
 static void wait_for_handler(void)

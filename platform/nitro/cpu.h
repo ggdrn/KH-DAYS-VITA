@@ -16,6 +16,9 @@ extern volatile uint32_t kh_cpu_irqs_delivered, kh_cpu_preempted, kh_cpu_switche
 extern volatile uint64_t kh_cpu_halt_us; /* game core idle time (OS_Halt), for the stats */
 
 void kh_cpu_init(void);
+/* The running NitroSDK thread waits for an interrupt (max_us at most) and takes it: for the
+ * game's busy-wait loops. */
+void kh_cpu_wait_irq(uint32_t max_us);
 /* For a hung game: the return addresses on the running DS thread's stack. */
 void kh_cpu_log_owner_stack(void);
 /* The calling Vita thread becomes the one running NitroSDK code (the launcher thread). */
