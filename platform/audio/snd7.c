@@ -131,12 +131,14 @@ typedef struct {
     uint32_t loop_start;     /* bytes */
     uint32_t end;            /* bytes: loop start + loop length */
     int repeat;              /* 1 loop, 2 one shot */
-    double pos;              /* samples (nibbles for ADPCM) from the start */
+    uint64_t pos;            /* samples (nibbles for ADPCM) from the start, 32.32 fixed point */
     double rate;             /* samples per second */
     int duty;                /* PSG */
     uint16_t lfsr;
     int adpcm_pred, adpcm_index, adpcm_pos;       /* the decoder, at sample adpcm_pos */
     int adpcm_loop_pred, adpcm_loop_index, adpcm_loop_saved;
+    int adpcm_next;          /* sample adpcm_next_at + 1, decoded ahead */
+    uint32_t adpcm_next_at;
     float gain_l, gain_r;    /* linear, from volume, shift and pan */
     int16_t hold;            /* the last sample, for format PSG/noise steps */
     /* SETUP_CHANNEL_* registers, kept for CHANNEL_* commands */
@@ -380,6 +382,7 @@ static void hw_start(Channel *c)
     c->pos = 0;
     c->adpcm_pos = -1;
     c->adpcm_loop_saved = 0;
+    c->adpcm_next_at = UINT32_MAX;
     c->lfsr = 0x7fff;
     c->hold = 0;
     if (c->format == FMT_ADPCM && c->data) {
@@ -413,10 +416,71 @@ static inline void adpcm_step(int *pred, int *index, int nib)
     if (*index > 88) *index = 88;
 }
 
-/* One output sample of a channel at its current position; advances it. */
-static inline float hw_sample(Channel *c, double step)
+#define POS_ONE 4294967296.0 /* 1.0 in the channels' 32.32 positions */
+#define POS_INT(p) ((uint32_t)((p) >> 32))
+
+/* The ADPCM decoder brought to the position's sample (adpcm_pred holds it); false when the
+ * wave ended. Wraps the position at the loop as the hardware does. */
+static inline int adpcm_seek(Channel *c, uint32_t n, uint32_t ls)
 {
-    float s = 0;
+    uint32_t want = POS_INT(c->pos);
+    if (want >= n) {
+        if (c->repeat == 1 && n > ls) {
+            while (POS_INT(c->pos) >= n)
+                c->pos -= (uint64_t)(n - ls) << 32;
+            want = POS_INT(c->pos);
+            if (c->adpcm_loop_saved) {
+                c->adpcm_pred = c->adpcm_loop_pred;
+                c->adpcm_index = c->adpcm_loop_index;
+                c->adpcm_pos = (int)ls;
+            }
+            c->adpcm_next_at = UINT32_MAX;
+        } else {
+            c->hw_on = 0;
+            return 0;
+        }
+    }
+    if ((int)want + 1 < c->adpcm_pos) { /* went back without a saved state: restart */
+        c->adpcm_pred = (int16_t)(c->data[0] | c->data[1] << 8);
+        c->adpcm_index = c->data[2] > 88 ? 88 : c->data[2];
+        c->adpcm_pos = 0;
+        c->adpcm_next_at = UINT32_MAX;
+    }
+    while ((uint32_t)c->adpcm_pos <= want) {
+        adpcm_step(&c->adpcm_pred, &c->adpcm_index,
+                   (c->data[4 + c->adpcm_pos / 2] >> ((c->adpcm_pos & 1) * 4)) & 15);
+        c->adpcm_pos++;
+        if ((uint32_t)c->adpcm_pos == ls && !c->adpcm_loop_saved) {
+            c->adpcm_loop_pred = c->adpcm_pred;
+            c->adpcm_loop_index = c->adpcm_index;
+            c->adpcm_loop_saved = 1;
+        }
+    }
+    return 1;
+}
+
+/* the interpolation between two samples (16-bit scale) at the position's fraction, 15 bits */
+static inline int lerp15(int s0, int s1, uint64_t pos)
+{
+    return s0 + (((s1 - s0) * (int)((uint32_t)pos >> 17)) >> 15);
+}
+
+/* A channel's next count output samples added into the mix (al, ar: 16-bit samples times
+ * 2^24-scaled gains, >> 16: full scale is 2^23, 16 channels fit), each format in its own
+ * loop. Stops where a one-shot wave
+ * ends. Was one sample of every channel at a time, the format chosen again for each, the
+ * position in doubles and the ADPCM's next sample decoded again for every output sample:
+ * about a quarter of a core on the Vita (0.4.0's log). A channel at zero volume (a note's
+ * release run out, a muted track) only moves on. */
+#define MIX_MUL(s, g) ((int32_t)(((int64_t)(s) * (g)) >> 16))
+
+static void mix_channel(Channel *c, int32_t *al, int32_t *ar, int count, uint64_t step)
+{
+    const int32_t gl = (int32_t)(c->gain_l * 16777216.0f + 0.5f);
+    const int32_t gr = (int32_t)(c->gain_r * 16777216.0f + 0.5f);
+    const int silent = gl == 0 && gr == 0;
+    const uint8_t *d = c->data;
+    int k;
     switch (c->format) {
     case FMT_PCM8:
     case FMT_PCM16: {
@@ -424,102 +488,104 @@ static inline float hw_sample(Channel *c, double step)
          * nearest one at its own 32 kHz, which resampled to 48 kHz turns into grain */
         const int b16 = c->format == FMT_PCM16;
         const uint32_t n = b16 ? c->end / 2 : c->end, ls = b16 ? c->loop_start / 2 : c->loop_start;
-        uint32_t i = (uint32_t)c->pos, j;
-        float s0, s1, frac;
-        if (i >= n) {
-            if (c->repeat == 1 && n > ls) {
-                while ((uint32_t)c->pos >= n)
-                    c->pos -= (double)(n - ls);
-                i = (uint32_t)c->pos;
-            } else {
-                c->hw_on = 0;
-                return 0;
+        const int loops = c->repeat == 1 && n > ls;
+        for (k = 0; k < count; k++) {
+            uint32_t i = POS_INT(c->pos), j;
+            int s0, s1, s;
+            if (i >= n) {
+                if (loops) {
+                    while (POS_INT(c->pos) >= n)
+                        c->pos -= (uint64_t)(n - ls) << 32;
+                    i = POS_INT(c->pos);
+                } else {
+                    c->hw_on = 0;
+                    return;
+                }
             }
+            if (silent) {
+                c->pos += step;
+                continue;
+            }
+            j = i + 1;
+            if (j >= n)
+                j = loops ? ls : i;
+            if (b16) {
+                s0 = (int16_t)(d[i * 2] | d[i * 2 + 1] << 8);
+                s1 = (int16_t)(d[j * 2] | d[j * 2 + 1] << 8);
+            } else {
+                s0 = (int8_t)d[i] * 256;
+                s1 = (int8_t)d[j] * 256;
+            }
+            s = lerp15(s0, s1, c->pos);
+            al[k] += MIX_MUL(s, gl);
+            ar[k] += MIX_MUL(s, gr);
+            c->pos += step;
         }
-        j = i + 1;
-        if (j >= n)
-            j = (c->repeat == 1 && n > ls) ? ls : i;
-        if (b16) {
-            s0 = (float)(int16_t)(c->data[i * 2] | c->data[i * 2 + 1] << 8);
-            s1 = (float)(int16_t)(c->data[j * 2] | c->data[j * 2 + 1] << 8);
-            s0 *= 1.0f / 32768.0f;
-            s1 *= 1.0f / 32768.0f;
-        } else {
-            s0 = (float)(int8_t)c->data[i] * (1.0f / 128.0f);
-            s1 = (float)(int8_t)c->data[j] * (1.0f / 128.0f);
-        }
-        frac = (float)(c->pos - (double)i);
-        s = s0 + (s1 - s0) * frac;
         break;
     }
     case FMT_ADPCM: {
         /* nibbles after the 4-byte header, 2 a byte; adpcm_pos nibbles decoded leave
          * adpcm_pred holding sample adpcm_pos - 1 (the header's value before the first) */
         const uint32_t n = (c->end - 4) * 2, ls = (c->loop_start > 4 ? c->loop_start - 4 : 0) * 2;
-        uint32_t want = (uint32_t)c->pos;
-        float s0, s1;
-        if (want >= n) {
-            if (c->repeat == 1 && n > ls) {
-                while ((uint32_t)c->pos >= n)
-                    c->pos -= (double)(n - ls);
-                want = (uint32_t)c->pos;
-                if (c->adpcm_loop_saved) {
-                    c->adpcm_pred = c->adpcm_loop_pred;
-                    c->adpcm_index = c->adpcm_loop_index;
-                    c->adpcm_pos = (int)ls;
-                }
-            } else {
-                c->hw_on = 0;
-                return 0;
-            }
-        }
-        if ((int)want + 1 < c->adpcm_pos) { /* went back without a saved state: restart */
-            c->adpcm_pred = (int16_t)(c->data[0] | c->data[1] << 8);
-            c->adpcm_index = c->data[2] > 88 ? 88 : c->data[2];
-            c->adpcm_pos = 0;
-        }
-        while ((uint32_t)c->adpcm_pos <= want) {
-            adpcm_step(&c->adpcm_pred, &c->adpcm_index,
-                       (c->data[4 + c->adpcm_pos / 2] >> ((c->adpcm_pos & 1) * 4)) & 15);
-            c->adpcm_pos++;
-            if ((uint32_t)c->adpcm_pos == ls && !c->adpcm_loop_saved) {
-                c->adpcm_loop_pred = c->adpcm_pred;
-                c->adpcm_loop_index = c->adpcm_index;
-                c->adpcm_loop_saved = 1;
-            }
-        }
-        s0 = (float)c->adpcm_pred * (1.0f / 32768.0f);
-        if (want + 1 < n) { /* the next sample, decoded on a copy of the state */
-            int pred = c->adpcm_pred, index = c->adpcm_index;
-            adpcm_step(&pred, &index, (c->data[4 + (want + 1) / 2] >> (((want + 1) & 1) * 4)) & 15);
-            s1 = (float)pred * (1.0f / 32768.0f);
-        } else {
-            s1 = s0;
-        }
-        s = s0 + (s1 - s0) * (float)(c->pos - (double)want);
-        break;
-    }
-    default: /* PSG (channels 8-13) or noise (14-15) */
-        if (c->type == CH_NOISE) {
-            uint32_t steps = (uint32_t)(c->pos + step) - (uint32_t)c->pos;
-            while (steps--) {
-                if (c->lfsr & 1) {
-                    c->lfsr = (uint16_t)((c->lfsr >> 1) ^ 0x6000);
-                    c->hold = -1;
+        uint32_t cur = UINT32_MAX; /* the source sample s0 and s1 are around */
+        int s0 = 0, s1 = 0;
+        for (k = 0; k < count; k++) {
+            /* the decoder only moved when the source sample changes: at 48 kHz from 32, two
+             * output samples in three; the third one is between the same two */
+            if (POS_INT(c->pos) != cur) {
+                uint32_t want;
+                if (!adpcm_seek(c, n, ls))
+                    return;
+                want = POS_INT(c->pos);
+                s0 = c->adpcm_pred;
+                if (want + 1 < n) {
+                    /* the next sample, decoded on a copy of the state */
+                    if (c->adpcm_next_at != want) {
+                        int pred = c->adpcm_pred, index = c->adpcm_index;
+                        adpcm_step(&pred, &index,
+                                   (d[4 + (want + 1) / 2] >> (((want + 1) & 1) * 4)) & 15);
+                        c->adpcm_next = pred;
+                        c->adpcm_next_at = want;
+                    }
+                    s1 = c->adpcm_next;
                 } else {
-                    c->lfsr >>= 1;
-                    c->hold = 1;
+                    s1 = s0;
                 }
+                cur = want;
             }
-            s = c->hold * 0.5f;
-        } else {
-            uint32_t phase = (uint32_t)c->pos & 7;
-            s = (int)phase <= c->duty ? 0.5f : -0.5f;
+            if (!silent) {
+                const int s = lerp15(s0, s1, c->pos);
+                al[k] += MIX_MUL(s, gl);
+                ar[k] += MIX_MUL(s, gr);
+            }
+            c->pos += step;
         }
         break;
     }
-    c->pos += step;
-    return s;
+    default: /* PSG (channels 8-13) or noise (14-15): half scale */
+        for (k = 0; k < count; k++) {
+            int s;
+            if (c->type == CH_NOISE) {
+                uint32_t steps = POS_INT(c->pos + step) - POS_INT(c->pos);
+                while (steps--) {
+                    if (c->lfsr & 1) {
+                        c->lfsr = (uint16_t)((c->lfsr >> 1) ^ 0x6000);
+                        c->hold = -1;
+                    } else {
+                        c->lfsr >>= 1;
+                        c->hold = 1;
+                    }
+                }
+                s = c->hold * 16384;
+            } else {
+                s = (int)(POS_INT(c->pos) & 7) <= c->duty ? 16384 : -16384;
+            }
+            al[k] += MIX_MUL(s, gl);
+            ar[k] += MIX_MUL(s, gr);
+            c->pos += step;
+        }
+        break;
+    }
 }
 
 /* ---- extended channels -------------------------------------------------------------- */
@@ -1504,6 +1570,8 @@ static void alarms_run(void)
 #define MIX_GAIN 1.0f
 volatile float snd7_port_volume = 1.0f;
 #define KNEE 0.75f
+/* the most samples mixed at once (a driver frame is about 250 at 48 kHz) */
+#define MIX_MAX 512
 
 static inline float soft_limit(float x)
 {
@@ -1534,24 +1602,25 @@ void snd7_render(int16_t *out, int frames)
             chunk = 1;
         if (chunk > frames - n)
             chunk = frames - n;
-        for (k = 0; k < chunk; k++) {
-            float l = 0, r = 0;
+        if (chunk > MIX_MAX)
+            chunk = MIX_MAX;
+        {
+            static int32_t al[MIX_MAX], ar[MIX_MAX];
+            /* full scale at 2^23 (mix_channel) */
+            const float mv = (float)s_master_volume / 127.0f * MIX_GAIN * snd7_port_volume *
+                             (1.0f / 8388608.0f);
+            memset(al, 0, sizeof(al[0]) * (size_t)chunk);
+            memset(ar, 0, sizeof(ar[0]) * (size_t)chunk);
             for (i = 0; i < CHANNELS; i++) {
                 Channel *c = &s_ch[i];
-                float s;
-                if (!c->hw_on || !c->data) {
-                    if (!(c->hw_on && c->format == FMT_PSG))
-                        continue;
-                }
-                s = hw_sample(c, c->rate * dt);
-                l += s * c->gain_l;
-                r += s * c->gain_r;
+                if (!c->hw_on || (!c->data && c->format != FMT_PSG))
+                    continue;
+                mix_channel(c, al, ar, chunk, (uint64_t)(c->rate * dt * POS_ONE + 0.5));
             }
-            {
-                const float mv = (float)s_master_volume / 127.0f * MIX_GAIN * snd7_port_volume;
+            for (k = 0; k < chunk; k++) {
                 int sl, sr;
-                l = soft_limit(l * mv);
-                r = soft_limit(r * mv);
+                const float l = soft_limit((float)al[k] * mv);
+                const float r = soft_limit((float)ar[k] * mv);
                 sl = (int)(l * 32767.0f);
                 sr = (int)(r * 32767.0f);
                 out[(n + k) * 2] = (int16_t)sl;
