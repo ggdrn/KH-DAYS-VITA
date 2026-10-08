@@ -22118,7 +22118,7 @@ index 58cf2139f..9dab64a54 100644
              if (pAudio != 0) {
                  Ov024_MobiClip_FlushAudioRing(pAudio);
 diff --git a/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_UpdatePlayback.c b/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_UpdatePlayback.c
-index e0e5d07f9..035b22f46 100644
+index e0e5d07f9..434803182 100644
 --- a/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_UpdatePlayback.c
 +++ b/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_UpdatePlayback.c
 @@ -1,3 +1,4 @@
@@ -22137,19 +22137,20 @@ index e0e5d07f9..035b22f46 100644
  #define KEY_MASK       0x2fff
  #define KEY_START      0x0008
  #define LID_CLOSED     0x8000
-@@ -56,6 +57,11 @@ extern void Table_TailCallWithEntry(int nChannel, int nFrames);
+@@ -56,6 +57,12 @@ extern void Table_TailCallWithEntry(int nChannel, int nFrames);
  extern void MsgQueue_SetMoviePlaying(int bOn);
  extern void Session_SetMoviePlaying(int bOn);
  extern void OS_WaitVBlankIntr(void);
 +#ifdef PLATFORM_VITA
 +/* platform/nitro/mobiclip.c: set by Ov024_MobiClip_TickSlot when a slot did some work */
 +extern volatile int kh_mobiclip_progress;
++extern volatile unsigned int kh_mobiclip_passes;
 +extern void kh_cpu_wait_irq(unsigned int max_us);
 +#endif
  
  void *Ov024_MobiClip_UpdatePlayback(void)
  {
-@@ -67,7 +73,19 @@ void *Ov024_MobiClip_UpdatePlayback(void)
+@@ -67,7 +74,20 @@ void *Ov024_MobiClip_UpdatePlayback(void)
  
      if ((player->wFlags & 2) == 0
          && (player->nStream0State == 2 || player->nStream1State == 2)) {
@@ -22162,6 +22163,7 @@ index e0e5d07f9..035b22f46 100644
 +             * frames shown) nothing moves until the frame alarm, an interrupt, takes a frame:
 +             * the game's core sleeps until one instead of running this at 100% the whole
 +             * movie (0.4.1's log). Keys, the lid and the script below still run every pass. */
++            kh_mobiclip_passes++;
 +            if (!kh_mobiclip_progress)
 +                kh_cpu_wait_irq(2000);
 +            kh_mobiclip_progress = 0;
@@ -22169,7 +22171,7 @@ index e0e5d07f9..035b22f46 100644
              if (player->wFlags & 4) {
                  if (Ov024_MobiClip_PlayerPollAbort() != 0) {
                      if (player->wFlags & 1) {
-@@ -153,7 +171,7 @@ teardown:
+@@ -153,7 +173,7 @@ teardown:
      player->nFadeStep = 0xf;
      OS_WaitVBlankIntr();
      Ov024_MobiClip_StepScreenFade(player);

@@ -300,15 +300,23 @@ void OS_Halt(void)
  * frames is full): sleep until an interrupt can be delivered, max_us at most, then deliver it.
  * On the DS that loop spun the ARM9 for nothing; here it held the game's core at 100% for
  * the whole movie. Called with interrupts enabled from the running NitroSDK thread. */
+volatile uint32_t kh_cpu_wait_stats[4]; /* calls, slept, back at once: deliverable, reschedule */
+
 void kh_cpu_wait_irq(uint32_t max_us)
 {
     const uint64_t t0 = sceKernelGetProcessTimeWide();
     uint32_t timeout = kh_timers_next_event_us();
-    if (!deliverable() && !data_02044330.isNeedRescheduling) {
+    kh_cpu_wait_stats[0]++;
+    if (deliverable()) {
+        kh_cpu_wait_stats[2]++;
+    } else if (data_02044330.isNeedRescheduling) {
+        kh_cpu_wait_stats[3]++;
+    } else {
         sceKernelClearEventFlag(s_event, 0);
         if (!deliverable()) {
             if (timeout > max_us)
                 timeout = max_us;
+            kh_cpu_wait_stats[1]++;
             sceKernelWaitEventFlag(s_event, 1, SCE_EVENT_WAITOR, NULL, &timeout);
         }
         kh_timers_update();

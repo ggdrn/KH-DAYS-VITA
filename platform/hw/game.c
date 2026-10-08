@@ -1262,6 +1262,22 @@ void kh_game_run(void)
             kh_gx3d_take_stats(&gs);
             threadstat_log();
             {
+                /* the movie player's loop (Ov024_MobiClip_UpdatePlayback) and its waits */
+                extern volatile unsigned int kh_mobiclip_passes;
+                static uint32_t last[5];
+                const uint32_t passes = kh_mobiclip_passes;
+                uint32_t w[4];
+                int k;
+                for (k = 0; k < 4; k++)
+                    w[k] = kh_cpu_wait_stats[k] - last[k + 1], last[k + 1] = kh_cpu_wait_stats[k];
+                if (passes != last[0])
+                    LOG("movie: %u passes of the player's loop, %u with nothing to do: %u slept, "
+                        "%u back at once (%u an interrupt, %u a reschedule)",
+                        (unsigned)(passes - last[0]), (unsigned)w[0], (unsigned)w[1],
+                        (unsigned)(w[2] + w[3]), (unsigned)w[2], (unsigned)w[3]);
+                last[0] = passes;
+            }
+            {
                 KhGpu3dStats rs;
                 kh_gpu3d_take_stats(&rs);
                 if (rs.interpolated)

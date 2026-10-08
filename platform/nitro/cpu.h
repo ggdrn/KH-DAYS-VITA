@@ -19,6 +19,8 @@ void kh_cpu_init(void);
 /* The running NitroSDK thread waits for an interrupt (max_us at most) and takes it: for the
  * game's busy-wait loops. */
 void kh_cpu_wait_irq(uint32_t max_us);
+/* its counts, for the log: calls, slept, back at once (an interrupt deliverable, a reschedule) */
+extern volatile uint32_t kh_cpu_wait_stats[4];
 /* For a hung game: the return addresses on the running DS thread's stack. */
 void kh_cpu_log_owner_stack(void);
 /* The calling Vita thread becomes the one running NitroSDK code (the launcher thread). */

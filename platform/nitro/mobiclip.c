@@ -31,3 +31,4 @@ int func_ov024_02087318_unk(void *track)
  * stream slots did any work (Ov024_MobiClip_TickSlot sets it); with none, it sleeps until an
  * interrupt (kh_cpu_wait_irq) instead of spinning. */
 volatile int kh_mobiclip_progress;
+volatile unsigned int kh_mobiclip_passes; /* the loop's passes, for the log */
