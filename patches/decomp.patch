@@ -20437,7 +20437,7 @@ index cb32532b2..435f71b0a 100644
      *(int *)(root + 0x8bec) = keys & 8;
      return (void *)Ov012_RunOpeningScene;
 diff --git a/src/overlays/scenes/ov012_opening/Ov012_RunOpeningScene.c b/src/overlays/scenes/ov012_opening/Ov012_RunOpeningScene.c
-index 3f9b994de..3130d3bdd 100644
+index 3f9b994de..9400ea579 100644
 --- a/src/overlays/scenes/ov012_opening/Ov012_RunOpeningScene.c
 +++ b/src/overlays/scenes/ov012_opening/Ov012_RunOpeningScene.c
 @@ -1,3 +1,6 @@
@@ -20447,8 +20447,26 @@ index 3f9b994de..3130d3bdd 100644
  /* Runs the opening-scene script and display loop, handles skip input and thread-count changes,
   * waits for the brightness transition, then resets the script/display state and selects the next
   * scene. */
-@@ -47,8 +50,8 @@ void *Ov012_RunOpeningScene(void) {
+@@ -24,6 +27,12 @@ extern void Ov012_ProcessOpeningTimeline(void *context, int delta);
+ extern void Ov012_SetHeapFlag8CheckFlag10(void);
+ extern void Ov024_MobiClip_StopPlayback(void);
+ extern int Ov024_TickStreamSlots(void);
++#ifdef PLATFORM_VITA
++/* platform/nitro/mobiclip.c, platform/nitro/cpu.c: see Ov024_MobiClip_UpdatePlayback */
++extern volatile int kh_mobiclip_progress;
++extern volatile unsigned int kh_mobiclip_passes;
++extern void kh_cpu_wait_irq(unsigned int max_us);
++#endif
+ 
+ void *Ov012_RunOpeningScene(void) {
+     char *context;
+@@ -45,10 +54,13 @@ void *Ov012_RunOpeningScene(void) {
+ 
+             previousThreadCount = VBlank_GetCount();
              initialThreadCount = previousThreadCount;
++#ifdef PLATFORM_VITA
++            kh_mobiclip_progress = 1;
++#endif
              loopStatus = Ov024_TickStreamSlots();
              if (loopStatus == 0) {
 -                rawKeys = (u16 *)0x04000130;
@@ -20458,6 +20476,22 @@ index 3f9b994de..3130d3bdd 100644
                  keyMask = 0x2fff;
                  do {
                      if ((*(u16 *)(context + 2) & 4) != 0) {
+@@ -93,6 +105,15 @@ void *Ov012_RunOpeningScene(void) {
+                         SetMasterBrightnessSub(GetMasterBrightnessSub());
+                         DispCnt_ApplyPendingMode();
+                     }
++#ifdef PLATFORM_VITA
++                    /* the opening's own copy of the movie player's busy-wait: asleep until an
++                     * interrupt when the last pass over the stream slots did nothing (it held
++                     * the game's core at 100% through the opening movie, 0.4.4's log) */
++                    kh_mobiclip_passes++;
++                    if (!kh_mobiclip_progress)
++                        kh_cpu_wait_irq(2000);
++                    kh_mobiclip_progress = 0;
++#endif
+                 } while (Ov024_TickStreamSlots() == 0);
+             }
+ 
 diff --git a/src/overlays/scenes/ov012_opening/Ov012_StartOpeningMovie.c b/src/overlays/scenes/ov012_opening/Ov012_StartOpeningMovie.c
 index 2775ad91e..a339828d3 100644
 --- a/src/overlays/scenes/ov012_opening/Ov012_StartOpeningMovie.c
