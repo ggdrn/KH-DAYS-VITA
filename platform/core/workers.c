@@ -41,6 +41,33 @@ static int worker(SceSize args, void *argp)
     return 0;
 }
 
+/* The second helper: it starts a chunk only when it gets the game's core (below the game's
+ * threads), but runs it above them, so that no chunk it took waits for the game. Taken over in
+ * the middle of one, it held that chunk as long as the game kept its core busy: in the videos
+ * (the game decoding at 100%) the display waited up to 1.9 s for the 2D (0.4.0's log: the
+ * cutscenes froze, a frame repeated). The priority goes up before the chunk is taken. */
+static int spare_worker(SceSize args, void *argp)
+{
+    (void)args, (void)argp;
+    for (;;) {
+        sceKernelWaitSema(s_go_spare, 1, NULL);
+        for (;;) {
+            int c;
+            sceKernelChangeThreadPriority(0, KH_SPARE_RUN_PRIORITY);
+            c = __atomic_fetch_add(&s_next, 1, __ATOMIC_ACQ_REL);
+            if (c < s_n) {
+                s_fn(c, s_arg);
+                if (__atomic_add_fetch(&s_finished, 1, __ATOMIC_ACQ_REL) == s_n)
+                    sceKernelSignalSema(s_done, 1);
+            }
+            sceKernelChangeThreadPriority(0, KH_SPARE_PRIORITY);
+            if (c >= s_n)
+                break;
+        }
+    }
+    return 0;
+}
+
 void workers_init(void)
 {
     SceUID th;
@@ -56,9 +83,9 @@ void workers_init(void)
     threadstat_add("2d helper", th);
     s_go_spare = sceKernelCreateSema("kh_work_spare", 0, 0, 1, NULL);
     th = s_go_spare < 0 ? -1
-                        : sceKernelCreateThread("kh_worker_spare", worker, KH_SPARE_PRIORITY,
+                        : sceKernelCreateThread("kh_worker_spare", spare_worker, KH_SPARE_PRIORITY,
                                                 0x10000, 0, SCE_KERNEL_CPU_MASK_USER_1, NULL);
-    if (th < 0 || sceKernelStartThread(th, sizeof(s_go_spare), &s_go_spare) < 0)
+    if (th < 0 || sceKernelStartThread(th, 0, NULL) < 0)
         s_go_spare = -1;
     else
         threadstat_add("2d spare", th);

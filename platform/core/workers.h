@@ -14,6 +14,8 @@
 #define KH_DISPLAY_PRIORITY (0x10000100 + 8)
 /* the second helper on the game's core: below the game's threads, it runs when they wait */
 #define KH_SPARE_PRIORITY (0x10000100 + 24)
+/* the same helper while it runs a chunk it took: above the game's threads (see workers.c) */
+#define KH_SPARE_RUN_PRIORITY (0x10000100 + 15)
 
 typedef void (*WorkFn)(int chunk, void *arg);
 
