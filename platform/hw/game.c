@@ -1283,6 +1283,17 @@ void kh_game_run(void)
                 if (rs.interpolated)
                     LOG("gpu3d: 10 s: %u frames shown after a halfway mix (60 fps)",
                         (unsigned)rs.interpolated);
+                {
+                    const uint32_t *m = rs.mix_reason;
+                    if (m[0] + m[1] + m[2] + m[3] + m[4] + m[5] + m[6] + m[7])
+                        LOG("gpu3d: 10 s: new frames mixed %u; not: dual 3D %u, previous shown "
+                            "once %u, previous still due %u, none before %u, 3D settings %u, "
+                            "nothing paired %u, camera cut %u; vertices paired %u%%",
+                            (unsigned)m[0], (unsigned)m[1], (unsigned)m[2], (unsigned)m[3],
+                            (unsigned)m[4], (unsigned)m[5], (unsigned)m[6], (unsigned)m[7],
+                            (unsigned)(rs.mix_vertices ? (uint64_t)rs.mix_paired * 100 /
+                                                             rs.mix_vertices : 0));
+                }
                 if (rs.textures_decoded)
                     LOG("gpu3d: 10 s: %u textures decoded (%u live), %u ms decoding in parallel, "
                         "at most %u in one frame", (unsigned)rs.textures_decoded,

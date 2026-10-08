@@ -55,6 +55,10 @@ typedef struct {
     uint32_t tex_wanted, tex_none; /* polygons with a texture format; of them drawn without */
     uint32_t prepare_us, burst_max; /* parallel texture decoding: time, most in one frame */
     uint32_t interpolated; /* frames shown after a halfway mix (60 fps interpolation) */
+    /* new frames by what came of their mix: done, dual 3D, the previous one shown once only,
+     * the previous one's own frame still to show, none before, 3D settings changed, nothing
+     * paired, a camera cut; and the vertices of the mixed ones, of them paired */
+    uint32_t mix_reason[8], mix_vertices, mix_paired;
 } KhGpu3dStats;
 void kh_gpu3d_take_stats(KhGpu3dStats *out);
 
