@@ -33,6 +33,8 @@ void kh_gpu3d_prepare(const KhGxFrame *frame);
 extern volatile int kh_gpu3d_debug;
 /* halfway mixes shown so far (60 fps mode), for the frame-rate counter */
 extern volatile uint32_t kh_gpu3d_mixes;
+/* the display's VBlank count (game.c), for the 60 fps mix's timing; NULL: no interpolation */
+extern uint32_t (*kh_gpu3d_clock)(void);
 #define KH_GPU3D_DEBUG_MODES 4
 
 /* Write the next rendered frame's textures (TGA) and polygons (text) to

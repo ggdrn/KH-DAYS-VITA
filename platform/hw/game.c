@@ -843,6 +843,11 @@ static void present(void)
 
 static void sample_input(void);
 
+static uint32_t display_vblanks(void)
+{
+    return s_vblanks;
+}
+
 /* "60 FPS (jogo 30)": the 3D frames shown per second (the game's own and the mixed ones in
  * between) and the game's, measured over the last second */
 static const char *fps_label(void)
@@ -1085,6 +1090,7 @@ void kh_game_run(void)
     boot_state();
     input_init();
     kh_gx3d_swap_wait = swap_wait;
+    kh_gpu3d_clock = display_vblanks;
     portmenu_on_scale = kh_gpu3d_set_scale;
     portmenu_on_texture_filter = kh_gpu3d_reload_textures;
     portmenu_on_volume = set_volume;
@@ -1281,7 +1287,7 @@ void kh_game_run(void)
                 KhGpu3dStats rs;
                 kh_gpu3d_take_stats(&rs);
                 if (rs.interpolated)
-                    LOG("gpu3d: 10 s: %u frames shown after a halfway mix (60 fps)",
+                    LOG("gpu3d: 10 s: %u frames shown in between (60 fps)",
                         (unsigned)rs.interpolated);
                 {
                     const uint32_t *m = rs.mix_reason;
