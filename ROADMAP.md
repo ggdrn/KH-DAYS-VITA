@@ -65,7 +65,8 @@ Phases follow the generic "port a decompiled game to the Vita" plan. ✅ done ·
   host test with synthetic scenes (`tools/gpu2d_test/run.sh`). ⬜ mosaic, mid-frame (HBlank)
   register changes, the large bitmap of mode 6, the 3D layer on BG0
 - 🔶 3D: geometry engine, texture decoding + cache (hw/textures.c), vitaGL rendering at 1-3x (config.ini render_scale) with toon/highlight/decal and alpha test, GPU composition with engine A's layers; not yet: shadow polygons, wireframe, fog, edge marking, w-buffer, threading
-- ⬜ Sound: native ARM7 SND (sequence player, channels, ADPCM/PSG, mixer, 48 kHz out)
+- ✅ Sound: native ARM7 SND (sequence player, channels, ADPCM/PSG, mixer, 48 kHz out); bank
+  ADPCM decoded once (0.4.13)
 - 🔶 MobiClip videos: the frame decoder is the decomp's portable C++ model
   (`libs/mobiclip/video/portable`, ARM9 state layout asserted in `abi_check.c`), checked on the
   host on the user's dump (`tools/mobiclip_test/run.sh`: 802.mods, 1400 frames). ⬜ audio (IMA
@@ -88,8 +89,11 @@ Phases follow the generic "port a decompiled game to the Vita" plan. ✅ done ·
   changes of IME/IE/DISPCNT/POWCNT1/VRAMCNT per frame
 - ⬜ `psp2dmp` reader; network log and eboot push (vitacompanion)
 
-## 8–10. Bring-up loop, performance, enhancements ⬜
-- First milestone: title screen (ov000) with 2D, input and music
+## 8–10. Bring-up loop, performance, enhancements 🔶
+- ✅ The whole game plays (story and Mission Mode); releases v0.4.0, v0.5.0 (`docs/releases/`)
+- ✅ 30 fps locked, 60 fps (experimental) by frames mixed in between
+- ✅ The Vita's buttons in the game's text, HUD and menus; Cross confirms (port menu)
+- 🔶 Next steps: `docs/resumo_e_proximos_passos.md`
 
 ## 11. Distribution
 - ✅ Repository holds no game data, no decomp sources (patch only), no Sony modules

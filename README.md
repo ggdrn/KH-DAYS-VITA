@@ -35,14 +35,21 @@ Settings: `ux0:data/khdays/config.ini`, or in game with **L+R+Select**.
 
 | Vita | DS / port |
 |---|---|
-| Circle / Cross / Triangle / Square | A / B / X / Y (positional, remappable) |
+| Cross / Circle | A / B: Cross confirms, Circle cancels (Confirm button = Cross, the default) |
+| Circle / Cross | A / B where the DS has them (Confirm button = Circle) |
+| Triangle / Square | X / Y |
 | Left stick or d-pad | D-pad |
-| Right stick | Field camera |
+| Right stick | Field camera; while locked on, left / right switches target |
 | L / R | L / R (R can be set to toggle lock-on) |
 | Front touch | Bottom screen; tap the small screen to swap screens |
 | Rear touch (optional) | L / R or Select / Start |
 | L+R+Select | Port menu |
 | L+R+Square | Fast-forward (2x or 3x) |
+
+Buttons are remappable in the port menu. The game's A/B/X/Y icons are drawn as the Vita's
+symbols (Button icons, in the port menu's System tab), following the Confirm button setting.
+
+Mission Mode played solo can use the story's enemy HP and damage: Mission balance = Story.
 
 ## Building
 
