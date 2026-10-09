@@ -22720,7 +22720,7 @@ index 6eeedcf22..5d6df8e56 100644
  extern void *data_0204c024;                                      /* the heap the helper allocates from */
  #define WH_RAND_INIT(x) (sWh.nRand = (u32)(x))
 diff --git a/src/overlays/system/ov107_enemy_common/Ov107_AiState_LoadStats.c b/src/overlays/system/ov107_enemy_common/Ov107_AiState_LoadStats.c
-index cee9f6e28..003ecae60 100644
+index cee9f6e28..0c67ee849 100644
 --- a/src/overlays/system/ov107_enemy_common/Ov107_AiState_LoadStats.c
 +++ b/src/overlays/system/ov107_enemy_common/Ov107_AiState_LoadStats.c
 @@ -109,6 +109,13 @@ static inline s16 ReadRecord(const Record *record, u8 *byte3, u8 *byte4)
@@ -22742,13 +22742,13 @@ index cee9f6e28..003ecae60 100644
          }
  
 +#ifdef PLATFORM_VITA
-+        /* the port's mission balance: a mission's enemies with 2.35 times the HP in place of the
-+         * session's three times (about 2.9 times the story's 80 percent), tried on the Vita for
-+         * a mission played solo. With the story's own HP (0.4.13) they went down too fast: a
-+         * save played far into the story is much stronger in a mission than the story had it at
-+         * that point; 1.5 times (0.4.14) was still on the easy side. */
++        /* the port's mission balance: a mission's enemies with half the session's three times
++         * the HP (1.5 times, about 1.9 times the story's 80 percent), chosen on the Vita for a
++         * mission played solo. With the story's own HP (0.4.13) they went down too fast: a save
++         * played far into the story is much stronger in a mission than the story had it at that
++         * point; 2.35 times (0.4.15) was tried too. */
 +        if (kh_vita_mission_balance() && (data_0204c240.flags & 2) != 0) {
-+            scale = scale * 235 / 100;
++            scale = scale * 3 / 2;
 +        } else
 +#endif
          scale = ApplyFlags(data_0204c240.flags, scale);

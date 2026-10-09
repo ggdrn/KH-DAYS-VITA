@@ -54,7 +54,7 @@ typedef struct {
     int fast_forward;   /* the speed L+R+Square switches to: 2 or 3 times */
     int button_icons;   /* the text's A, B, X, Y icons: 0 the DS's letters, 1 the Vita's symbols */
     int mission_balance; /* Mission Mode's enemies: 0 as the game has them (HP x3 and harder
-                          * hits, made for four players, solo too), 1 balanced (HP x2.35, and
+                          * hits, made for four players, solo too), 1 balanced (HP x1.5, and
                           * damage taken as in the story, by the save's difficulty) */
     int single_screen;  /* experimental: in missions, the top screen alone over the whole display,
                          * with parts of the bottom screen as panels over it: 0 off, 1 on */

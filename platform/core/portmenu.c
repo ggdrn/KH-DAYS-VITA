@@ -86,7 +86,7 @@ static const Item s_system[] = {
     { IT_VOLUME, 0, "Volume", NULL },
     { IT_FFWD, 0, "Fast-forward speed", "L+R+Square turns fast-forward on and off." },
     { IT_ICONS, 0, "Button icons", "A B X Y in the text, or the Vita's symbols. Restart." },
-    { IT_MISSION, 0, "Mission balance", "Balanced: HP x2.35 (not x3), story damage taken." },
+    { IT_MISSION, 0, "Mission balance", "Balanced: HP x1.5 (not x3), story damage taken." },
     { IT_DEFAULTS, 0, "Restore defaults", "Press Cross to set every option to its default." },
     { IT_CLOSE, 0, "Save and return", "Press Cross (or L+R+Select) to save and go back." },
 };
