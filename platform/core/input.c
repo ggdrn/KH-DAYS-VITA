@@ -13,9 +13,6 @@
 
 /* kept by the game's lock-on code (Ov022_SetSelectionEnabled, Ov022_ReadSelectionInput) */
 volatile int kh_lockon_active;
-/* set by the display loop: a menu is up (not the field's action), where config confirm_cross
- * swaps the DS's A and B */
-volatile int kh_input_menu;
 /* config r_toggle in the field: R does not turn the camera (Ov002_Camera_UpdateFollow) */
 volatile int kh_r_one_click;
 
@@ -214,9 +211,11 @@ void input_poll(InputState *out)
         s_nav_dir = dir;
     }
 
-    /* Menus confirm with Cross and cancel with Circle (config confirm_cross): the DS's A and B
-     * swapped there, the field's action keeping the buttons where they are placed */
-    if (kh_config.confirm_cross && kh_input_menu) {
+    /* Cross confirms and Circle cancels (config confirm_cross): the DS's A on Cross and B on
+     * Circle, menus and field alike (0.4.18 kept the field's action where the buttons are
+     * placed); the fonts' and the HUD's A and B icons follow (nitro/button_glyphs.c,
+     * nitro/button_sprites.c) */
+    if (kh_config.confirm_cross) {
         const uint16_t ab = held & (DS_KEY_A | DS_KEY_B);
         held = (uint16_t)((held & ~(DS_KEY_A | DS_KEY_B)) | ((ab & DS_KEY_A) ? DS_KEY_B : 0) |
                           ((ab & DS_KEY_B) ? DS_KEY_A : 0));

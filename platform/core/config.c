@@ -144,8 +144,8 @@ void config_save(void)
                "# Cross, Triangle and Square (the buttons in the same places), 0 the DS's letters.\n"
                "# Applied the next time the game starts.\n"
                "button_icons = %d\n\n", kh_config.button_icons);
-    fprintf(f, "# Menus (the title, saves, camp, missions, the pause menu; not the field's\n"
-               "# action): 1 Cross confirms and Circle cancels, 0 Circle confirms as the DS's A.\n"
+    fprintf(f, "# 1: the DS's A on Cross and B on Circle (Cross confirms, Circle cancels, in the\n"
+               "# menus and the field), the icons following; 0: A on Circle, where it is placed.\n"
                "confirm_cross = %d\n\n", kh_config.confirm_cross);
     fprintf(f, "# Mission Mode's enemies: 0 as the game has them (made for up to four players,\n"
                "# solo too: three times the HP, harder hits), 1 as in the story (the HP, and\n"

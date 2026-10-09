@@ -553,14 +553,8 @@ static void present(void)
      * drawn with it (33 ms to do both). Not in dual 3D (a screen per VBlank) nor with the
      * port menu open. */
     const int lock30 = !kh_config.frame_interpolation && !dual && !portmenu_is_open();
-    {
-        /* a menu (config confirm_cross): anything but the field's action, the pause menu
-         * included. The fonts' A and B are drawn to match. */
-        extern volatile int kh_input_menu;
-        const int menu = !(kh_overlay_loaded(22) && PauseMenu_GetMode() == 0);
-        kh_input_menu = menu;
-        kh_button_glyphs_menu(kh_config.confirm_cross && menu);
-    }
+    /* config confirm_cross (input.c): the fonts' A and B drawn to match */
+    kh_button_glyphs_menu(kh_config.confirm_cross);
     video_set_swap_interval(lock30 ? 2 : 1);
     s_locked += (uint32_t)lock30;
     kh_gpu3d_direct = dual || lock30;

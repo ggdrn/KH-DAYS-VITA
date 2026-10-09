@@ -19,6 +19,7 @@ typedef struct {
      * still the original's as the scan goes forward; 0 when the tile is the only one */
     uint32_t ctx_off;
     uint64_t ctx_hash;
+    int variant; /* 0 always, 1 the buttons as placed, 2 with config confirm_cross (A on Cross) */
     int n;
     struct {
         uint8_t at, value;
@@ -66,12 +67,14 @@ static void patch(uint8_t *d, uint32_t size)
 {
     uint32_t off;
     int k, done = 0;
+    const int variant = kh_config.confirm_cross ? 2 : 1;
     for (off = 0; off + 32 <= size; off += 16) {
         uint32_t w[8], x;
         memcpy(w, d + off, 32);
         x = w[0] ^ w[1] ^ w[2] ^ w[3] ^ w[4] ^ w[5] ^ w[6] ^ w[7];
         for (k = 0; k < NEDITS; k++) {
-            if (s_edits[k].xor == x && s_edits[k].hash == fnv64(d + off) &&
+            if (s_edits[k].xor == x && (!s_edits[k].variant || s_edits[k].variant == variant) &&
+                s_edits[k].hash == fnv64(d + off) &&
                 (!s_edits[k].ctx_off || (off + s_edits[k].ctx_off + 32 <= size &&
                                          s_edits[k].ctx_hash == fnv64(d + off + s_edits[k].ctx_off)))) {
                 int e;

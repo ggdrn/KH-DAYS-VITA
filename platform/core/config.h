@@ -52,8 +52,8 @@ typedef struct {
     int stick_deadzone; /* 1 small, 2 normal, 3 large */
     int r_toggle;       /* the DS's R: 0 held as on the DS, 1 a press latches it until the next */
     int fast_forward;   /* the speed L+R+Square switches to: 2 or 3 times */
-    int confirm_cross;  /* menus (all but the field's action): 1 Cross confirms and Circle cancels
-                         * (the DS's A and B swapped there), 0 as the buttons are placed */
+    int confirm_cross;  /* 1 the DS's A on Cross and B on Circle (Cross confirms, Circle cancels;
+                         * menus and field), 0 as the buttons are placed (A on Circle) */
     int button_icons;   /* the text's A, B, X, Y icons: 0 the DS's letters, 1 the Vita's symbols */
     int mission_balance; /* Mission Mode's enemies: 0 as the game has them (HP x3 and harder
                           * hits, made for four players, solo too), 1 as in the story (enemy HP, and
