@@ -16,7 +16,7 @@ static const KhConfig s_defaults = {
     .inset_corner = 0, .inset_opacity = 100, .rear_touch = 0, .stick_deadzone = 2, .r_toggle = 0,
     .fast_forward = 2, .camera_stick = 1, .camera_speed = 2,
     .camera_invert_x = 0, .camera_invert_y = 0, .dpad_deck = 1, .show_fps = 0, .volume = 100,
-    .button_icons = 1, .single_screen = 0, .panel_opacity = 90, .language = 1, .hud_size = 100,
+    .button_icons = 1, .confirm_cross = 1, .single_screen = 0, .panel_opacity = 90, .language = 1, .hud_size = 100,
     /* the mission screen's bottom-screen parts (sx sy sw sh anchor dx dy scale), measured on
      * the DS's bottom screen in a mission: the INFORMATION bar top-left, the map in the
      * top-right corner with the target beside it (below the top screen's enemy name and HP),
@@ -144,8 +144,11 @@ void config_save(void)
                "# Cross, Triangle and Square (the buttons in the same places), 0 the DS's letters.\n"
                "# Applied the next time the game starts.\n"
                "button_icons = %d\n\n", kh_config.button_icons);
+    fprintf(f, "# Menus (the title, saves, camp, missions, the pause menu; not the field's\n"
+               "# action): 1 Cross confirms and Circle cancels, 0 Circle confirms as the DS's A.\n"
+               "confirm_cross = %d\n\n", kh_config.confirm_cross);
     fprintf(f, "# Mission Mode's enemies: 0 as the game has them (made for up to four players,\n"
-               "# solo too: three times the HP, harder hits), 1 balanced (half that HP, and\n"
+               "# solo too: three times the HP, harder hits), 1 as in the story (the HP, and\n"
                "# the damage taken as in the story, by the save's difficulty; Standard for a guest).\n"
                "mission_balance = %d\n\n", kh_config.mission_balance);
     fprintf(f, "# Field HUD size, 60 to 100 %%: the command deck, the HP gauge with the face and\n"
@@ -248,6 +251,8 @@ static void set(const char *k, const char *v, int version)
         kh_config.r_toggle = atoi(v) != 0;
     else if (!strcmp(k, "fast_forward"))
         kh_config.fast_forward = clampi(atoi(v), 2, 3);
+    else if (!strcmp(k, "confirm_cross"))
+        kh_config.confirm_cross = atoi(v) != 0;
     else if (!strcmp(k, "button_icons"))
         kh_config.button_icons = atoi(v) != 0;
     else if (!strcmp(k, "mission_balance"))

@@ -550,7 +550,8 @@ static void apply_state(const DrawState *st)
      * lies behind the scene (its depth test fails) without drawing; a shadow polygon of
      * another ID draws its colour on marked pixels only and clears the mark */
     /* the stencil: bit 0 the shadow mark, bits 1-6 the polygon ID of the opaque pixel (the
-     * DS's attribute buffer), so that a shadow does not fall on the model of its own ID */
+     * DS's attribute buffer), so that a shadow does not fall on the model of its own ID; bit 7
+     * a translucent pixel of the polygon ID being drawn (flush) */
     glEnable(GL_STENCIL_TEST);
     switch (st->shadow) {
     case 1:
@@ -569,6 +570,13 @@ static void apply_state(const DrawState *st)
         if (!st->blend && st->depth_write) {
             glStencilMask(0x7e);
             glStencilFunc(GL_ALWAYS, st->id << 1, 0xff);
+            glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+        } else if (st->blend) {
+            /* the DS draws no translucent pixel over a translucent one of its own polygon ID:
+             * the pixels drawn are marked, and a marked one is passed over (flush clears the
+             * marks when the ID changes) */
+            glStencilMask(0x80);
+            glStencilFunc(GL_NOTEQUAL, 0x80, 0x80);
             glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
         } else {
             glStencilMask(0);
@@ -591,6 +599,59 @@ static struct {
 static int s_nbatches;
 static uint32_t s_batches_serial = 0xffffffffu;
 static int s_replaying; /* sending the kept draws: not recorded again */
+
+/* The translucent pixels marked (stencil bit 7) by the batches of the polygon ID drawn last:
+ * the same batches drawn again with nothing but the mark's clearing, when the next translucent
+ * batch has another ID. The particles of a burst share an ID: on the DS they cover each other
+ * without adding up, here the dozens of layers came out as a white blot over the screen (the
+ * Possessor's defeat, 0.4.16's trace: 150 more translucent polygons for a second). */
+#define MARKS_MAX 64
+static struct {
+    int first, count;
+} s_marks[MARKS_MAX];
+static int s_nmarks, s_marks_id = -1;
+
+static void clear_marks(void)
+{
+    int i;
+    if (!s_nmarks)
+        return;
+    /* with the shader that discards nothing: every pixel a batch marked is reached (the
+     * batch's own texture and alpha test are no longer bound) */
+    if (s_cur3 != &s_p3[1]) {
+        s_cur3 = &s_p3[1];
+        glUseProgram(s_cur3->id);
+    }
+    SET3(s_cur3->textured, glUniform1f(s_cur3->textured, 0.0f));
+    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+    glDepthMask(GL_FALSE);
+    glDepthFunc(GL_ALWAYS);
+    glStencilMask(0x80);
+    glStencilFunc(GL_ALWAYS, 0, 0);
+    glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+    for (i = 0; i < s_nmarks; i++)
+        glDrawElements(GL_TRIANGLES, s_marks[i].count, GL_UNSIGNED_SHORT, s_idx + s_marks[i].first);
+    s_stats.batches += (uint32_t)s_nmarks;
+    s_nmarks = 0;
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+}
+
+/* a blended batch of polygon ID id about to be drawn: the marks of another ID cleared */
+static void marks_before(int id)
+{
+    if (s_marks_id != id)
+        clear_marks();
+    s_marks_id = id;
+}
+
+static void marks_after(int first, int count)
+{
+    if (s_nmarks == MARKS_MAX)
+        clear_marks();
+    s_marks[s_nmarks].first = first;
+    s_marks[s_nmarks].count = count;
+    s_nmarks++;
+}
 
 static void flush(const DrawState *st, int first, int count)
 {
@@ -620,8 +681,12 @@ static void flush(const DrawState *st, int first, int count)
         o = *st;
         o.tex_alpha = 0;
         o.pass = 2;
+        if (o.blend)
+            marks_before(o.id);
         apply_state(&o);
         glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, s_idx + first);
+        if (o.blend)
+            marks_after(first, count);
         s_stats.batches += 2;
         return;
     }
@@ -633,8 +698,12 @@ static void flush(const DrawState *st, int first, int count)
         glStencilOp(GL_KEEP, GL_ZERO, GL_ZERO);
         glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, s_idx + first);
     }
+    if (st->blend && !st->shadow)
+        marks_before(st->id);
     apply_state(st);
     glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, s_idx + first);
+    if (st->blend && !st->shadow)
+        marks_after(first, count);
     s_stats.batches++;
 }
 
@@ -1080,6 +1149,9 @@ static unsigned draw_frame(const KhGxFrame *f, const KhGxVertex *vtx)
     /* kept for the frame's second draw when every batch fitted */
     s_batches_serial = s_nbatches <= BATCHES_MAX ? f->serial : 0xffffffffu;
 drawn:
+    /* the next frame clears the whole stencil */
+    s_nmarks = 0;
+    s_marks_id = -1;
 
     glDisableVertexAttribArray(A_POS);
     glDisableVertexAttribArray(A_TEX);

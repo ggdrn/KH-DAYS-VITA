@@ -171,6 +171,8 @@ typedef struct {
 } MIUncompContextLZ;
 _Static_assert(sizeof(MIUncompContextLZ) == 0x14, "MIUncompContextLZ layout");
 
+void kh_vita_uncomp_done(void *context);
+
 int32_t func_02004484(MIUncompContextLZ *ctx, const uint8_t *src, uint32_t len)
 {
     /* labels are the SDK's (@21..@29) */
@@ -258,6 +260,8 @@ l28:
     len--;
     goto l21;
 l29:
+    if (count == 0 && ctx->destCount != 0)
+        kh_vita_uncomp_done(ctx); /* finished: the port's changes (nitro/button_sprites.c) */
     ctx->destp = dst;
     ctx->destCount = count;
     ctx->flags = (uint8_t)flags;

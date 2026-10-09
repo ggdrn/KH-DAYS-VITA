@@ -5977,6 +5977,28 @@ index 0270aec25..a93fafaa9 100644
  	int rval = *g3bit;
  
  	*g3bit = 0;
+diff --git a/libs/nitro/mi/auto/MI_InitUncompContextLZ.c b/libs/nitro/mi/auto/MI_InitUncompContextLZ.c
+index c2ea8a6ef..1a2a41c46 100644
+--- a/libs/nitro/mi/auto/MI_InitUncompContextLZ.c
++++ b/libs/nitro/mi/auto/MI_InitUncompContextLZ.c
+@@ -6,9 +6,17 @@
+ 
+ #define offsetof(type, member) ((u32)&(((type *)0)->member))
+ 
++#ifdef PLATFORM_VITA
++/* the port's changes to decompressed files (platform/nitro/button_sprites.c) */
++extern void kh_vita_uncomp_begin(void *context, void *dest, unsigned int size);
++#endif
++
+ /* MI_InitUncompContextLZ -- NitroSDK mi_uncomp_stream.c: MI_InitUncompContextLZ. */
+ void MI_InitUncompContextLZ (MIUncompContextLZ * context, u8 * dest, const MICompressionHeader * header)
+ {
++#ifdef PLATFORM_VITA
++    kh_vita_uncomp_begin(context, dest, header->destSize);
++#endif
+     context->destp = dest;
+     context->destCount = (s32)header->destSize;
+     context->flags = 0;
 diff --git a/libs/nitro/mi/auto/MIi_DmaSetChannelRegs.c b/libs/nitro/mi/auto/MIi_DmaSetChannelRegs.c
 index 67aac578f..c2c7e56ed 100644
 --- a/libs/nitro/mi/auto/MIi_DmaSetChannelRegs.c
@@ -22720,7 +22742,7 @@ index 6eeedcf22..5d6df8e56 100644
  extern void *data_0204c024;                                      /* the heap the helper allocates from */
  #define WH_RAND_INIT(x) (sWh.nRand = (u32)(x))
 diff --git a/src/overlays/system/ov107_enemy_common/Ov107_AiState_LoadStats.c b/src/overlays/system/ov107_enemy_common/Ov107_AiState_LoadStats.c
-index cee9f6e28..0c67ee849 100644
+index cee9f6e28..08ee626bb 100644
 --- a/src/overlays/system/ov107_enemy_common/Ov107_AiState_LoadStats.c
 +++ b/src/overlays/system/ov107_enemy_common/Ov107_AiState_LoadStats.c
 @@ -109,6 +109,13 @@ static inline s16 ReadRecord(const Record *record, u8 *byte3, u8 *byte4)
@@ -22737,18 +22759,16 @@ index cee9f6e28..0c67ee849 100644
  static inline int ApplyFlags(u8 flags, int value)
  {
      int multiplier = flags & 4;
-@@ -171,6 +178,16 @@ void Ov107_AiState_LoadStats(AiState *self, int recordIndex)
+@@ -171,6 +178,14 @@ void Ov107_AiState_LoadStats(AiState *self, int recordIndex)
              }
          }
  
 +#ifdef PLATFORM_VITA
-+        /* the port's mission balance: a mission's enemies with half the session's three times
-+         * the HP (1.5 times, about 1.9 times the story's 80 percent), chosen on the Vita for a
-+         * mission played solo. With the story's own HP (0.4.13) they went down too fast: a save
-+         * played far into the story is much stronger in a mission than the story had it at that
-+         * point; 2.35 times (0.4.15) was tried too. */
++        /* the port's mission balance: a mission's enemies with the story's HP (its 80 percent
++         * in place of the session's three times; 1.5 and 2.35 times were tried, 0.4.14-0.4.17,
++         * and the story's own kept) */
 +        if (kh_vita_mission_balance() && (data_0204c240.flags & 2) != 0) {
-+            scale = scale * 3 / 2;
++            scale = ApplyFlags(0, scale);
 +        } else
 +#endif
          scale = ApplyFlags(data_0204c240.flags, scale);

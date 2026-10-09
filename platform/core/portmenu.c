@@ -36,7 +36,7 @@ enum {
     IT_ASPECT, IT_HUD, IT_LAYOUT, IT_INSET, IT_CORNER, IT_OPACITY, IT_SINGLE, IT_PANELOP, IT_HUDSIZE,
     IT_CAMERA, IT_CAMSPEED, IT_INVX, IT_INVY, IT_DEADZONE, IT_DPAD, IT_RMODE, IT_REAR,
     IT_BUTTON, /* + the DS button index */
-    IT_LANGUAGE, IT_VOLUME, IT_FFWD, IT_ICONS, IT_MISSION, IT_DEFAULTS, IT_CLOSE,
+    IT_LANGUAGE, IT_VOLUME, IT_FFWD, IT_ICONS, IT_CONFIRM, IT_MISSION, IT_DEFAULTS, IT_CLOSE,
 };
 
 typedef struct {
@@ -86,7 +86,8 @@ static const Item s_system[] = {
     { IT_VOLUME, 0, "Volume", NULL },
     { IT_FFWD, 0, "Fast-forward speed", "L+R+Square turns fast-forward on and off." },
     { IT_ICONS, 0, "Button icons", "A B X Y in the text, or the Vita's symbols. Restart." },
-    { IT_MISSION, 0, "Mission balance", "Balanced: HP x1.5 (not x3), story damage taken." },
+    { IT_CONFIRM, 0, "Menu confirm", "Menus confirm with Cross (Circle cancels), or Circle." },
+    { IT_MISSION, 0, "Mission balance", "Story: enemy HP and damage taken as in the story." },
     { IT_DEFAULTS, 0, "Restore defaults", "Press Cross to set every option to its default." },
     { IT_CLOSE, 0, "Save and return", "Press Cross (or L+R+Select) to save and go back." },
 };
@@ -204,7 +205,8 @@ static void value(const Item *it, char *out, size_t n)
     case IT_VOLUME: snprintf(out, n, "%d%%", kh_config.volume); break;
     case IT_FFWD: snprintf(out, n, "%dx", kh_config.fast_forward); break;
     case IT_ICONS: snprintf(out, n, "%s", kh_config.button_icons ? "PS Vita" : "DS"); break;
-    case IT_MISSION: snprintf(out, n, "%s", kh_config.mission_balance ? "Balanced" : "Original"); break;
+    case IT_CONFIRM: snprintf(out, n, "%s", kh_config.confirm_cross ? "Cross" : "Circle"); break;
+    case IT_MISSION: snprintf(out, n, "%s", kh_config.mission_balance ? "Story" : "Original"); break;
     default: out[0] = 0; break;
     }
 }
@@ -286,6 +288,7 @@ static void change(const Item *it, int d)
         break;
     case IT_FFWD: kh_config.fast_forward = wrap(kh_config.fast_forward, 2, 3, d); break;
     case IT_ICONS: kh_config.button_icons ^= 1; break;
+    case IT_CONFIRM: kh_config.confirm_cross ^= 1; break;
     case IT_MISSION: kh_config.mission_balance ^= 1; break;
     default: break;
     }

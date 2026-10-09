@@ -38,6 +38,22 @@ static const char *const s_fonts[] = {
     "/text/font_eu_10.nftr", "/text/font_eu_10s.nftr", "/text/font_eu_10all.nftr",
 };
 
+/* the patches of each font's A and B glyphs (rom_patch ids) and their size: the menus' swap of
+ * confirm and cancel (kh_button_glyphs_menu) draws them the other way round in memory */
+static int s_patch_a[3] = { -1, -1, -1 }, s_patch_b[3] = { -1, -1, -1 };
+static uint16_t s_gsize[3];
+static uint8_t s_bits_circle[32], s_bits_cross[32];
+
+static void icon_bits(int i, uint8_t *bits)
+{
+    int x, y;
+    memset(bits, 0, 32);
+    for (y = 0; y < 10; y++)
+        for (x = 0; x < 10; x++)
+            if (s_icons[i].rows[y][x] == '#')
+                bits[(y * 10 + x) >> 3] |= (uint8_t)(0x80 >> ((y * 10 + x) & 7));
+}
+
 static uint32_t rd32(const uint8_t *p) { return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24; }
 static uint16_t rd16(const uint8_t *p) { return (uint16_t)(p[0] | p[1] << 8); }
 
@@ -69,7 +85,7 @@ static int glyph_of(const uint8_t *d, uint32_t size, uint32_t cmap, uint16_t cod
     return -1;
 }
 
-static int patch_font(const char *path)
+static int patch_font(int font, const char *path)
 {
     uint32_t off, size, finf, cglp, cmap;
     uint8_t *d;
@@ -96,16 +112,17 @@ static int patch_font(const char *path)
         for (i = 0; i < NICONS && w == 10 && h == 10 && bpp == 1; i++) {
             uint8_t bits[32];
             const int g = glyph_of(d, size, cmap, s_icons[i].code);
-            int x, y;
+            int id;
             if (g < 0 || gsize > sizeof(bits) || cglp + 0x10 + (uint32_t)(g + 1) * gsize > size)
                 continue;
             /* 1 bit a pixel, rows one after the other, the first pixel in the top bit */
-            memset(bits, 0, sizeof(bits));
-            for (y = 0; y < 10; y++)
-                for (x = 0; x < 10; x++)
-                    if (s_icons[i].rows[y][x] == '#')
-                        bits[(y * 10 + x) >> 3] |= (uint8_t)(0x80 >> ((y * 10 + x) & 7));
-            rom_patch(off + cglp + 0x10 + (uint32_t)g * gsize, bits, gsize);
+            icon_bits(i, bits);
+            id = rom_patch(off + cglp + 0x10 + (uint32_t)g * gsize, bits, gsize);
+            if (s_icons[i].code == 0x3349)
+                s_patch_a[font] = id;
+            else if (s_icons[i].code == 0x3314)
+                s_patch_b[font] = id;
+            s_gsize[font] = gsize;
             done++;
         }
     }
@@ -118,7 +135,29 @@ void kh_button_glyphs_init(void)
     int i, n = 0;
     if (!kh_config.button_icons)
         return;
+    icon_bits(0, s_bits_circle);
+    icon_bits(1, s_bits_cross);
     for (i = 0; i < (int)(sizeof(s_fonts) / sizeof(s_fonts[0])); i++)
-        n += patch_font(s_fonts[i]);
+        n += patch_font(i, s_fonts[i]);
     LOG("text: %d button icons drawn as the Vita's (3 fonts, 4 each)", n);
+}
+
+/* The fonts' A and B in memory: Circle and Cross as the buttons are placed (swap 0), or the
+ * other way round while the menus confirm with Cross (swap 1; input.c). Only where the font a
+ * patch was read into still holds one of the two (it may have been freed and used since). */
+void kh_button_glyphs_menu(int swap)
+{
+    int f;
+    for (f = 0; f < 3; f++) {
+        uint8_t *a = rom_patch_last_dst(s_patch_a[f]), *b = rom_patch_last_dst(s_patch_b[f]);
+        const uint16_t n = s_gsize[f];
+        const uint8_t *want_a = swap ? s_bits_cross : s_bits_circle;
+        const uint8_t *want_b = swap ? s_bits_circle : s_bits_cross;
+        if (!n)
+            continue;
+        if (a && (!memcmp(a, s_bits_circle, n) || !memcmp(a, s_bits_cross, n)) && memcmp(a, want_a, n))
+            memcpy(a, want_a, n);
+        if (b && (!memcmp(b, s_bits_circle, n) || !memcmp(b, s_bits_cross, n)) && memcmp(b, want_b, n))
+            memcpy(b, want_b, n);
+    }
 }

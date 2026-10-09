@@ -28,7 +28,10 @@ int rom_read(uint32_t offset, void *dst, uint32_t size);
 /* Bytes the reads see in place of the dump's at offset (the port's own changes to game data,
  * such as the button icons of nitro/button_glyphs.c); the file itself is never written. Data
  * is copied; patches are added before the game reads that range. */
-void rom_patch(uint32_t offset, const void *data, uint32_t size);
+int rom_patch(uint32_t offset, const void *data, uint32_t size);
+/* Where patch id (rom_patch's result) was last read to, whole; NULL before. The game may have
+ * freed that memory since: check what is there before writing to it. */
+void *rom_patch_last_dst(int id);
 const uint8_t *rom_header(void); /* the 0x200-byte cartridge header */
 
 typedef struct {

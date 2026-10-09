@@ -202,19 +202,26 @@ static int block_get(uint32_t base)
 static struct {
     uint32_t offset, size;
     uint8_t *data;
+    void *last_dst;
 } s_patch[PATCHES_MAX];
 static int s_npatch;
 
-void rom_patch(uint32_t offset, const void *data, uint32_t size)
+int rom_patch(uint32_t offset, const void *data, uint32_t size)
 {
     uint8_t *copy;
     if (s_npatch >= PATCHES_MAX || !size || !(copy = malloc(size)))
-        return;
+        return -1;
     memcpy(copy, data, size);
     s_patch[s_npatch].offset = offset;
     s_patch[s_npatch].size = size;
     s_patch[s_npatch].data = copy;
-    s_npatch++;
+    s_patch[s_npatch].last_dst = NULL;
+    return s_npatch++;
+}
+
+void *rom_patch_last_dst(int id)
+{
+    return id >= 0 && id < s_npatch ? s_patch[id].last_dst : NULL;
 }
 
 /* the patches over [offset, offset + n) applied to what was read there */
@@ -225,8 +232,11 @@ static void apply_patches(uint32_t offset, uint8_t *dst, uint32_t n)
         const uint32_t ps = s_patch[i].offset, pe = ps + s_patch[i].size;
         const uint32_t lo = ps > offset ? ps : offset;
         const uint32_t hi = pe < offset + n ? pe : offset + n;
-        if (lo < hi)
+        if (lo < hi) {
             memcpy(dst + (lo - offset), s_patch[i].data + (lo - ps), hi - lo);
+            if (lo == ps && hi == pe)
+                s_patch[i].last_dst = dst + (lo - offset);
+        }
     }
 }
 
