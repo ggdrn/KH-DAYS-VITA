@@ -820,12 +820,27 @@ static void dump_frame(const KhGxFrame *f)
                     kh_gpu3d_dump_tga(path, px, w, h);
                     free(px);
                 }
+                {
+                    /* the bytes themselves: texels, then the palette (for redrawing a
+                     * texture, nitro/button_sprites.c) */
+                    static uint8_t raw[0x20000 + 512];
+                    uint32_t texels;
+                    const uint32_t n = kh_tex_raw(img, pal, raw, sizeof(raw), &texels);
+                    FILE *bf;
+                    snprintf(path, sizeof(path), "%s/tex_%08x_%04x.bin", dir, (unsigned)img,
+                             (unsigned)pal);
+                    bf = n ? fopen(path, "wb") : NULL;
+                    if (bf) {
+                        fwrite(raw, 1, n, bf);
+                        fclose(bf);
+                    }
+                }
             }
         }
     }
     fclose(list);
-    LOG("gpu3d: dumped frame %u: %d polygons, %d textures to %s", (unsigned)f->serial,
-        f->npoly, ntex, dir);
+    LOG("gpu3d: dumped frame %u: %d polygons, %d textures to %s (finished: the folder can be "
+        "copied)", (unsigned)f->serial, f->npoly, ntex, dir);
 }
 
 static uint32_t s_setup_serial;

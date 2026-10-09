@@ -342,3 +342,29 @@ void kh_tex_decode(uint32_t teximage, uint32_t pltt, uint32_t *out)
         break;
     }
 }
+
+uint32_t kh_tex_raw(uint32_t teximage, uint32_t pltt, uint8_t *out, uint32_t max, uint32_t *texels)
+{
+    const int fmt = kh_tex_format(teximage), w = kh_tex_width(teximage), h = kh_tex_height(teximage);
+    const uint32_t addr = (teximage & 0xffff) * 8;
+    uint32_t n = tex_bytes(fmt, w, h), avail, i, at;
+    const uint8_t *p;
+    if (!fmt)
+        return *texels = 0;
+    p = tex_ptr(addr, &avail);
+    if (n > avail)
+        n = avail;
+    if (n > max)
+        n = max;
+    memcpy(out, p, n);
+    *texels = at = n;
+    if (fmt != 5 && fmt != 7) {
+        const uint32_t base = pal_base(fmt, pltt), ne = pal_entries(fmt);
+        for (i = 0; i < ne && at + 2 <= max; i++, at += 2) {
+            const uint16_t c = pal_color(base + i * 2);
+            out[at] = (uint8_t)c;
+            out[at + 1] = (uint8_t)(c >> 8);
+        }
+    }
+    return at;
+}

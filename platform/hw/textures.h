@@ -30,4 +30,9 @@ int kh_tex_source_empty(uint32_t teximage);
 /* Decode into out (width x height texels). */
 void kh_tex_decode(uint32_t teximage, uint32_t pltt, uint32_t *out);
 
+/* Diagnostics (the frame dump): the texture's texel bytes and then its palette's colours (16
+ * bits each) into out, at most max bytes; returns the bytes written, *texels the texel part.
+ * 4x4-compressed textures give their texels only. */
+uint32_t kh_tex_raw(uint32_t teximage, uint32_t pltt, uint8_t *out, uint32_t max, uint32_t *texels);
+
 #endif
