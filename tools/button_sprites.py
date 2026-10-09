@@ -67,11 +67,22 @@ def lz11(d):
 
 
 def p2_entry(d, i):
+    """entry i of a P2 pack: the header (its size at +0xc) then 512-byte sectors"""
     cnt = struct.unpack_from("<H", d, 2)[0]
+    hdr = struct.unpack_from("<H", d, 0xC)[0] or 0x200
     sec = struct.unpack_from("<H", d, 0x10 + i * 2)[0]
     size = struct.unpack_from("<I", d, ((cnt + 1) // 2) * 4 + 0x10 + i * 4)[0]
-    raw = d[0x200 + sec * 0x200:0x200 + sec * 0x200 + (size & 0x7FFFFFFF)]
+    raw = d[hdr + sec * 0x200:hdr + sec * 0x200 + (size & 0x7FFFFFFF)]
     return lz11(raw) if size & 0x80000000 else raw
+
+
+def ncgr(x):
+    """the first NCGR in x: (offset of its tile data, the data, bits a pixel)"""
+    o = x.find(b"RGCN")
+    p = o + struct.unpack_from("<H", x, o + 0xC)[0]
+    bd = struct.unpack_from("<I", x, p + 0xC)[0]
+    size = struct.unpack_from("<I", x, p + 0x18)[0]
+    return p + 0x20, x[p + 0x20:p + 0x20 + size], 4 if bd == 3 else 8
 
 
 # 5x5 symbols, '#' drawn in the letter's colour
@@ -99,6 +110,165 @@ for i, b in enumerate("ABXY"):  # green, 8 pixels
 for i, b in enumerate("AB"):  # white, 8 pixels
     x = 240 + i * 8
     ICONS.append(((x + 1, 133), b, (x + 1, 133, x + 6, 137), 0x2, 0xE, None))
+
+
+# ---- the menus' icons: the font's letters drawn into sprites -------------------------------
+# The camp menu, the panel screen and their help lines show the fonts' A/B/X/Y icons (a 9x9
+# circle, the letter cut out) drawn into 8-bit sprites, a second colour for the letter and
+# often a shadow. Found by shape in these files (sprites of `wide` tiles a row, 1D mapping)
+# and in a frame dump of the panel screen (0.4.23: the X by the scroll bar and on the Stats
+# button, the green Y). The letter becomes the Vita's symbol, the circle's own colours kept.
+LETTERS = {
+    "A": ["#### ####", "### # ###", "### # ###", "##     ##", "## ### ##"],
+    "B": ["##    ###", "## ### ##", "##    ###", "## ### ##", "##    ###"],
+    "X": ["## ### ##", "### # ###", "#### ####", "### # ###", "## ### ##"],
+    "Y": ["## ### ##", "### # ###", "#### ####", "#### ####", "#### ####"],
+}
+# the symbols in the font's style (nitro/button_glyphs.c): rows 0-8 of the 9x9 circle
+DESIGNS = {
+    "circle": ["  #####  ", " ##   ## ", "## ### ##", "# ##### #", "# ##### #",
+               "# ##### #", "## ### ##", " ##   ## ", "  #####  "],
+    "cross": ["  #####  ", " ####### ", "## ### ##", "### # ###", "#### ####",
+              "### # ###", "## ### ##", " ####### ", "  #####  "],
+    "triangle": ["  #####  ", " ### ### ", "### # ###", "## ### ##", "# ##### #",
+                 "#       #", "#########", " ####### ", "  #####  "],
+    "square": ["  #####  ", " ####### ", "##     ##", "## ### ##", "## ### ##",
+               "## ### ##", "##     ##", " ####### ", "  #####  "],
+}
+LANGS = ("de", "en", "es", "fr", "it")
+MENU_SOURCES = [  # (file, P2 entries or None, sprite width in tiles)
+    ("UI/cm/cm.p2", (8, 36), 2),   # the panel screen's green Y (four frames)
+    ("UI/cm/cm.p2", (40,), 4),     # the X by the scroll bar and on the Stats button
+] + [("UI/cm/cmo_%s.p2" % lang, (2,), 4) for lang in LANGS]  # the camp menu's X buttons
+
+
+class Sprites:
+    """an NCGR's tiles as sprites of `wide` tiles a row: pixel access by window"""
+
+    def __init__(self, data, bpp):
+        self.d, self.bpp = bytearray(data), bpp
+        self.ts = 32 if bpp == 4 else 64
+        self.n = len(data) // self.ts
+
+    def at(self, i, wide, x, y):
+        t = i + (y // 8) * wide + x // 8
+        if bpp_ok := (t < self.n):
+            pass
+        if not bpp_ok:
+            return None
+        if self.bpp == 8:
+            return t * 64 + (y % 8) * 8 + x % 8, None
+        return t * 32 + (y % 8) * 4 + (x % 8) // 2, (x & 1) * 4
+
+    def get(self, i, wide, x, y):
+        a = self.at(i, wide, x, y)
+        if a is None:
+            return None
+        o, sh = a
+        return self.d[o] if sh is None else (self.d[o] >> sh) & 15
+
+    def set(self, i, wide, x, y, v):
+        o, sh = self.at(i, wide, x, y)
+        if sh is None:
+            self.d[o] = v
+        else:
+            self.d[o] = (self.d[o] & ~(15 << sh)) | (v << sh)
+
+
+def find_letters(sp, wide):
+    """(i, cx, cy, letter): the DS letter icons in sprites of `wide` tiles a row, cx, cy the 9x9
+    circle's top-left; one per icon"""
+    hits, seen = [], set()
+    for i in range(0, sp.n - 2 * wide + 1):
+        for k, rows in LETTERS.items():
+            D = [(x, y) for y in range(5) for x in range(9) if rows[y][x] == " "]
+            C = [(x, y) for y in range(5) for x in range(1, 8) if (x, y) not in D
+                 and (x - 1, y - 1) not in D and (x - 1, y) not in D and (x, y - 1) not in D]
+            for oy in range(2, 16 - 7):
+                for ox in range(0, wide * 8 - 8):
+                    vd = {sp.get(i, wide, ox + x, oy + y) for x, y in D}
+                    if len(vd) != 1:
+                        continue
+                    vc = {sp.get(i, wide, ox + x, oy + y) for x, y in C}
+                    if len(vc) != 1 or vc == vd or 0 in vc or 0 in vd:
+                        continue
+                    t0 = i + (oy // 8) * wide + ox // 8
+                    key = (t0, ox % 8, oy % 8, k)
+                    if key not in seen:
+                        seen.add(key)
+                        hits.append((i, ox, oy - 2, k))
+    return hits
+
+
+def redraw(sp, i, wide, cx, cy, letter, design):
+    """the letter of the icon at (cx, cy) redrawn as `design`, the circle's colours kept"""
+    rows = LETTERS[letter]
+    old = {(x, y + 2) for y in range(5) for x in range(9) if rows[y][x] == " "}
+    from collections import Counter
+    vd = Counter(sp.get(i, wide, cx + x, cy + y) for x, y in old).most_common(1)[0][0]
+    body = [(x, y) for y in range(2, 7) for x in range(1, 8) if (x, y) not in old
+            and (x - 1, y - 1) not in old]
+    vc = Counter(sp.get(i, wide, cx + x, cy + y) for x, y in body).most_common(1)[0][0]
+    sh = Counter(v for v in (sp.get(i, wide, cx + x + 1, cy + y + 1) for x, y in old
+                             if (x + 1, y + 1) not in old) if v not in (vc, vd, None))
+    shadow = sh.most_common(1)[0][0] if sh else None
+    new = {(x, y) for y in range(9) for x in range(9) if design[y][x] == " "
+           and 1 <= x <= 7 and 1 <= y <= 7}
+    for y in range(1, 8):
+        for x in range(1, 8):
+            v = sp.get(i, wide, cx + x, cy + y)
+            if v is None:
+                continue
+            was_shadow = shadow is not None and v == shadow and (x - 1, y - 1) in old
+            if v in (vc, vd) or was_shadow:
+                sp.set(i, wide, cx + x, cy + y, vd if (x, y) in new else vc)
+    if shadow is not None:
+        for x, y in new:
+            if (x + 1, y + 1) not in new and x + 1 <= 7 and y + 1 <= 7:
+                if sp.get(i, wide, cx + x + 1, cy + y + 1) == vc:
+                    sp.set(i, wide, cx + x + 1, cy + y + 1, shadow)
+
+
+def menu_entries(rom, files, fnv64):
+    """the edits for the menus' icons: [(hash, xor, ctx, variant, edits)] on 32-byte halves"""
+    out = []
+    for name, ents, wide in MENU_SOURCES:
+        s, e = files[name]
+        d = rom[s:e]
+        datas = [lz11(d)] if name.endswith(".z") else [p2_entry(d, k) for k in ents]
+        for x in datas:
+            data_off, data, bpp = ncgr(x)
+            base = Sprites(data, bpp)
+            hits = find_letters(base, wide)
+            drawn = {}
+            for v, mapping in ((1, VITA), (2, VITA_SWAPPED)):
+                sp = Sprites(data, bpp)
+                for i, cx, cy, k in hits:
+                    redraw(sp, i, wide, cx, cy, k, DESIGNS[mapping[k]])
+                drawn[v] = bytes(sp.d)
+            print(f"  {name}: {len(hits)} icons ({''.join(sorted(h[3] for h in hits))})")
+            halves = []
+            for o in range(0, len(data) - 31, 32):
+                a = data[o:o + 32]
+                ed = {v: [(j, drawn[v][o + j]) for j in range(32) if a[j] != drawn[v][o + j]] for v in drawn}
+                if ed[1] or ed[2]:
+                    halves.append((o, a, ed))
+            hashes = [fnv64(a) for _, a, _ in halves]
+            for (o, a, ed), h in zip(halves, hashes):
+                xor = 0
+                for w in struct.unpack("<8I", a):
+                    xor ^= w
+                # alike halves drawn differently tell apart by the 32 bytes after them (in the
+                # file as decompressed, where the port looks)
+                ctx = 0, 0
+                if hashes.count(h) > 1:
+                    at = data_off + o + 32
+                    ctx = 32, fnv64(x[at:at + 32])
+                if ed[1] == ed[2]:
+                    out.append((h, xor, ctx, 0, ed[1]))
+                else:
+                    out.extend((h, xor, ctx, v, ed[v]) for v in drawn)
+    return out
 
 
 def main():
@@ -166,6 +336,13 @@ def main():
         else:
             entries.extend((h, xor, ctx, v, ed[v]) for v in drawn)
     tiles[:] = drawn[1]
+    entries += menu_entries(rom, files, fnv64)
+    # one entry per (tile, variant, context), sorted by the quick test (the port looks them up
+    # by binary search, nitro/button_sprites.c)
+    uniq = {}
+    for en in entries:
+        uniq[(en[0], en[2], en[3], tuple(en[4]))] = en
+    entries = sorted(uniq.values(), key=lambda en: (en[1], en[0]))
 
     lines = ["/* Generated by tools/button_sprites.py from the user's ROM: no ROM data, only hashes",
              " * of the original tiles and the bytes drawn over them. */"]

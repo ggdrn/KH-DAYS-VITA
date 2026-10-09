@@ -65,6 +65,20 @@ static uint64_t fnv64(const uint8_t *p)
     return h;
 }
 
+/* the first entry whose quick test is x: the table is sorted by it (tools/button_sprites.py) */
+static int first_with_xor(uint32_t x)
+{
+    int lo = 0, hi = NEDITS;
+    while (lo < hi) {
+        const int mid = (lo + hi) / 2;
+        if (s_edits[mid].xor < x)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return lo;
+}
+
 static void patch(uint8_t *d, uint32_t size)
 {
     uint32_t off;
@@ -74,8 +88,8 @@ static void patch(uint8_t *d, uint32_t size)
         uint32_t w[8], x;
         memcpy(w, d + off, 32);
         x = w[0] ^ w[1] ^ w[2] ^ w[3] ^ w[4] ^ w[5] ^ w[6] ^ w[7];
-        for (k = 0; k < NEDITS; k++) {
-            if (s_edits[k].xor == x && (!s_edits[k].variant || s_edits[k].variant == variant) &&
+        for (k = first_with_xor(x); k < NEDITS && s_edits[k].xor == x; k++) {
+            if ((!s_edits[k].variant || s_edits[k].variant == variant) &&
                 s_edits[k].hash == fnv64(d + off) &&
                 (!s_edits[k].ctx_off || (off + s_edits[k].ctx_off + 32 <= size &&
                                          s_edits[k].ctx_hash == fnv64(d + off + s_edits[k].ctx_off)))) {
@@ -88,7 +102,7 @@ static void patch(uint8_t *d, uint32_t size)
             }
         }
     }
-    if (done && s_logged++ < 8)
+    if (done && s_logged++ < 16)
         LOG("text: %d sprite tiles drawn with the Vita's buttons (a file of %u bytes)", done,
             (unsigned)size);
 }
