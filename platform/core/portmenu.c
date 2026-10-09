@@ -85,7 +85,7 @@ static const Item s_system[] = {
     { IT_LANGUAGE, 0, "Language", "The game's language. Applied the next time it starts." },
     { IT_VOLUME, 0, "Volume", NULL },
     { IT_FFWD, 0, "Fast-forward speed", "L+R+Square turns fast-forward on and off." },
-    { IT_MISSION, 0, "Mission balance", "Story: enemy HP and damage taken as in the story." },
+    { IT_MISSION, 0, "Mission balance", "Balanced: half the HP, story damage by difficulty." },
     { IT_DEFAULTS, 0, "Restore defaults", "Press Cross to set every option to its default." },
     { IT_CLOSE, 0, "Save and return", "Press Cross (or L+R+Select) to save and go back." },
 };
@@ -202,7 +202,7 @@ static void value(const Item *it, char *out, size_t n)
     }
     case IT_VOLUME: snprintf(out, n, "%d%%", kh_config.volume); break;
     case IT_FFWD: snprintf(out, n, "%dx", kh_config.fast_forward); break;
-    case IT_MISSION: snprintf(out, n, "%s", kh_config.mission_balance ? "Story" : "Original"); break;
+    case IT_MISSION: snprintf(out, n, "%s", kh_config.mission_balance ? "Balanced" : "Original"); break;
     default: out[0] = 0; break;
     }
 }

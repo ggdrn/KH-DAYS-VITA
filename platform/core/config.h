@@ -53,8 +53,8 @@ typedef struct {
     int r_toggle;       /* the DS's R: 0 held as on the DS, 1 a press latches it until the next */
     int fast_forward;   /* the speed L+R+Square switches to: 2 or 3 times */
     int mission_balance; /* Mission Mode's enemies: 0 as the game has them (HP x3 and harder
-                          * hits, made for four players, solo too), 1 as in the story (enemy
-                          * HP, and damage taken by the save's difficulty) */
+                          * hits, made for four players, solo too), 1 balanced (HP x1.5, and
+                          * damage taken as in the story, by the save's difficulty) */
     int single_screen;  /* experimental: in missions, the top screen alone over the whole display,
                          * with parts of the bottom screen as panels over it: 0 off, 1 on */
     int panel_opacity;  /* those panels' opacity, 50-100 % */
