@@ -1027,6 +1027,28 @@ static void draw_panels(void)
     }
 }
 
+/* A screen's new picture into the next texture of its ring, without drawing: shown by the
+ * next video_present (the 30 fps display holds a picture for two VBlanks, game.c). */
+static void upload_screen(int i, const uint32_t *src)
+{
+    const uint64_t t = sceKernelGetProcessTimeWide();
+    s_tex_at[i] = (s_tex_at[i] + 1) % TEX_RING;
+    glBindTexture(GL_TEXTURE_2D, s_tex_cur(i));
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, DS_SCREEN_W, DS_SCREEN_H, GL_RGBA, GL_UNSIGNED_BYTE,
+                    src);
+    s_upload_us += (uint32_t)(sceKernelGetProcessTimeWide() - t);
+    s_upload_total += (uint32_t)(sceKernelGetProcessTimeWide() - t);
+}
+
+void video_upload_screens(const uint32_t *top, const uint32_t *bottom)
+{
+    s_upload_us = 0;
+    if (top)
+        upload_screen(0, top);
+    if (bottom)
+        upload_screen(1, bottom);
+}
+
 void video_present(const uint32_t *top, const uint32_t *bottom)
 {
     const uint32_t *src[2] = { top, bottom };
@@ -1051,15 +1073,8 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
     for (k = 0; k < 2; k++) {
         /* the large screen first, the inset over it */
         const int i = s_inset == 0 ? 1 - k : k;
-        if (src[i]) {
-            const uint64_t t = sceKernelGetProcessTimeWide();
-            s_tex_at[i] = (s_tex_at[i] + 1) % TEX_RING;
-            glBindTexture(GL_TEXTURE_2D, s_tex_cur(i));
-            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, DS_SCREEN_W, DS_SCREEN_H, GL_RGBA,
-                            GL_UNSIGNED_BYTE, src[i]);
-            s_upload_us += (uint32_t)(sceKernelGetProcessTimeWide() - t);
-            s_upload_total += (uint32_t)(sceKernelGetProcessTimeWide() - t);
-        }
+        if (src[i])
+            upload_screen(i, src[i]);
         glBindTexture(GL_TEXTURE_2D, s_tex_cur(i));
         if (i == s_inset && i == 1 && s_inset_blank)
             continue; /* the small screen is the bottom one, all black: not shown */

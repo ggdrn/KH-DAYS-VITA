@@ -20,6 +20,7 @@
 #include "workers.h"
 
 #include <psp2/kernel/processmgr.h>
+#include <math.h>
 #include <stdio.h>
 #include <psp2/io/stat.h>
 #include <stdlib.h>
@@ -107,6 +108,7 @@ static uint32_t s_last_serial;
 static KhGpu3dStats s_stats;
 volatile int kh_gpu3d_debug;
 volatile uint32_t kh_gpu3d_mixes;
+volatile uint32_t kh_gpu3d_draws;
 
 /* ---- texture cache --------------------------------------------------------------------- */
 
@@ -793,6 +795,7 @@ static unsigned draw_frame(const KhGxFrame *f, const KhGxVertex *vtx)
     int i, nidx = 0, first = 0, have = 0;
 
     s_stats.disp3dcnt = f->disp3dcnt;
+    kh_gpu3d_draws++;
     t0 = sceKernelGetProcessTimeWide();
     frame_setup(f);
     if (s_dump_request) {
@@ -1109,54 +1112,108 @@ static int same_uv(const KhGxVertex *a, const KhGxVertex *b, int len)
     return 1;
 }
 
+/* How far a run moved from A to B: its first, middle and last vertices in clip space, not
+ * divided by w (a vertex near the camera would run off to infinity). */
+static float run_distance(const KhGxVertex *a, const KhGxVertex *b, int len)
+{
+    const int k[3] = { 0, len / 2, len - 1 };
+    float d = 0.0f;
+    int i;
+    for (i = 0; i < 3; i++)
+        d += fabsf(a[k[i]].x - b[k[i]].x) + fabsf(a[k[i]].y - b[k[i]].y) +
+             fabsf(a[k[i]].w - b[k[i]].w);
+    return d;
+}
+
+/* A run's own size in the same measure: its first, middle and last vertices apart. */
+static float run_size(const KhGxVertex *v, int len)
+{
+    const KhGxVertex *m = &v[len / 2], *e = &v[len - 1];
+    return fabsf(m->x - v->x) + fabsf(m->y - v->y) + fabsf(m->w - v->w) +
+           fabsf(e->x - v->x) + fabsf(e->y - v->y) + fabsf(e->w - v->w);
+}
+
 /* B's vertices paired with A's (s_pair: A's index, or -1 to take B's own), model by model:
- * B's runs are paired with A's of the same material, length and texture coordinates, in
- * order; a run that A did not have (an effect, an enemy appearing) or whose length changed is
- * B's as it is, and A's runs that B no longer has are passed over. Before (to 0.4.5) only the
- * vertices both frames shared from the very start were mixed, and a frame where that was under
- * half of them was not mixed at all: in the field one frame in two, the motion going smooth
- * and stuttering in turn. Without the texture coordinates (0.4.6), two models of one material
- * and size (two enemies of a kind) could be paired with each other and stretched in between.
+ * B's runs are paired with A's of the same material and length, near B's place in A's order;
+ * a run that A did not have (an effect, an enemy appearing) or whose length changed is B's as
+ * it is. Before (to 0.4.5) only the vertices both frames shared from the very start were
+ * mixed; to 0.4.8 each run took the first of A's with the same texture coordinates after the
+ * last one paired. A map is many pieces of one material, size and texture coordinates: with a
+ * piece left out of one frame (out of view), the pieces after it were paired each with its
+ * neighbour and stretched in between, and a model whose texture coordinates move (water, the
+ * sky) was never paired and stayed at 30 fps while the camera went at 60: both shook as the
+ * camera turned. Now the nearest of A's candidates wins, the same texture coordinates first,
+ * and an A run claimed by two of B's goes to the nearer (the other is B's own); a run whose
+ * texture coordinates moved is paired only within its own size and takes B's coordinates.
  * Not mixed: a change of the 3D's settings, nothing paired, or half of the paired vertices
  * jumping half the screen (a camera cut). */
-#define RUN_LOOKAHEAD 48
+#define RUN_WINDOW 64
+#define PAIR_UV_MOVED 0x40000000 /* in s_pair: the place mixed, B's texture coordinates */
 static int32_t s_pair[KH_GX_MAX_VERTICES];
 static int mix_vertices(const KhGxFrame *f)
 {
     static VtxRun ra[KH_GX_MAX_VERTICES], rb[KH_GX_MAX_VERTICES];
+    static int32_t best[KH_GX_MAX_VERTICES], owner[KH_GX_MAX_VERTICES];
+    static float dist[KH_GX_MAX_VERTICES];
+    static uint8_t uv_same[KH_GX_MAX_VERTICES];
     int na, nb, i = 0, j, k, paired = 0, jumps = 0;
     if (f->disp3dcnt != s_prev_disp3dcnt)
         return MIX_STATE;
     na = vertex_runs(s_prev_vtx, s_prev_nvtx, ra);
     nb = vertex_runs(f->vtx, f->nvtx, rb);
+    for (k = 0; k < na; k++)
+        owner[k] = -1;
     for (j = 0; j < nb; j++) {
         const VtxRun *b = &rb[j];
-        int found = -1, same_key = -1;
-        for (k = i; k < na && k < i + RUN_LOOKAHEAD; k++)
-            if (ra[k].key == b->key) {
-                if (same_key < 0)
-                    same_key = k;
-                if (ra[k].len == b->len &&
-                    same_uv(&s_prev_vtx[ra[k].start], &f->vtx[b->start], b->len)) {
-                    found = k;
-                    break;
-                }
-            }
-        if (found < 0) {
-            /* new here, or not the same model any more: B's own vertices */
+        const KhGxVertex *bv = &f->vtx[b->start];
+        const int lo = i > RUN_WINDOW ? i - RUN_WINDOW : 0;
+        const int hi = i + RUN_WINDOW < na ? i + RUN_WINDOW : na;
+        int found = -1, found_uv = 0;
+        float found_d = 0.0f;
+        for (k = lo; k < hi; k++) {
+            const KhGxVertex *av = &s_prev_vtx[ra[k].start];
+            int uv;
+            float d;
+            if (ra[k].key != b->key || ra[k].len != b->len)
+                continue;
+            uv = same_uv(av, bv, b->len);
+            d = run_distance(av, bv, b->len);
+            if (!uv && d > run_size(bv, b->len))
+                continue; /* another model of this material, elsewhere */
+            if (found < 0 || uv > found_uv || (uv == found_uv && d < found_d))
+                found = k, found_uv = uv, found_d = d;
+        }
+        best[j] = found;
+        dist[j] = found_d;
+        uv_same[j] = (uint8_t)found_uv;
+        if (found < 0)
+            continue;
+        i = found + 1;
+        {
+            const int o = owner[found];
+            if (o < 0 || found_uv > uv_same[o] || (found_uv == uv_same[o] && found_d < dist[o]))
+                owner[found] = j;
+        }
+    }
+    for (j = 0; j < nb; j++) {
+        const VtxRun *b = &rb[j];
+        const int a = best[j];
+        if (a < 0 || owner[a] != j) {
+            if (a >= 0)
+                s_stats.mix_runs_lost++;
             for (k = 0; k < b->len; k++)
                 s_pair[b->start + k] = -1;
-            if (same_key >= 0)
-                i = same_key + 1;
             continue;
         }
         for (k = 0; k < b->len; k++) {
-            const int ia = ra[found].start + k;
+            const int ia = ra[a].start + k;
             s_pair[b->start + k] =
-                can_mix(&s_prev_vtx[ia], &f->vtx[b->start + k], &jumps, b->len <= 8) ? ia : -1;
+                can_mix(&s_prev_vtx[ia], &f->vtx[b->start + k], &jumps, b->len <= 8)
+                    ? (uv_same[j] ? ia : ia | PAIR_UV_MOVED) : -1;
         }
         paired += b->len;
-        i = found + 1;
+        if (!uv_same[j])
+            s_stats.mix_uv_moved += (uint32_t)b->len;
     }
     s_stats.mix_vertices += (uint32_t)f->nvtx;
     s_stats.mix_paired += (uint32_t)paired;
@@ -1181,13 +1238,19 @@ static void mix_at(const KhGxFrame *f, float t)
             *m = *b;
             continue;
         }
-        a = &s_prev_vtx[s_pair[i]];
+        a = &s_prev_vtx[s_pair[i] & ~PAIR_UV_MOVED];
         m->x = a->x + (b->x - a->x) * t;
         m->y = a->y + (b->y - a->y) * t;
         m->z = a->z + (b->z - a->z) * t;
         m->w = a->w + (b->w - a->w) * t;
-        m->s = a->s + (b->s - a->s) * t;
-        m->t = a->t + (b->t - a->t) * t;
+        if (s_pair[i] & PAIR_UV_MOVED) {
+            /* scrolled (and maybe wrapped round): mixed, it could run back across the texture */
+            m->s = b->s;
+            m->t = b->t;
+        } else {
+            m->s = a->s + (b->s - a->s) * t;
+            m->t = a->t + (b->t - a->t) * t;
+        }
         m->r = (uint8_t)(a->r + (((b->r - a->r) * ti + 128) >> 8));
         m->g = (uint8_t)(a->g + (((b->g - a->g) * ti + 128) >> 8));
         m->b = (uint8_t)(a->b + (((b->b - a->b) * ti + 128) >> 8));
