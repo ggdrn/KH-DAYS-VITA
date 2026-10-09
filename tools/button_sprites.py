@@ -89,9 +89,10 @@ VITA_SWAPPED = dict(VITA, A="cross", B="circle")
 # (x, y) of the symbol's top-left pixel in the NCGR, the button, the area cleared first
 # (x0, y0, x1, y1 inclusive) and its colour, the symbol's colour, its shadow's (or None)
 ICONS = []
-for i, b in enumerate("AXYB"):  # the shortcut buttons, 16 pixels, brown
-    x = 96 + i * 16
-    ICONS.append(((x + 5, 85), b, (x + 3, 85, x + 10, 90), 0xE, 0xA, 0xF))
+for i, b in enumerate("AXYB"):  # the shortcut buttons, 16 pixels, brown (black in the field's
+    x = 96 + i * 16              # palette): in the letters' own colour, no shadow (in the
+    ICONS.append(((x + 5, 85), b, (x + 3, 85, x + 10, 90), 0xE, 0xF, None))  # field's palette
+    # a shadow came out light, a second symbol over the first: 0.4.19)
 for i, b in enumerate("ABXY"):  # green, 8 pixels
     x = 208 + i * 8
     ICONS.append(((x + 1, 133), b, (x + 1, 133, x + 6, 137), 0x4, 0x2, None))
