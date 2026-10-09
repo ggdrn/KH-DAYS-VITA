@@ -9,6 +9,14 @@
 #include <math.h>
 #include <stdio.h>
 
+/* the port's redrawn textures (nitro/button_sprites.c): none on the host */
+int kh_button_texture(const unsigned char *texels, unsigned n, unsigned char *out);
+int kh_button_texture(const unsigned char *texels, unsigned n, unsigned char *out)
+{
+    (void)texels, (void)n, (void)out;
+    return 0;
+}
+
 uint8_t kh_ds_io[KH_IO_SIZE];
 volatile int kh_gpu3d_debug; /* hw/gpu3d.c on the Vita */
 

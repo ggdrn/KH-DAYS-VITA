@@ -4,6 +4,7 @@
  * (bank E for slots 0-3, F and G by their offset). The game only writes them through LCDC, so
  * the banks' home storage is current while they are mapped here. */
 #include "hw/textures.h"
+#include "nitro/button_sprites.h"
 
 #include "hw/io.h"
 #include "hw/vram.h"
@@ -296,11 +297,16 @@ void kh_tex_decode(uint32_t teximage, uint32_t pltt, uint32_t *out)
         decode_4x4(addr, pltt, w, h, out);
         return;
     }
+    uint8_t fixed[1024];
     p = tex_ptr(addr, &avail);
     if (tex_bytes(fmt, w, h) > avail) {
         memset(out, 0, n * 4);
         return;
     }
+    /* the port's own pixels over some of the game's (nitro/button_sprites.c: the Vita's
+     * buttons in the combo prompt) */
+    if (fmt == 1 && n == sizeof(fixed) && kh_button_texture(p, n, fixed))
+        p = fixed;
     if (fmt != 7) {
         const uint32_t base = pal_base(fmt, pltt), ne = pal_entries(fmt);
         for (i = 0; i < ne; i++)
