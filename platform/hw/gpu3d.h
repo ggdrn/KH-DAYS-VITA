@@ -33,8 +33,6 @@ void kh_gpu3d_prepare(const KhGxFrame *frame);
 extern volatile int kh_gpu3d_debug;
 /* halfway mixes shown so far (60 fps mode), for the frame-rate counter */
 extern volatile uint32_t kh_gpu3d_mixes;
-/* frames drawn into the 3D target (new frames and mixes), for the display's 30 fps hold */
-extern volatile uint32_t kh_gpu3d_draws;
 /* the display's VBlank count (game.c), for the 60 fps mix's timing; NULL: no interpolation */
 extern uint32_t (*kh_gpu3d_clock)(void);
 #define KH_GPU3D_DEBUG_MODES 4
@@ -66,6 +64,7 @@ typedef struct {
     /* of the paired vertices: in models whose texture coordinates moved (scrolling water,
      * sky), paired by place alone; and the runs left to B because a nearer one took their A */
     uint32_t mix_uv_moved, mix_runs_lost;
+    uint32_t mix_snapped; /* particle vertices left where B has them (a jump, or w <= 0) */
 } KhGpu3dStats;
 void kh_gpu3d_take_stats(KhGpu3dStats *out);
 

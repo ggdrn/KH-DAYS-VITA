@@ -108,7 +108,6 @@ static uint32_t s_last_serial;
 static KhGpu3dStats s_stats;
 volatile int kh_gpu3d_debug;
 volatile uint32_t kh_gpu3d_mixes;
-volatile uint32_t kh_gpu3d_draws;
 
 /* ---- texture cache --------------------------------------------------------------------- */
 
@@ -795,7 +794,6 @@ static unsigned draw_frame(const KhGxFrame *f, const KhGxVertex *vtx)
     int i, nidx = 0, first = 0, have = 0;
 
     s_stats.disp3dcnt = f->disp3dcnt;
-    kh_gpu3d_draws++;
     t0 = sceKernelGetProcessTimeWide();
     frame_setup(f);
     if (s_dump_request) {
@@ -1078,27 +1076,36 @@ static int vertex_runs(const KhGxVertex *v, int n, VtxRun *out)
 }
 
 /* Whether a vertex can move from a to b in between (see mix_vertices); counts the long jumps. */
-static int can_mix(const KhGxVertex *a, const KhGxVertex *b, int *jumps, int small)
+static int can_mix(const KhGxVertex *a, const KhGxVertex *b, int *jumps, int particle)
 {
     /* a vertex that cannot be mixed: one side of the camera to the other (an in-between w near
      * 0 projects it off to infinity) or a long jump (a particle reborn elsewhere with the same
      * tag) is where the new frame has it. Mixed, a Heartless's death burst once drew a polygon
      * over half the screen (0.1.6) */
-    /* Only small runs (particles, sprites) are judged so: a large model's vertex near or
-     * behind the camera (a floor, the sky) has a screen position that runs off to infinity,
-     * and was taken for a jump while its neighbours were mixed: the floor and the sky shook
-     * as the camera turned (0.4.7). Mixed in clip space, such a vertex is the mix of the two
+    /* Only particles are judged so: small translucent runs. A vertex of a large model near or
+     * behind the camera (a floor, the sky) has a screen position that runs off to infinity, and
+     * was taken for a jump while its neighbours were mixed: the floor and the sky shook as the
+     * camera turned (0.4.7). 0.4.8 still judged every small run, and the scenery's small
+     * pieces (a material on a few polygons) near the camera were left at 30 fps among the rest
+     * at 60, and shook (0.4.9). Mixed in clip space, such a vertex is the mix of the two
      * frames' matrices, which the GPU clips like any other. */
     float dx, dy, d2;
-    if (!(a->w > 0 && b->w > 0))
-        return !small;
+    if (!(a->w > 0 && b->w > 0)) {
+        if (particle)
+            s_stats.mix_snapped++;
+        return !particle;
+    }
     dx = a->x / a->w - b->x / b->w, dy = a->y / a->w - b->y / b->w;
     d2 = dx * dx + dy * dy;
     if (d2 > 1.0f && a->w < 4.0f * b->w && b->w < 4.0f * a->w) /* half the screen at once */
         (*jumps)++;
-    if (!small)
+    if (!particle)
         return 1;
-    return !(d2 > 0.25f || a->w > 4.0f * b->w || b->w > 4.0f * a->w);
+    if (d2 > 0.25f || a->w > 4.0f * b->w || b->w > 4.0f * a->w) {
+        s_stats.mix_snapped++;
+        return 0;
+    }
+    return 1;
 }
 
 /* the same model in both frames: its texture coordinates do not move (first, middle, last) */
@@ -1147,6 +1154,11 @@ static float run_size(const KhGxVertex *v, int len)
  * texture coordinates moved is paired only within its own size and takes B's coordinates.
  * Not mixed: a change of the 3D's settings, nothing paired, or half of the paired vertices
  * jumping half the screen (a camera cut). */
+static inline int is_translucent(const KhGxVertex *v)
+{
+    return v->a > 0 && v->a < 31;
+}
+
 #define RUN_WINDOW 64
 #define PAIR_UV_MOVED 0x40000000 /* in s_pair: the place mixed, B's texture coordinates */
 static int32_t s_pair[KH_GX_MAX_VERTICES];
@@ -1205,10 +1217,12 @@ static int mix_vertices(const KhGxFrame *f)
                 s_pair[b->start + k] = -1;
             continue;
         }
+        /* a particle: a few vertices of a translucent polygon (alpha 1-30) */
+        const int particle = b->len <= 8 && is_translucent(&f->vtx[b->start]);
         for (k = 0; k < b->len; k++) {
             const int ia = ra[a].start + k;
             s_pair[b->start + k] =
-                can_mix(&s_prev_vtx[ia], &f->vtx[b->start + k], &jumps, b->len <= 8)
+                can_mix(&s_prev_vtx[ia], &f->vtx[b->start + k], &jumps, particle)
                     ? (uv_same[j] ? ia : ia | PAIR_UV_MOVED) : -1;
         }
         paired += b->len;
@@ -1336,8 +1350,8 @@ void kh_gpu3d_forget_previous(void)
 }
 
 /* Without interpolation (30 fps) a new frame B is shown one display frame after it comes,
- * with its 2D, drawn over two display frames (game.c); in dual 3D (frames for the two screens
- * in turn) at once. */
+ * with its 2D, drawn over two display frames (game.c); at once in dual 3D (frames for the two
+ * screens in turn) and with the screen at 30 fps (each display frame a game frame). */
 unsigned kh_gpu3d_render(const KhGxFrame *f)
 {
     apply_requests();

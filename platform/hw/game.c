@@ -211,7 +211,7 @@ static int drawn_screens(const Frame2d *f, int a_on_top)
 static uint64_t s_t3d_total, s_join_total, s_present_total;
 static uint64_t s_present_cpu, s_help_cpu, s_loop_cpu; /* the display thread's CPU time */
 static uint32_t s_2d_async; /* 2D pictures drawn over two Vita frames (60 fps mode) */
-static uint32_t s_held;     /* display frames held without a swap (the screen at 30 fps) */
+static uint32_t s_locked;   /* display frames swapped two VBlanks apart (the screen at 30 fps) */
 static uint32_t s_t3d_max, s_join_max, s_present_max, s_prep_max; /* the worst frame's */
 
 static inline void stage_max(uint32_t *max, uint64_t us)
@@ -502,7 +502,16 @@ static void present(void)
         toggle_seq = s_toggle_seq;
         a_on_top = s_toggle_top;
     }
-    kh_gpu3d_direct = dual;
+    /* 30 fps: the Vita's screen at 30 too, each swap shown for two VBlanks (the display
+     * queue's own wait, exact; 0.4.9 held every other display frame by the VBlank thread's
+     * count, which comes a little after the VBlank itself: one swap in three VBlanks, 20 a
+     * second). Each display frame is then a new game frame, its 3D shown at once and its 2D
+     * drawn with it (33 ms to do both). Not in dual 3D (a screen per VBlank) nor with the
+     * port menu open. */
+    const int lock30 = !kh_config.frame_interpolation && !dual && !portmenu_is_open();
+    video_set_swap_interval(lock30 ? 2 : 1);
+    s_locked += (uint32_t)lock30;
+    kh_gpu3d_direct = dual || lock30;
     {
         /* a new dual-3D scene: the screen memories are the last scene's */
         static int was_dual;
@@ -662,11 +671,11 @@ static void present(void)
          * helper, on the game's core, can take a share of it while the game waits for its
          * next frame. At 30 fps too since 0.4.0: joined at once there, the display thread
          * waited about 4 ms a frame for it (0.1.27's log) */
-        if (f2d.neng && !dual)
+        if (f2d.neng && !dual && !lock30)
             workers_begin_spare(render_chunk, BANDS * f2d.neng, &f2d);
         else
             workers_begin(render_chunk, BANDS * f2d.neng, &f2d);
-        if (f2d.neng && !dual) {
+        if (f2d.neng && !dual && !lock30) {
             async_2d = 1;
             async_top = a_on_top;
             s_2d_async++;
@@ -805,29 +814,7 @@ static void present(void)
         const uint64_t c = threadstat_self_us();
         const uint32_t *top = upload2d && (upload_mask & 1) ? s_top : NULL;
         const uint32_t *bottom = upload2d && (upload_mask & 2) ? s_bottom : NULL;
-        /* 30 fps: the Vita's screen at 30 too. A new game frame is shown over two display
-         * frames, and the second was swapped again all the same: 60 swaps a second for 30
-         * pictures, the frame-rate counters showing the screen short of 60. A picture is now
-         * held for two VBlanks (the screens' uploads go ahead, shown with the next swap); one
-         * VBlank only when it brings a new 3D frame after a picture without one, which puts
-         * the swaps back in step with the game's frames. Not in dual 3D (a screen per VBlank)
-         * nor with the port menu open. */
-        static uint32_t shown_vb, shown_draws;
-        static int shown_new;
-        const uint32_t draws = kh_gpu3d_draws, since = s_vblanks - shown_vb;
-        const int new3d = draws != shown_draws;
-        if (!kh_config.frame_interpolation && !dual && !portmenu_is_open() && since < 2 &&
-            !(since == 1 && new3d && !shown_new)) {
-            video_upload_screens(top, bottom);
-            sceDisplayWaitVblankStart();
-            s_held++;
-        } else {
-            shown_vb = s_vblanks;
-            shown_new = new3d;
-            shown_draws = draws;
-            /* unchanged screens are not uploaded again */
-            video_present(top, bottom);
-        }
+        video_present(top, bottom);
         if (dual)
             s_toggle_done = toggle_seq;
         t = sceKernelGetProcessTimeWide() - t;
@@ -866,9 +853,12 @@ static void present(void)
 
 static void sample_input(void);
 
+/* The 60 fps mix's clock: the display's own VBlank count. s_vblanks comes from the VBlank
+ * thread a little after the VBlank (after the input), and the display frame right after it
+ * now and then read the last one's count: two frames at one point of the mix, then a jump. */
 static uint32_t display_vblanks(void)
 {
-    return s_vblanks;
+    return (uint32_t)sceDisplayGetVcount();
 }
 
 /* "60 FPS (jogo 30)": the 3D frames shown per second (the game's own and the mixed ones in
@@ -962,8 +952,8 @@ static int vblank_thread(SceSize args, void *argp)
     (void)argp;
     for (;;) {
         sceDisplayWaitVblankStart();
-        sample_input();
         s_vblanks++;
+        sample_input();
         /* the port menu holds the game: no VBlank reaches it, so nothing advances */
         if (portmenu_is_open())
             continue;
@@ -1227,10 +1217,10 @@ void kh_game_run(void)
                         (unsigned)(s_present_total / 600), (unsigned)s_2d_skipped,
                         (unsigned)s_2d_async, busy / 10, busy % 10);
                     s_2d_async = 0;
-                    if (s_held)
-                        LOG("display: screen at 30 fps: %u of 600 display frames held, %u "
-                            "swaps a second", (unsigned)s_held, (unsigned)((600 - s_held) / 10));
-                    s_held = 0;
+                    if (s_locked)
+                        LOG("display: screen at 30 fps (two VBlanks a swap) in %u of 600 "
+                            "display frames", (unsigned)s_locked);
+                    s_locked = 0;
                     {
                         uint64_t sc, sw, su;
                         const uint64_t all = threadstat_self_us();
@@ -1329,7 +1319,9 @@ void kh_game_run(void)
                     if (m[0])
                         LOG("gpu3d: 10 s: of the paired vertices %u in models whose texture "
                             "coordinates moved; %u runs left unmixed, a nearer one took their "
-                            "pair", (unsigned)rs.mix_uv_moved, (unsigned)rs.mix_runs_lost);
+                            "pair; %u particle vertices not mixed (a jump)",
+                            (unsigned)rs.mix_uv_moved, (unsigned)rs.mix_runs_lost,
+                            (unsigned)rs.mix_snapped);
                 }
                 if (rs.textures_decoded)
                     LOG("gpu3d: 10 s: %u textures decoded (%u live), %u ms decoding in parallel, "

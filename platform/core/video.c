@@ -1027,8 +1027,6 @@ static void draw_panels(void)
     }
 }
 
-/* A screen's new picture into the next texture of its ring, without drawing: shown by the
- * next video_present (the 30 fps display holds a picture for two VBlanks, game.c). */
 static void upload_screen(int i, const uint32_t *src)
 {
     const uint64_t t = sceKernelGetProcessTimeWide();
@@ -1040,13 +1038,13 @@ static void upload_screen(int i, const uint32_t *src)
     s_upload_total += (uint32_t)(sceKernelGetProcessTimeWide() - t);
 }
 
-void video_upload_screens(const uint32_t *top, const uint32_t *bottom)
+void video_set_swap_interval(int vblanks)
 {
-    s_upload_us = 0;
-    if (top)
-        upload_screen(0, top);
-    if (bottom)
-        upload_screen(1, bottom);
+    static int current = 1;
+    if (vblanks != current) {
+        current = vblanks;
+        eglSwapInterval(NULL, vblanks);
+    }
 }
 
 void video_present(const uint32_t *top, const uint32_t *bottom)

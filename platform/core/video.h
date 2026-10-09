@@ -114,8 +114,8 @@ unsigned video_build_program(const char *vs, const char *fs, const char *const *
                              int nattribs);
 
 /* top/bottom: 256x192 RGBA8888 pixels. */
-/* the screens' new pictures uploaded without a swap: shown by the next video_present */
-void video_upload_screens(const uint32_t *top, const uint32_t *bottom);
+/* each swap shown for this many VBlanks: 1 (60 fps), 2 (the screen at 30 fps) */
+void video_set_swap_interval(int vblanks);
 void video_present(const uint32_t *top, const uint32_t *bottom);
 
 #endif
