@@ -85,7 +85,7 @@ static const Item s_system[] = {
     { IT_LANGUAGE, 0, "Language", "The game's language. Applied the next time it starts." },
     { IT_VOLUME, 0, "Volume", NULL },
     { IT_FFWD, 0, "Fast-forward speed", "L+R+Square turns fast-forward on and off." },
-    { IT_MISSION, 0, "Mission balance", "Balanced: half the HP, story damage by difficulty." },
+    { IT_MISSION, 0, "Mission balance", "Balanced: HP x2.35 (not x3), story damage taken." },
     { IT_DEFAULTS, 0, "Restore defaults", "Press Cross to set every option to its default." },
     { IT_CLOSE, 0, "Save and return", "Press Cross (or L+R+Select) to save and go back." },
 };

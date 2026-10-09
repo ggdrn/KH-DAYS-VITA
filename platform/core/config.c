@@ -141,8 +141,8 @@ void config_save(void)
     fprintf(f, "# Fast-forward speed, switched on and off with L+R+Square: 2 or 3.\n"
                "fast_forward = %d\n\n", kh_config.fast_forward);
     fprintf(f, "# Mission Mode's enemies: 0 as the game has them (made for up to four players,\n"
-               "# solo too: three times the HP, harder hits), 1 balanced (half that HP, and the\n"
-               "# damage taken as in the story, by the save's difficulty; Standard for a guest).\n"
+               "# solo too: three times the HP, harder hits), 1 balanced (2.35 times the HP, and\n"
+               "# the damage taken as in the story, by the save's difficulty; Standard for a guest).\n"
                "mission_balance = %d\n\n", kh_config.mission_balance);
     fprintf(f, "# Field HUD size, 60 to 100 %%: the command deck, the HP gauge with the face and\n"
                "# the chain each drawn smaller in their corner (and the single screen's map and\n"
