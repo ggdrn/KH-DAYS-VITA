@@ -6,6 +6,7 @@
 #include "threadstat.h"
 
 #include <psp2/audioout.h>
+#include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
 
 /* 256 frames: 5.3 ms, about one driver frame */
@@ -18,6 +19,15 @@ static void to_arm9(uint32_t word)
     kh_arm7_reply(7, word, 0); /* an alarm: the ARM9's PxiFifoCallback hands it to its handler */
 }
 
+static uint64_t clock_us(void)
+{
+    return sceKernelGetProcessTimeWide();
+}
+
+/* the thread's own run time inside sceAudioOutOutput (us): with the rest of its run time,
+ * what the render costs and what the output does (audio_out_take_stats) */
+static volatile uint32_t s_output_run_us, s_output_wall_us;
+
 static int audio_thread(SceSize args, void *argp)
 {
     static int16_t buf[2][GRAIN * 2];
@@ -25,17 +35,30 @@ static int audio_thread(SceSize args, void *argp)
     (void)args;
     (void)argp;
     for (;;) {
+        uint64_t r, w;
         snd7_render(buf[k], GRAIN);
+        r = threadstat_self_us();
+        w = sceKernelGetProcessTimeWide();
         sceAudioOutOutput(s_port, buf[k]);
+        s_output_run_us += (uint32_t)(threadstat_self_us() - r);
+        s_output_wall_us += (uint32_t)(sceKernelGetProcessTimeWide() - w);
         k ^= 1;
     }
     return 0;
+}
+
+void audio_out_take_stats(uint32_t *output_run_us, uint32_t *output_wall_us)
+{
+    *output_run_us = s_output_run_us;
+    *output_wall_us = s_output_wall_us;
+    s_output_run_us = s_output_wall_us = 0;
 }
 
 void audio_out_init(void)
 {
     SceUID th;
     snd7_send_to_arm9 = to_arm9;
+    snd7_clock_us = clock_us;
     s_port = sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_MAIN, GRAIN, SND7_RATE,
                                  SCE_AUDIO_OUT_MODE_STEREO);
     if (s_port < 0) {

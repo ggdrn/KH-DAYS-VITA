@@ -1328,6 +1328,14 @@ void kh_game_run(void)
                         "at most %u in one frame", (unsigned)rs.textures_decoded,
                         (unsigned)rs.textures_live, (unsigned)(rs.prepare_us / 1000),
                         (unsigned)rs.burst_max);
+                if (rs.hashed)
+                    LOG("gpu3d: 10 s: textures checked %u in %u ms, decoded in %u ms, uploaded in "
+                        "%u ms; worst frame: %u checked in %u us, %u decoded in %u us, uploaded "
+                        "in %u us", (unsigned)rs.hashed, (unsigned)(rs.hash_us / 1000),
+                        (unsigned)(rs.decode_us / 1000), (unsigned)(rs.upload_us / 1000),
+                        (unsigned)rs.worst_hashed, (unsigned)rs.worst_hash_us,
+                        (unsigned)rs.worst_decoded, (unsigned)rs.worst_decode_us,
+                        (unsigned)rs.worst_upload_us);
                 if (kh_log_verbose && (rs.batches || rs.textures_decoded)) {
                     LOG("gpu3d: 10 s: %u us drawing, %u batches, %u textures decoded (%u live), "
                         "%u polys skipped", (unsigned)rs.render_us, (unsigned)rs.batches,
@@ -1361,7 +1369,18 @@ void kh_game_run(void)
             }
             {
                 Snd7Stats ss;
+                uint32_t out_run, out_wall;
                 snd7_take_stats(&ss);
+                audio_out_take_stats(&out_run, &out_wall);
+                /* the audio thread's time by step (its run time is the cpu line's "audio") */
+                if (ss.renders)
+                    LOG("audio: 10 s: render %u ms (driver frames %u, mixing %u, limiter %u), "
+                        "%u channels mixed on average; in sceAudioOutOutput %u ms run of %u ms",
+                        (unsigned)((ss.frame_us + ss.mix_us + ss.out_us) / 1000),
+                        (unsigned)(ss.frame_us / 1000), (unsigned)(ss.mix_us / 1000),
+                        (unsigned)(ss.out_us / 1000),
+                        (unsigned)(ss.samples ? ss.channel_samples / ss.samples : 0),
+                        (unsigned)(out_run / 1000), (unsigned)(out_wall / 1000));
                 if (ss.lists)
                     LOGV("snd: 10 s: %u command lists (%u commands), %u sequences started, %u notes, "
                         "%u alarms, %u unknown commands, %u unknown sequence ops", (unsigned)ss.lists,

@@ -14,6 +14,7 @@
 #include <string.h>
 
 void (*snd7_send_to_arm9)(uint32_t word);
+uint64_t (*snd7_clock_us)(void);
 uintptr_t snd7_ptr_base;
 
 /* a 32-bit DS-side pointer (command arguments, the links inside banks): the address itself on
@@ -1586,9 +1587,13 @@ static inline float soft_limit(float x)
 void snd7_render(int16_t *out, int frames)
 {
     const double dt = 1.0 / SND7_RATE;
+    uint64_t (*const clock)(void) = snd7_clock_us;
+    uint64_t t = clock ? clock() : 0, t1;
     int n = 0;
     tables_init();
     drain_queue();
+    s_stats.renders++;
+    s_stats.samples += (uint32_t)frames;
     while (n < frames) {
         /* run driver frames due, then mix until the next one */
         int chunk, i, k;
@@ -1597,6 +1602,11 @@ void snd7_render(int16_t *out, int frames)
             s_frame_acc += 1.0 / FRAME_HZ;
         }
         alarms_run();
+        if (clock) {
+            t1 = clock();
+            s_stats.frame_us += (uint32_t)(t1 - t);
+            t = t1;
+        }
         chunk = (int)ceil(s_frame_acc / dt);
         if (chunk < 1)
             chunk = 1;
@@ -1616,6 +1626,12 @@ void snd7_render(int16_t *out, int frames)
                 if (!c->hw_on || (!c->data && c->format != FMT_PSG))
                     continue;
                 mix_channel(c, al, ar, chunk, (uint64_t)(c->rate * dt * POS_ONE + 0.5));
+                s_stats.channel_samples += (uint32_t)chunk;
+            }
+            if (clock) {
+                t1 = clock();
+                s_stats.mix_us += (uint32_t)(t1 - t);
+                t = t1;
             }
             for (k = 0; k < chunk; k++) {
                 int sl, sr;
@@ -1630,6 +1646,11 @@ void snd7_render(int16_t *out, int frames)
         n += chunk;
         s_time += chunk * dt;
         s_frame_acc -= chunk * dt;
+        if (clock) {
+            t1 = clock();
+            s_stats.out_us += (uint32_t)(t1 - t);
+            t = t1;
+        }
     }
 }
 

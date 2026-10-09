@@ -56,6 +56,10 @@ typedef struct {
     uint32_t depth_equal; /* polygons drawn with the depth-equal test */
     uint32_t tex_wanted, tex_none; /* polygons with a texture format; of them drawn without */
     uint32_t prepare_us, burst_max; /* parallel texture decoding: time, most in one frame */
+    /* kh_gpu3d_prepare by step: entries hashed again and the time; decoding and uploads;
+     * the worst frame's steps and counts */
+    uint32_t hashed, hash_us, decode_us, upload_us;
+    uint32_t worst_hash_us, worst_decode_us, worst_upload_us, worst_hashed, worst_decoded;
     uint32_t interpolated; /* frames shown after a halfway mix (60 fps interpolation) */
     /* new frames by what came of their mix: done, dual 3D, the previous one shown once only,
      * the previous one's own frame still to show, none before, 3D settings changed, nothing

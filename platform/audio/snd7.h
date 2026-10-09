@@ -35,9 +35,16 @@ extern volatile float snd7_port_volume;
 /* Hooks the host provides: deliver a word to the ARM9 on PXI tag 7 (alarms). */
 extern void (*snd7_send_to_arm9)(uint32_t word);
 
+/* A microsecond clock for the render's own timing (the log), NULL for none (tools/snd_test). */
+extern uint64_t (*snd7_clock_us)(void);
+
 typedef struct {
     uint32_t lists, commands, notes, seq_starts, alarms, voices_max;
     uint32_t unknown_cmd, unknown_seq;
+    /* snd7_render by step (us): the driver's frames (sequencer, envelopes, commands), the
+     * channels' mixing, the limiter and the conversion; samples rendered and channels mixed
+     * (one channel over one chunk counts its samples) */
+    uint32_t frame_us, mix_us, out_us, samples, channel_samples, renders;
 } Snd7Stats;
 void snd7_take_stats(Snd7Stats *out);
 

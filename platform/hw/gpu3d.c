@@ -209,7 +209,26 @@ static int texels_smooth(uint32_t *px, int w, int h)
     return cutout;
 }
 
-/* the decoded texels into the entry's GL texture */
+/* What a texture's texels are (tex_classify): every one opaque; none partly clear. */
+#define TEX_OPAQUE 1
+#define TEX_CUTOUT 2
+
+/* The texels' kind, and with the smoothed filter their clear texels coloured (texels_smooth):
+ * on the decoding threads, not in tex_put on the display's */
+static int tex_classify(uint32_t *px, int w, int h)
+{
+    int i, kind = TEX_OPAQUE;
+    for (i = 0; i < w * h; i++)
+        if ((px[i] >> 24) != 0xff) {
+            kind = 0;
+            break;
+        }
+    if (kh_config.texture_filter && texels_smooth(px, w, h))
+        kind |= TEX_CUTOUT;
+    return kind;
+}
+
+/* the decoded texels into the entry's GL texture; kind from tex_classify */
 static void tex_put(TexEntry *e, uint32_t teximage, const uint32_t *px, int cutout)
 {
     const int w = kh_tex_width(teximage), h = kh_tex_height(teximage);
@@ -232,16 +251,8 @@ static void tex_put(TexEntry *e, uint32_t teximage, const uint32_t *px, int cuto
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, ws);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wt);
     e->ws = ws, e->wt = wt, e->clamped = 0;
-    {
-        int i;
-        e->opaque = 1;
-        for (i = 0; i < w * h; i++)
-            if ((px[i] >> 24) != 0xff) {
-                e->opaque = 0;
-                break;
-            }
-    }
-    e->cutout = cutout ? 1.0f : 0.0f;
+    e->opaque = (cutout & TEX_OPAQUE) != 0;
+    e->cutout = (cutout & TEX_CUTOUT) ? 1.0f : 0.0f;
     e->sx = 1.0f / (float)w;
     e->sy = 1.0f / (float)h;
     s_stats.textures_decoded++;
@@ -259,8 +270,7 @@ static void tex_upload(TexEntry *e, uint32_t teximage, uint32_t pltt)
     }
     kh_tex_decode(teximage, pltt, s_decode);
     tex_put(e, teximage, s_decode,
-            kh_config.texture_filter
-                ? texels_smooth(s_decode, kh_tex_width(teximage), kh_tex_height(teximage)) : 0);
+            tex_classify(s_decode, kh_tex_width(teximage), kh_tex_height(teximage)));
 }
 
 /* Textures to decode before the frame is drawn (kh_gpu3d_prepare): a burst of new ones (a
@@ -286,8 +296,7 @@ static void decode_job(int i, void *arg)
     (void)arg;
     TexJob *j = &s_jobs[i];
     kh_tex_decode(j->teximage, j->pltt, j->px);
-    j->cutout = kh_config.texture_filter
-                    ? texels_smooth(j->px, kh_tex_width(j->teximage), kh_tex_height(j->teximage)) : 0;
+    j->cutout = tex_classify(j->px, kh_tex_width(j->teximage), kh_tex_height(j->teximage));
 }
 
 /* the upload, or a place in the batch decoded by kh_gpu3d_prepare */
@@ -306,14 +315,16 @@ static void tex_refresh(TexEntry *e, uint32_t teximage, uint32_t pltt)
     tex_upload(e, teximage, pltt);
 }
 
-/* The cache entry for a polygon's texture, decoded or re-decoded when its VRAM changed. */
-static TexEntry *tex_get(uint32_t teximage, uint32_t pltt)
+/* The cache entry for a polygon's texture (created empty if new), marked used this frame;
+ * *check says whether its VRAM bytes must be hashed again (tex_checked). */
+static TexEntry *tex_find(uint32_t teximage, uint32_t pltt, int *check)
 {
     const uint32_t ki = tex_key_img(teximage);
     const uint32_t kp = kh_tex_format(teximage) == 7 ? 0 : pltt;
     uint32_t j = tex_slot(ki, kp);
     TexEntry *e;
 
+    *check = 0;
     while (s_tex[j].key_img && (s_tex[j].key_img != ki || s_tex[j].key_pltt != kp))
         j = (j + 1) & (TEX_SLOTS - 1);
     e = &s_tex[j];
@@ -334,17 +345,33 @@ static TexEntry *tex_get(uint32_t teximage, uint32_t pltt)
         (e->gen != s_tex_gen || ((uint32_t)(e - s_tex) & 31) == (s_frame & 31) ||
          kh_gpu3d_debug == 2)) {
         /* only after a bank A-G was remapped can the bytes have changed */
-        uint32_t hv = kh_tex_hash(teximage, kp);
         e->gen = s_tex_gen;
         e->checked = s_frame;
-        if (hv != e->hash || !e->sx) {
-            e->hash = hv;
-            /* the game drawing while it uploads: VRAM still empty where a texture that is
-             * already decoded lives, keep that one rather than flash a blank one */
-            if (!(e->sx && kh_tex_source_empty(teximage)))
-                tex_refresh(e, teximage, kp);
-        }
+        *check = 1;
     }
+    return e;
+}
+
+/* An entry's VRAM hashed again (hv): decoded again when the bytes changed. */
+static void tex_checked(TexEntry *e, uint32_t teximage, uint32_t hv)
+{
+    const uint32_t kp = e->key_pltt;
+    if (hv != e->hash || !e->sx) {
+        e->hash = hv;
+        /* the game drawing while it uploads: VRAM still empty where a texture that is
+         * already decoded lives, keep that one rather than flash a blank one */
+        if (!(e->sx && kh_tex_source_empty(teximage)))
+            tex_refresh(e, teximage, kp);
+    }
+}
+
+/* The cache entry for a polygon's texture, decoded or re-decoded when its VRAM changed. */
+static TexEntry *tex_get(uint32_t teximage, uint32_t pltt)
+{
+    int check;
+    TexEntry *e = tex_find(teximage, pltt, &check);
+    if (e && check)
+        tex_checked(e, teximage, kh_tex_hash(teximage, e->key_pltt));
     return e;
 }
 
@@ -746,40 +773,93 @@ static void frame_setup(const KhGxFrame *f)
     s_tex_gen = kh_vram_tex_generation() + kh_tex_map_slots();
 }
 
+/* The entries whose VRAM is hashed again this frame (kh_gpu3d_prepare), hashed on both
+ * cores: after a bank is remapped (a new area) every texture in view is, and one after the
+ * other on the display's thread it was a good part of the new area's first frame. */
+typedef struct {
+    TexEntry *e;
+    uint32_t teximage, hash;
+} HashJob;
+static HashJob s_hash_jobs[TEX_SLOTS];
+
+static void hash_job(int i, void *arg)
+{
+    HashJob *j = &((HashJob *)arg)[i];
+    j->hash = kh_tex_hash(j->teximage, j->e->key_pltt);
+}
+
 void kh_gpu3d_prepare(const KhGxFrame *f)
 {
     const int textures_on = f && (f->disp3dcnt & 1);
-    int i;
+    int i, nhash = 0;
+    uint64_t t0, t1, t2, t3;
 
     if (!s_prog || !f || !textures_on || f->serial == s_last_serial || f->serial == s_setup_serial)
         return;
+    t0 = sceKernelGetProcessTimeWide();
     frame_setup(f);
     if (!s_arena)
         s_arena = malloc(DEFER_ARENA);
+    /* the frame's textures looked up, those to check listed */
+    for (i = 0; i < f->npoly; i++) {
+        const KhGxPolygon *p = &f->poly[i];
+        int check;
+        TexEntry *e;
+        if (!((p->attr >> 16) & 31) || !kh_tex_format(p->teximage))
+            continue;
+        e = tex_find(p->teximage, p->pltt, &check);
+        if (e && check) {
+            s_hash_jobs[nhash].e = e;
+            s_hash_jobs[nhash].teximage = p->teximage;
+            nhash++;
+        }
+    }
+    /* hashed on both cores */
+    if (nhash > 8) {
+        workers_begin(hash_job, nhash, s_hash_jobs);
+        workers_join();
+    } else {
+        for (i = 0; i < nhash; i++)
+            hash_job(i, s_hash_jobs);
+    }
+    t1 = sceKernelGetProcessTimeWide();
+    /* the changed ones decoded, on both cores too */
     s_njobs = 0;
     s_arena_used = 0;
     s_deferring = 1;
-    for (i = 0; i < f->npoly; i++) {
-        const KhGxPolygon *p = &f->poly[i];
-        if (((p->attr >> 16) & 31) && kh_tex_format(p->teximage))
-            tex_get(p->teximage, p->pltt);
-    }
+    for (i = 0; i < nhash; i++)
+        tex_checked(s_hash_jobs[i].e, s_hash_jobs[i].teximage, s_hash_jobs[i].hash);
     s_deferring = 0;
-    if (!s_njobs)
+    s_stats.hashed += (uint32_t)nhash;
+    s_stats.hash_us += (uint32_t)(t1 - t0);
+    if (!s_njobs) {
+        if (t1 - t0 > s_stats.worst_hash_us)
+            s_stats.worst_hash_us = (uint32_t)(t1 - t0);
         return;
-    {
-        const uint64_t t = sceKernelGetProcessTimeWide();
-        if (s_njobs > 1) {
-            workers_begin(decode_job, s_njobs, NULL);
-            workers_join();
-        } else {
-            decode_job(0, NULL);
-        }
-        for (i = 0; i < s_njobs; i++)
-            tex_put(s_jobs[i].e, s_jobs[i].teximage, s_jobs[i].px, s_jobs[i].cutout);
-        s_stats.prepare_us += (uint32_t)(sceKernelGetProcessTimeWide() - t);
-        if ((uint32_t)s_njobs > s_stats.burst_max)
-            s_stats.burst_max = (uint32_t)s_njobs;
+    }
+    if (s_njobs > 1) {
+        workers_begin(decode_job, s_njobs, NULL);
+        workers_join();
+    } else {
+        decode_job(0, NULL);
+    }
+    t2 = sceKernelGetProcessTimeWide();
+    /* the GL uploads, on this thread */
+    for (i = 0; i < s_njobs; i++)
+        tex_put(s_jobs[i].e, s_jobs[i].teximage, s_jobs[i].px, s_jobs[i].cutout);
+    t3 = sceKernelGetProcessTimeWide();
+    s_stats.prepare_us += (uint32_t)(t3 - t1);
+    s_stats.decode_us += (uint32_t)(t2 - t1);
+    s_stats.upload_us += (uint32_t)(t3 - t2);
+    if ((uint32_t)s_njobs > s_stats.burst_max)
+        s_stats.burst_max = (uint32_t)s_njobs;
+    if (t3 - t0 > s_stats.worst_hash_us + s_stats.worst_decode_us + s_stats.worst_upload_us) {
+        /* the worst frame's three parts */
+        s_stats.worst_hash_us = (uint32_t)(t1 - t0);
+        s_stats.worst_decode_us = (uint32_t)(t2 - t1);
+        s_stats.worst_upload_us = (uint32_t)(t3 - t2);
+        s_stats.worst_hashed = (uint32_t)nhash;
+        s_stats.worst_decoded = (uint32_t)s_njobs;
     }
     s_njobs = 0;
 }
