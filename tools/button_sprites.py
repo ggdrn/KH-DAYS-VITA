@@ -118,11 +118,16 @@ for i, b in enumerate("AB"):  # white, 8 pixels
 # often a shadow. Found by shape in these files (sprites of `wide` tiles a row, 1D mapping)
 # and in a frame dump of the panel screen (0.4.23: the X by the scroll bar and on the Stats
 # button, the green Y). The letter becomes the Vita's symbol, the circle's own colours kept.
+# (button, the circle's row the letter starts on): the letter's rows, ' ' cut out. The fonts'
+# letters fill rows 2-6; the camp menu's help lines (START Submenu, A Grab Panel B Exit) have
+# a taller A and B, rows 1-6 (0.4.24's frame dump)
 LETTERS = {
-    "A": ["#### ####", "### # ###", "### # ###", "##     ##", "## ### ##"],
-    "B": ["##    ###", "## ### ##", "##    ###", "## ### ##", "##    ###"],
-    "X": ["## ### ##", "### # ###", "#### ####", "### # ###", "## ### ##"],
-    "Y": ["## ### ##", "### # ###", "#### ####", "#### ####", "#### ####"],
+    ("A", 2): ["#### ####", "### # ###", "### # ###", "##     ##", "## ### ##"],
+    ("B", 2): ["##    ###", "## ### ##", "##    ###", "## ### ##", "##    ###"],
+    ("X", 2): ["## ### ##", "### # ###", "#### ####", "### # ###", "## ### ##"],
+    ("Y", 2): ["## ### ##", "### # ###", "#### ####", "#### ####", "#### ####"],
+    ("A", 1): ["#### ####", "### # ###", "## ### ##", "##     ##", "## ### ##", "## ### ##"],
+    ("B", 1): ["##    ###", "## ### ##", "##    ###", "## ### ##", "## ### ##", "##    ###"],
 }
 # the symbols in the font's style (nitro/button_glyphs.c): rows 0-8 of the 9x9 circle
 DESIGNS = {
@@ -181,10 +186,12 @@ def find_letters(sp, wide):
     hits, seen = [], set()
     for i in range(0, sp.n - 2 * wide + 1):
         for k, rows in LETTERS.items():
-            D = [(x, y) for y in range(5) for x in range(9) if rows[y][x] == " "]
-            C = [(x, y) for y in range(5) for x in range(1, 8) if (x, y) not in D
+            n = len(rows)
+            D = [(x, y) for y in range(n) for x in range(9) if rows[y][x] == " "
+                 and not (k[1] == 1 and y == 0 and x in (0, 8))]
+            C = [(x, y) for y in range(n) for x in range(1, 8) if (x, y) not in D
                  and (x - 1, y - 1) not in D and (x - 1, y) not in D and (x, y - 1) not in D]
-            for oy in range(2, 16 - 7):
+            for oy in range(k[1], 16 - (8 - k[1]) + 1):
                 for ox in range(0, wide * 8 - 8):
                     vd = {sp.get(i, wide, ox + x, oy + y) for x, y in D}
                     if len(vd) != 1:
@@ -196,18 +203,19 @@ def find_letters(sp, wide):
                     key = (t0, ox % 8, oy % 8, k)
                     if key not in seen:
                         seen.add(key)
-                        hits.append((i, ox, oy - 2, k))
+                        hits.append((i, ox, oy - k[1], k))
     return hits
 
 
 def redraw(sp, i, wide, cx, cy, letter, design):
     """the letter of the icon at (cx, cy) redrawn as `design`, the circle's colours kept"""
     rows = LETTERS[letter]
-    old = {(x, y + 2) for y in range(5) for x in range(9) if rows[y][x] == " "}
+    old = {(x, y + letter[1]) for y in range(len(rows)) for x in range(9) if rows[y][x] == " "
+           and 1 <= x <= 7}
     from collections import Counter
     vd = Counter(sp.get(i, wide, cx + x, cy + y) for x, y in old).most_common(1)[0][0]
-    body = [(x, y) for y in range(2, 7) for x in range(1, 8) if (x, y) not in old
-            and (x - 1, y - 1) not in old]
+    body = [(x, y) for y in range(letter[1], letter[1] + len(rows)) for x in range(1, 8)
+            if (x, y) not in old and (x - 1, y - 1) not in old]
     vc = Counter(sp.get(i, wide, cx + x, cy + y) for x, y in body).most_common(1)[0][0]
     sh = Counter(v for v in (sp.get(i, wide, cx + x + 1, cy + y + 1) for x, y in old
                              if (x + 1, y + 1) not in old) if v not in (vc, vd, None))
@@ -244,9 +252,9 @@ def menu_entries(rom, files, fnv64):
             for v, mapping in ((1, VITA), (2, VITA_SWAPPED)):
                 sp = Sprites(data, bpp)
                 for i, cx, cy, k in hits:
-                    redraw(sp, i, wide, cx, cy, k, DESIGNS[mapping[k]])
+                    redraw(sp, i, wide, cx, cy, k, DESIGNS[mapping[k[0]]])
                 drawn[v] = bytes(sp.d)
-            print(f"  {name}: {len(hits)} icons ({''.join(sorted(h[3] for h in hits))})")
+            print(f"  {name}: {len(hits)} icons ({''.join(sorted(h[3][0] for h in hits))})")
             halves = []
             for o in range(0, len(data) - 31, 32):
                 a = data[o:o + 32]
