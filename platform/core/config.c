@@ -16,7 +16,7 @@ static const KhConfig s_defaults = {
     .inset_corner = 0, .inset_opacity = 100, .rear_touch = 0, .stick_deadzone = 2, .r_toggle = 0,
     .fast_forward = 2, .camera_stick = 1, .camera_speed = 2,
     .camera_invert_x = 0, .camera_invert_y = 0, .dpad_deck = 1, .show_fps = 0, .volume = 100,
-    .single_screen = 0, .panel_opacity = 90, .language = 1, .hud_size = 100,
+    .button_icons = 1, .single_screen = 0, .panel_opacity = 90, .language = 1, .hud_size = 100,
     /* the mission screen's bottom-screen parts (sx sy sw sh anchor dx dy scale), measured on
      * the DS's bottom screen in a mission: the INFORMATION bar top-left, the map in the
      * top-right corner with the target beside it (below the top screen's enemy name and HP),
@@ -140,6 +140,10 @@ void config_save(void)
                "r_toggle = %d\n\n", kh_config.r_toggle);
     fprintf(f, "# Fast-forward speed, switched on and off with L+R+Square: 2 or 3.\n"
                "fast_forward = %d\n\n", kh_config.fast_forward);
+    fprintf(f, "# The A, B, X and Y icons in the game's text: 1 drawn as the Vita's Circle,\n"
+               "# Cross, Triangle and Square (the buttons in the same places), 0 the DS's letters.\n"
+               "# Applied the next time the game starts.\n"
+               "button_icons = %d\n\n", kh_config.button_icons);
     fprintf(f, "# Mission Mode's enemies: 0 as the game has them (made for up to four players,\n"
                "# solo too: three times the HP, harder hits), 1 balanced (2.35 times the HP, and\n"
                "# the damage taken as in the story, by the save's difficulty; Standard for a guest).\n"
@@ -244,6 +248,8 @@ static void set(const char *k, const char *v, int version)
         kh_config.r_toggle = atoi(v) != 0;
     else if (!strcmp(k, "fast_forward"))
         kh_config.fast_forward = clampi(atoi(v), 2, 3);
+    else if (!strcmp(k, "button_icons"))
+        kh_config.button_icons = atoi(v) != 0;
     else if (!strcmp(k, "mission_balance"))
         kh_config.mission_balance = atoi(v) != 0;
     else if (!strcmp(k, "debug"))

@@ -71,5 +71,7 @@ typedef struct {
     uint32_t mix_snapped; /* particle vertices left where B has them (a jump, or w <= 0) */
 } KhGpu3dStats;
 void kh_gpu3d_take_stats(KhGpu3dStats *out);
+/* a frame's 3D in one line of the log (the trace after an enemy's defeat, game.c) */
+void kh_gpu3d_describe(const KhGxFrame *f, char *out, int n);
 
 #endif

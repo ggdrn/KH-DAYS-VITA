@@ -198,8 +198,41 @@ static int block_get(uint32_t base)
     return victim;
 }
 
+#define PATCHES_MAX 64
+static struct {
+    uint32_t offset, size;
+    uint8_t *data;
+} s_patch[PATCHES_MAX];
+static int s_npatch;
+
+void rom_patch(uint32_t offset, const void *data, uint32_t size)
+{
+    uint8_t *copy;
+    if (s_npatch >= PATCHES_MAX || !size || !(copy = malloc(size)))
+        return;
+    memcpy(copy, data, size);
+    s_patch[s_npatch].offset = offset;
+    s_patch[s_npatch].size = size;
+    s_patch[s_npatch].data = copy;
+    s_npatch++;
+}
+
+/* the patches over [offset, offset + n) applied to what was read there */
+static void apply_patches(uint32_t offset, uint8_t *dst, uint32_t n)
+{
+    int i;
+    for (i = 0; i < s_npatch; i++) {
+        const uint32_t ps = s_patch[i].offset, pe = ps + s_patch[i].size;
+        const uint32_t lo = ps > offset ? ps : offset;
+        const uint32_t hi = pe < offset + n ? pe : offset + n;
+        if (lo < hi)
+            memcpy(dst + (lo - offset), s_patch[i].data + (lo - ps), hi - lo);
+    }
+}
+
 int rom_read(uint32_t offset, void *dst, uint32_t size)
 {
+    const uint32_t start = offset;
     int n = 0;
     if (offset >= ROM_EXPECTED_SIZE)
         return 0;
@@ -237,6 +270,8 @@ int rom_read(uint32_t offset, void *dst, uint32_t size)
             n += (int)take;
         }
     }
+    if (n > 0 && s_npatch)
+        apply_patches(start, dst, (uint32_t)n);
     sceKernelUnlockMutex(s_lock, 1);
     return n;
 }

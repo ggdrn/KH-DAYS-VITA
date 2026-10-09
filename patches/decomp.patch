@@ -22754,6 +22754,33 @@ index cee9f6e28..003ecae60 100644
          scale = ApplyFlags(data_0204c240.flags, scale);
          if (scale < 1) {
              scale = 1;
+diff --git a/src/overlays/system/ov107_enemy_common/Ov107_AiState_OnDefeat.c b/src/overlays/system/ov107_enemy_common/Ov107_AiState_OnDefeat.c
+index 0817fe144..359643235 100644
+--- a/src/overlays/system/ov107_enemy_common/Ov107_AiState_OnDefeat.c
++++ b/src/overlays/system/ov107_enemy_common/Ov107_AiState_OnDefeat.c
+@@ -124,6 +124,11 @@ extern void func_ov022_02088984(int player, int value);
+ extern void Ov022_SetPlayerScale(int player, int value);
+ extern const Notification data_ov107_020cb628[];
+ 
++#ifdef PLATFORM_VITA
++/* the port's trace after a defeat (platform/hw/game.c) */
++extern void kh_vita_enemy_defeated(const void *enemy);
++#endif
++
+ void Ov107_AiState_OnDefeat(AiState *self)
+ {
+     AiContext *context;
+@@ -132,6 +137,10 @@ void Ov107_AiState_OnDefeat(AiState *self)
+     FxVec position;
+     Notification notification;
+ 
++#ifdef PLATFORM_VITA
++    kh_vita_enemy_defeated(self);
++#endif
++
+     context = self->field_04;
+     self->field_1c5 &= ~0xf;
+ 
 diff --git a/src/overlays/system/ov107_enemy_common/Ov107_LoadEnemyOverlay.c b/src/overlays/system/ov107_enemy_common/Ov107_LoadEnemyOverlay.c
 index fca290d63..6dc3a27cf 100644
 --- a/src/overlays/system/ov107_enemy_common/Ov107_LoadEnemyOverlay.c

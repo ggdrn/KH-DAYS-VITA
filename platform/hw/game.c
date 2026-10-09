@@ -26,6 +26,7 @@
 #include "log.h"
 #include "nitro/arm7.h"
 #include "nitro/backup.h"
+#include "nitro/button_glyphs.h"
 #include "nitro/card.h"
 #include "nitro/cpu.h"
 #include "nitro/overlay.h"
@@ -84,6 +85,7 @@ static int game_thread(SceSize args, void *argp)
 static void boot_state(void)
 {
     kh_romfs_init();
+    kh_button_glyphs_init();
     kh_gx3d_init();
     audio_out_init();
     s_gpu3d = kh_gpu3d_init(kh_config.render_scale);
@@ -474,6 +476,48 @@ static void hud_after_2d(void)
     video_set_hud_boxes(boxes);
 }
 
+/* The trace after an enemy's defeat: some enemies (the Possessor) flash the screen white as
+ * they go, which the DS does not. For DEFEAT_TRACE_VB VBlanks after each of the first
+ * DEFEAT_TRACES defeats, every display frame whose 3D or effect registers differ from the
+ * last one logged is logged (kh_gpu3d_describe, the blending, the brightness, the capture). */
+#define DEFEAT_TRACES 16
+#define DEFEAT_TRACE_VB 120
+static volatile uint32_t s_defeat_vb;
+static volatile int s_defeats;
+
+void kh_vita_enemy_defeated(const void *enemy)
+{
+    if (s_defeats >= DEFEAT_TRACES)
+        return;
+    s_defeat_vb = s_vblanks;
+    s_defeats++;
+    LOG("trace: enemy defeated (kind %u, defeat %d)%s%s", (unsigned)(*(const uint16_t *)((const uint8_t *)enemy + 0x19c) & 0x1ff),
+        s_defeats, kh_overlay_loaded(117) || kh_overlay_loaded(118) ? ", a Possessor's overlay loaded" : "",
+        kh_overlay_loaded(185) || kh_overlay_loaded(186) || kh_overlay_loaded(187)
+            ? ", a Massive Possessor's overlay loaded" : "");
+}
+
+static void defeat_trace(const KhGxFrame *f)
+{
+    static char last[512];
+    char line[512];
+    int k;
+    const uint32_t since = s_vblanks - s_defeat_vb;
+    if (!s_defeats || since > DEFEAT_TRACE_VB)
+        return;
+    k = snprintf(line, sizeof(line), "A bld %04x/%04x/%02x mb %04x, B bld %04x/%04x/%02x mb %04x, "
+                 "cap %08x, dispcnt %08x; ", KH_IO16(0x04000050), KH_IO16(0x04000052),
+                 KH_IO16(0x04000054) & 31, KH_IO16(0x0400006c), KH_IO16(0x04001050),
+                 KH_IO16(0x04001052), KH_IO16(0x04001054) & 31, KH_IO16(0x0400106c),
+                 (unsigned)KH_IO32(0x04000064), (unsigned)KH_IO32(0x04000000));
+    if (k > 0 && k < (int)sizeof(line))
+        kh_gpu3d_describe(f, line + k, (int)sizeof(line) - k);
+    if (strcmp(line, last)) {
+        memcpy(last, line, sizeof(last));
+        LOG("trace: +%u vb: %s", (unsigned)since, line);
+    }
+}
+
 static void present(void)
 {
     /* POWCNT1 bit 15: engine A on the top screen */
@@ -660,6 +704,7 @@ static void present(void)
             s_stage = "3d textures";
             frame3d = dual ? kh_gx3d_pinned() : kh_gx3d_acquire();
             trace_polys = frame3d ? frame3d->npoly : -1;
+            defeat_trace(frame3d);
             kh_gpu3d_prepare(frame3d);
             s_cur.prep = (uint32_t)(sceKernelGetProcessTimeWide() - t);
             stage_max(&s_prep_max, s_cur.prep);

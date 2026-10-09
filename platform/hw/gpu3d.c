@@ -1432,6 +1432,64 @@ void kh_gpu3d_forget_previous(void)
 /* Without interpolation (30 fps) a new frame B is shown one display frame after it comes,
  * with its 2D, drawn over two display frames (game.c); at once in dual 3D (frames for the two
  * screens in turn) and with the screen at 30 fps (each display frame a game frame). */
+/* A frame's 3D in a line, for the trace after an enemy's defeat (game.c): what can turn the
+ * screen white for a moment (a flash after some enemies' defeat). Polygons by mode, the
+ * translucent ones, the largest on screen (its share of the screen, attributes, texture and
+ * vertex colour), the toon table's checksum and its first and last entries, the clear
+ * colour. */
+void kh_gpu3d_describe(const KhGxFrame *f, char *out, int n)
+{
+    int i, k, modes[4] = { 0 }, tr = 0, big = -1;
+    float big_area = 0.0f;
+    uint32_t toon = 0;
+    uint16_t t0, t31;
+    uint32_t clear;
+    if (!f) {
+        snprintf(out, (size_t)n, "no 3D");
+        return;
+    }
+    for (i = 0; i < f->npoly; i++) {
+        const KhGxPolygon *p = &f->poly[i];
+        float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f, area;
+        modes[(p->attr >> 4) & 3]++;
+        tr += p->translucent;
+        for (k = 0; k < p->count; k++) {
+            const KhGxVertex *v = &f->vtx[p->v[k]];
+            float x, y;
+            if (!(v->w > 0))
+                continue;
+            x = v->x / v->w, y = v->y / v->w;
+            x = x < -1 ? -1 : x > 1 ? 1 : x;
+            y = y < -1 ? -1 : y > 1 ? 1 : y;
+            if (x < x0) x0 = x;
+            if (x > x1) x1 = x;
+            if (y < y0) y0 = y;
+            if (y > y1) y1 = y;
+        }
+        area = x1 > x0 && y1 > y0 ? (x1 - x0) * (y1 - y0) / 4.0f : 0.0f;
+        if (area > big_area)
+            big_area = area, big = i;
+    }
+    for (i = 0; i < 32; i++) {
+        uint16_t c;
+        memcpy(&c, f->regs + (0x04000380 - 0x04000330) + i * 2, 2);
+        toon = toon * 31 + c;
+    }
+    memcpy(&t0, f->regs + (0x04000380 - 0x04000330), 2);
+    memcpy(&t31, f->regs + (0x04000380 - 0x04000330) + 62, 2);
+    memcpy(&clear, f->regs + (0x04000350 - 0x04000330), 4);
+    k = snprintf(out, (size_t)n, "3D %04x polys %d (mod %d dec %d toon %d shadow %d, %d translucent), "
+                 "toon %08x [%04x..%04x], clear %08x", (unsigned)f->disp3dcnt, f->npoly, modes[0],
+                 modes[1], modes[2], modes[3], tr, (unsigned)toon, t0, t31, (unsigned)clear);
+    if (big >= 0 && k > 0 && k < n) {
+        const KhGxPolygon *p = &f->poly[big];
+        const KhGxVertex *v = &f->vtx[p->v[0]];
+        snprintf(out + k, (size_t)(n - k), "; largest %d%% of the screen: attr %08x tex %08x "
+                 "rgb %d %d %d alpha %d", (int)(big_area * 100.0f + 0.5f), (unsigned)p->attr,
+                 (unsigned)p->teximage, v->r, v->g, v->b, v->a);
+    }
+}
+
 unsigned kh_gpu3d_render(const KhGxFrame *f)
 {
     apply_requests();
