@@ -11255,6 +11255,91 @@ index 12a5ecebd..4d29162fa 100644
      unsigned char pad008;
      unsigned char kind009;
      unsigned char pad00a[8];
+diff --git a/src/overlays/field/ov022_battle/Ov022_ComputeDamageTaken.c b/src/overlays/field/ov022_battle/Ov022_ComputeDamageTaken.c
+index 22c8a41b8..1302cfb56 100644
+--- a/src/overlays/field/ov022_battle/Ov022_ComputeDamageTaken.c
++++ b/src/overlays/field/ov022_battle/Ov022_ComputeDamageTaken.c
+@@ -129,6 +129,12 @@ extern int GameState_GetField(int nField, int nWidth);
+ extern int Ov022_IsState9Or6WithFlag200(u32 *pRun);                                      /* ov022_IsState9Or6WithFlag200 */
+ extern u32 Session_RandNextScaled(int nRange);                                           /* Session_RandNextScaled */
+ 
++#ifdef PLATFORM_VITA
++/* config mission_balance (platform/core/config.c) */
++extern int kh_vita_mission_balance(void);
++#define FIELD_SAVE_DIFFICULTY 0x40a /* the save's own difficulty (Standard, 1, for a guest) */
++#endif
++
+ static inline int FxMul(int nValue, int nScale)
+ {
+     return (int)(((s64)nValue * nScale + 0x800) >> 12);
+@@ -151,6 +157,11 @@ int Ov022_ComputeDamageTaken(struct Actor *pActor, struct HitRequest *pReq)
+     int nCap;
+     int nRule;
+ 
++#ifdef PLATFORM_VITA
++    /* the port's mission balance: a mission's hits as the story's, by the save's difficulty
++     * (no mission rules' percent and floor, no session's half again for an enemy's hit) */
++    const int bBalanced = kh_vita_mission_balance() && (data_0204c240 & MODE_FLAG_BIT1) != 0;
++#endif
+     nFlags = pReq->nFlags;
+     nResult = 0;
+     pRec = &gPartyMembers[pActor->nId];
+@@ -166,6 +177,11 @@ int Ov022_ComputeDamageTaken(struct Actor *pActor, struct HitRequest *pReq)
+         if ((data_0204c240 & MODE_FLAG_BIT2) != 0 && data_0204c248.nKind != 0) {
+             bDrain = 1;
+         }
++#ifdef PLATFORM_VITA
++        if (bBalanced) {
++            bDrain = 0;
++        }
++#endif
+     }
+     if ((nFlags & REQ_PERCENT) == 0 || (nFlags & REQ_HALF) != 0) {
+         nRule = Slot_EvalPackedParam(pActor->nId, RULE_SHIELD_DEFENSE);
+@@ -232,12 +248,20 @@ int Ov022_ComputeDamageTaken(struct Actor *pActor, struct HitRequest *pReq)
+     if (Slot_EvalPackedParam(pActor->nId, RULE_SHIELD_HALF) != 0 && func_ov022_020ad7b0(pActor)) {
+         nResult /= 2;
+     }
++#ifdef PLATFORM_VITA
++    if ((data_0204c240 & MODE_FLAG_BIT1) != 0 && !bBalanced) {
++#else
+     if ((data_0204c240 & MODE_FLAG_BIT1) != 0) {
++#endif
+         if (data_0204c254.nDamagePercent != 0) {
+             nResult += (nResult / 100) * data_0204c254.nDamagePercent;
+         }
+     } else {
++#ifdef PLATFORM_VITA
++        switch (GameState_GetField(bBalanced ? FIELD_SAVE_DIFFICULTY : DIFFICULTY_FIELD, 2)) {
++#else
+         switch (GameState_GetField(DIFFICULTY_FIELD, 2)) {
++#endif
+         case 0:
+             nResult = FxMul(nResult, EASY_SCALE);
+             break;
+@@ -251,14 +275,22 @@ int Ov022_ComputeDamageTaken(struct Actor *pActor, struct HitRequest *pReq)
+     if (Ov022_IsState9Or6WithFlag200(pActor->run) != 0) {
+         nResult /= 2;
+     }
++#ifdef PLATFORM_VITA
++    if ((data_0204c240 & MODE_FLAG_BIT2) != 0 && (pReq->nFlags & REQ_BIT0) != 0 && !bBalanced) {
++#else
+     if ((data_0204c240 & MODE_FLAG_BIT2) != 0 && (pReq->nFlags & REQ_BIT0) != 0) {
++#endif
+         nResult = FxMul(nResult, DRAIN_SCALE);
+     }
+     nFlags = pReq->nFlags;
+     if (((nFlags & REQ_PERCENT) == 0 || (nFlags & REQ_HALF) != 0) && nResult < ONE) {
+         nResult = ONE;
+     }
++#ifdef PLATFORM_VITA
++    if ((data_0204c240 & MODE_FLAG_BIT2) != 0 && (nFlags & REQ_BIT0) != 0 && !bBalanced) {
++#else
+     if ((data_0204c240 & MODE_FLAG_BIT2) != 0 && (nFlags & REQ_BIT0) != 0) {
++#endif
+         nCap = 0;
+         switch (data_0204c248.nDamageFloor) {
+         case 1:
 diff --git a/src/overlays/field/ov022_battle/Ov022_DrawSelectionMarkers.c b/src/overlays/field/ov022_battle/Ov022_DrawSelectionMarkers.c
 index 9adbd4495..f5b28ca63 100644
 --- a/src/overlays/field/ov022_battle/Ov022_DrawSelectionMarkers.c
@@ -22634,6 +22719,37 @@ index 6eeedcf22..5d6df8e56 100644
  extern void *ExpHeap_AllocOrDefault(u32 size, int align, void **heap);   /* Heap_AllocAligned */
  extern void *data_0204c024;                                      /* the heap the helper allocates from */
  #define WH_RAND_INIT(x) (sWh.nRand = (u32)(x))
+diff --git a/src/overlays/system/ov107_enemy_common/Ov107_AiState_LoadStats.c b/src/overlays/system/ov107_enemy_common/Ov107_AiState_LoadStats.c
+index cee9f6e28..9d0ba9d3f 100644
+--- a/src/overlays/system/ov107_enemy_common/Ov107_AiState_LoadStats.c
++++ b/src/overlays/system/ov107_enemy_common/Ov107_AiState_LoadStats.c
+@@ -109,6 +109,13 @@ static inline s16 ReadRecord(const Record *record, u8 *byte3, u8 *byte4)
+     return scale;
+ }
+ 
++#ifdef PLATFORM_VITA
++/* config mission_balance (platform/core/config.c) */
++extern int kh_vita_mission_balance(void);
++#endif
++
++/* The enemy's HP by the mode flags: bit 2 (a mission's session, solo too) three times, without
++ * bit 1 (the story) 80 percent */
+ static inline int ApplyFlags(u8 flags, int value)
+ {
+     int multiplier = flags & 4;
+@@ -171,6 +178,12 @@ void Ov107_AiState_LoadStats(AiState *self, int recordIndex)
+             }
+         }
+ 
++#ifdef PLATFORM_VITA
++        /* the port's mission balance: a mission's enemies with the story's HP */
++        if (kh_vita_mission_balance() && (data_0204c240.flags & 2) != 0) {
++            scale = ApplyFlags(0, scale);
++        } else
++#endif
+         scale = ApplyFlags(data_0204c240.flags, scale);
+         if (scale < 1) {
+             scale = 1;
 diff --git a/src/overlays/system/ov107_enemy_common/Ov107_LoadEnemyOverlay.c b/src/overlays/system/ov107_enemy_common/Ov107_LoadEnemyOverlay.c
 index fca290d63..6dc3a27cf 100644
 --- a/src/overlays/system/ov107_enemy_common/Ov107_LoadEnemyOverlay.c

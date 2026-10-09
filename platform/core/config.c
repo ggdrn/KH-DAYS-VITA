@@ -140,6 +140,10 @@ void config_save(void)
                "r_toggle = %d\n\n", kh_config.r_toggle);
     fprintf(f, "# Fast-forward speed, switched on and off with L+R+Square: 2 or 3.\n"
                "fast_forward = %d\n\n", kh_config.fast_forward);
+    fprintf(f, "# Mission Mode's enemies: 0 as the game has them (made for up to four players,\n"
+               "# solo too: three times the HP, harder hits), 1 as in the story (the enemies'\n"
+               "# HP, and the damage taken by the save's difficulty; Standard for a guest).\n"
+               "mission_balance = %d\n\n", kh_config.mission_balance);
     fprintf(f, "# Field HUD size, 60 to 100 %%: the command deck, the HP gauge with the face and\n"
                "# the chain each drawn smaller in their corner (and the single screen's map and\n"
                "# target).\n"
@@ -240,6 +244,8 @@ static void set(const char *k, const char *v, int version)
         kh_config.r_toggle = atoi(v) != 0;
     else if (!strcmp(k, "fast_forward"))
         kh_config.fast_forward = clampi(atoi(v), 2, 3);
+    else if (!strcmp(k, "mission_balance"))
+        kh_config.mission_balance = atoi(v) != 0;
     else if (!strcmp(k, "debug"))
         kh_config.debug = clampi(atoi(v), 0, 2);
     else if (!strcmp(k, "hud_size"))
@@ -335,4 +341,10 @@ void config_load(void)
         kh_config.inset_width, kh_config.texture_filter, kh_config.camera_stick,
         kh_config.camera_speed, kh_config.dpad_deck, kh_config.volume, kh_config.debug,
         kh_config.hud_size, kh_config.single_screen, kh_config.filter_2d);
+}
+
+/* For the game's code (decomp, PLATFORM_VITA): config mission_balance */
+int kh_vita_mission_balance(void)
+{
+    return kh_config.mission_balance;
 }

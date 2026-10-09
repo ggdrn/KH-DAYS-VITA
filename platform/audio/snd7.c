@@ -11,6 +11,7 @@
 
 #include <math.h>
 #include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
 
 void (*snd7_send_to_arm9)(uint32_t word);
@@ -140,6 +141,7 @@ typedef struct {
     int adpcm_loop_pred, adpcm_loop_index, adpcm_loop_saved;
     int adpcm_next;          /* sample adpcm_next_at + 1, decoded ahead */
     uint32_t adpcm_next_at;
+    struct WaveCache *wc;    /* a bank's ADPCM wave decoded (wave_cache_get), NULL none */
     float gain_l, gain_r;    /* linear, from volume, shift and pan */
     int16_t hold;            /* the last sample, for format PSG/noise steps */
     /* SETUP_CHANNEL_* registers, kept for CHANNEL_* commands */
@@ -466,6 +468,109 @@ static inline int lerp15(int s0, int s1, uint64_t pos)
     return s0 + (((s1 - s0) * (int)((uint32_t)pos >> 17)) >> 15);
 }
 
+/* ---- decoded ADPCM waves ----------------------------------------------------------------
+ * A bank's ADPCM wave (a sequencer note's, never written while it plays) decoded once into
+ * 16-bit samples, kept for the next notes that play it, and mixed as plain samples. Decoding
+ * each channel's nibbles inside the mixing loop, the state of two decoders and the position
+ * in registers, was most of the audio thread's time on the Vita: 2.4 of its 2.6 s every 10 s
+ * with 15 channels (0.4.12's log). Decoded just ahead of where the channels play, a long wave
+ * is never decoded at once on its first note. Sample k is the decoder after nibble k, the
+ * order the hardware plays them in, a loop's start included (its saved state is the one the
+ * linear decoding reaches there). */
+typedef struct WaveCache {
+    const uint8_t *src;      /* the wave's data: the 4-byte header, then the nibbles */
+    uint32_t n, ls;          /* samples, loop start (samples) */
+    int16_t *pcm;            /* n + 1 samples, the last one repeated (the interpolation's) */
+    uint32_t done;           /* samples decoded */
+    int pred, index;         /* the decoder after them */
+    uint32_t used;           /* the last note on it (s_wave_clock) */
+} WaveCache;
+
+#define WAVE_CACHE_MAX 384
+#define WAVE_CACHE_BYTES (24u * 1024 * 1024)
+static WaveCache s_wave[WAVE_CACHE_MAX];
+static int s_nwave;
+static size_t s_wave_bytes;
+static uint32_t s_wave_clock;
+
+/* decoded up to sample upto (exclusive, at most n) */
+static void wave_decode(WaveCache *w, uint32_t upto)
+{
+    const uint8_t *d = w->src + 4;
+    int pred = w->pred, index = w->index;
+    uint32_t k = w->done;
+    if (upto > w->n)
+        upto = w->n;
+    for (; k < upto; k++) {
+        adpcm_step(&pred, &index, (d[k >> 1] >> ((k & 1) * 4)) & 15);
+        w->pcm[k] = (int16_t)pred;
+    }
+    if (k > w->done) {
+        w->done = k;
+        w->pred = pred, w->index = index;
+        if (k == w->n)
+            w->pcm[k] = w->pcm[k - 1];
+    }
+}
+
+static int wave_in_use(const WaveCache *w)
+{
+    int i;
+    for (i = 0; i < CHANNELS; i++)
+        if (s_ch[i].wc == w && s_ch[i].hw_on)
+            return 1;
+    return 0;
+}
+
+/* The decoded wave for an ADPCM wave of end bytes (loop start ls_bytes), NULL when there is
+ * no room (the channel then decodes as it plays) */
+static WaveCache *wave_cache_get(const uint8_t *src, uint32_t end, uint32_t ls_bytes)
+{
+    const uint32_t n = (end - 4) * 2, ls = (ls_bytes > 4 ? ls_bytes - 4 : 0) * 2;
+    const size_t bytes = ((size_t)n + 1) * sizeof(int16_t);
+    WaveCache *w = NULL;
+    int i;
+    s_wave_clock++;
+    for (i = 0; i < s_nwave; i++)
+        if (s_wave[i].src == src && s_wave[i].n == n && s_wave[i].ls == ls) {
+            s_wave[i].used = s_wave_clock;
+            return &s_wave[i];
+        }
+    if (bytes > WAVE_CACHE_BYTES / 4)
+        return NULL;
+    /* room: the waves no note has played for longest go first */
+    while (s_nwave >= WAVE_CACHE_MAX || s_wave_bytes + bytes > WAVE_CACHE_BYTES) {
+        int old = -1;
+        for (i = 0; i < s_nwave; i++)
+            if (!wave_in_use(&s_wave[i]) && (old < 0 || s_wave[i].used < s_wave[old].used))
+                old = i;
+        if (old < 0)
+            return NULL;
+        s_wave_bytes -= ((size_t)s_wave[old].n + 1) * sizeof(int16_t);
+        free(s_wave[old].pcm);
+        for (i = 0; i < CHANNELS; i++)
+            if (s_ch[i].wc == &s_wave[old])
+                s_ch[i].wc = NULL; /* stopped ones only (wave_in_use) */
+        s_wave[old] = s_wave[--s_nwave];
+        /* the moved entry's channels follow it */
+        for (i = 0; i < CHANNELS; i++)
+            if (s_ch[i].wc == &s_wave[s_nwave])
+                s_ch[i].wc = &s_wave[old];
+    }
+    w = &s_wave[s_nwave];
+    w->pcm = malloc(bytes);
+    if (!w->pcm)
+        return NULL;
+    s_nwave++;
+    s_wave_bytes += bytes;
+    w->src = src, w->n = n, w->ls = ls;
+    w->done = 0;
+    w->pred = (int16_t)(src[0] | src[1] << 8);
+    w->index = src[2] > 88 ? 88 : src[2];
+    w->used = s_wave_clock;
+    return w;
+}
+
 /* A channel's next count output samples added into the mix (al, ar: 16-bit samples times
  * 2^24-scaled gains, >> 16: full scale is 2^23, 16 channels fit), each format in its own
  * loop. Stops where a one-shot wave
@@ -524,7 +629,44 @@ static void mix_channel(Channel *c, int32_t *al, int32_t *ar, int count, uint64_
         }
         break;
     }
-    case FMT_ADPCM: {
+    case FMT_ADPCM:
+        if (c->wc) {
+            /* decoded (wave_cache_get): the samples this chunk reaches first, then the same
+             * loop as the nibbles' below, plain samples in place of the decoder */
+            WaveCache *const w = c->wc;
+            const int16_t *const pcm = w->pcm;
+            const uint32_t n = w->n, ls = w->ls;
+            const int loops = c->repeat == 1 && n > ls;
+            uint64_t pos = c->pos;
+            {
+                const uint64_t last = pos + step * (uint64_t)count;
+                const uint32_t need = POS_INT(last) + 2;
+                if (w->done < n)
+                    wave_decode(w, loops && POS_INT(last) >= n ? n : need);
+            }
+            for (k = 0; k < count; k++) {
+                uint32_t i = POS_INT(pos);
+                if (i >= n) {
+                    if (!loops) {
+                        c->pos = pos;
+                        c->hw_on = 0;
+                        return;
+                    }
+                    while (POS_INT(pos) >= n)
+                        pos -= (uint64_t)(n - ls) << 32;
+                    i = POS_INT(pos);
+                }
+                if (!silent) {
+                    const int s = lerp15(pcm[i], pcm[i + 1], pos);
+                    al[k] += MIX_MUL(s, gl);
+                    ar[k] += MIX_MUL(s, gr);
+                }
+                pos += step;
+            }
+            c->pos = pos;
+            break;
+        }
+        {
         /* nibbles after the 4-byte header, 2 a byte; adpcm_pos nibbles decoded leave
          * adpcm_pred holding sample adpcm_pos - 1 (the header's value before the first) */
         const uint32_t n = (c->end - 4) * 2, ls = (c->loop_start > 4 ? c->loop_start - 4 : 0) * 2;
@@ -562,7 +704,7 @@ static void mix_channel(Channel *c, int32_t *al, int32_t *ar, int count, uint64_
             c->pos += step;
         }
         break;
-    }
+        }
     default: /* PSG (channels 8-13) or noise (14-15): half scale */
         for (k = 0; k < count; k++) {
             int s;
@@ -1031,7 +1173,10 @@ static void note_on(int ti, int key, int velocity, int32_t length)
         c->base_rate = timer_rate(rd16(wave + 4));
         if (c->format > FMT_ADPCM)
             c->format = FMT_PCM8;
+        c->wc = c->format == FMT_ADPCM && c->end > 4 && c->loop_start <= c->end
+                    ? wave_cache_get(c->data, c->end, c->loop_start) : NULL;
     } else {
+        c->wc = NULL;
         c->format = FMT_PSG;
         c->duty = type == CH_PSG ? inst.wave[0] : 0;
         /* PSG and noise: the key's frequency, 8 steps a period for PSG */
@@ -1301,6 +1446,7 @@ static void setup_pcm(const DsCommand *c)
         ex_free(ch);
     hw_stop(ch);
     ch->type = CH_PCM;
+    ch->wc = NULL; /* the ARM9's own wave (a stream's ring, perhaps): decoded as it plays */
     ch->format = (c->arg[3] >> 24) & 3;
     ch->repeat = (c->arg[3] >> 26) & 3;
     ch->data = P(c->arg[1]);
@@ -1438,6 +1584,7 @@ static void process_command(const DsCommand *c)
         if (ch->ex_active)
             ex_free(ch);
         ch->type = c->id == CMD_SETUP_CHANNEL_PSG ? CH_PSG : CH_NOISE;
+        ch->wc = NULL;
         ch->format = FMT_PSG;
         ch->duty = (int)c->arg[1] & 7;
         ch->reg_volume = (int)(c->arg[2] & 0x7f);
