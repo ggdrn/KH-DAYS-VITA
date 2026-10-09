@@ -11453,7 +11453,7 @@ index e5a468ddf..31a583b76 100644
  #pragma opt_repositioncode on
  
 diff --git a/src/overlays/field/ov022_battle/Ov022_ReadSelectionInput.c b/src/overlays/field/ov022_battle/Ov022_ReadSelectionInput.c
-index e43f5318f..98d478612 100644
+index e43f5318f..60c3f4296 100644
 --- a/src/overlays/field/ov022_battle/Ov022_ReadSelectionInput.c
 +++ b/src/overlays/field/ov022_battle/Ov022_ReadSelectionInput.c
 @@ -1,3 +1,5 @@
@@ -11462,17 +11462,19 @@ index e43f5318f..98d478612 100644
  /* Reads the lock-on input for the local player: toggles the selection with the shoulder button,
   * cycles targets with repeat, refreshes candidates and markers, and updates the caption and panel;
   * returns whether the selection is active. */
-@@ -52,6 +54,9 @@ extern int Ov002_Panel_IsMode9(void);
+@@ -52,6 +54,11 @@ extern int Ov002_Panel_IsMode9(void);
  extern int Ov002_IsObjectFlag2000Set(int object);
  extern void Ov002_ReaimActor(int object, int mode);
  
 +#ifdef PLATFORM_VITA
 +extern volatile int kh_lockon_active; /* the port's one-click lock-on (platform/core/input.c) */
++/* the right stick flicked left (-1) or right (1) while locked on, 0 none (platform/core/input.c) */
++extern int kh_vita_lockon_switch(void);
 +#endif
  int Ov022_ReadSelectionInput(void)
  {
      int object = func_ov022_02083f0c();
-@@ -75,6 +80,9 @@ int Ov022_ReadSelectionInput(void)
+@@ -75,6 +82,9 @@ int Ov022_ReadSelectionInput(void)
      }
      if (Ov022_IsInputAllowedForActiveSlot() != 0) {
          context->flags0 &= ~4;
@@ -11482,6 +11484,34 @@ index e43f5318f..98d478612 100644
          Ov022_ClearMaskBitsAndReset(&context->selectionFlags, 2);
          Ov002_RefreshCaptionWidget(suppressInput);
          Ov002_RetargetPanelSurface();
+@@ -94,6 +104,9 @@ int Ov022_ReadSelectionInput(void)
+         held = 0;
+         pressed = 0;
+     }
++#ifdef PLATFORM_VITA
++    const int vitaInputOff = suppressInput;
++#endif
+ 
+     actor = (Ov022ActiveActor *)GetEntryField20ByIndex(QueryActiveStateOrDelegate());
+     if ((actor->flags0 & 0x800ULL) != 0 ||
+@@ -196,6 +209,17 @@ keep_runtime_latch:
+                     Ov022_SetSelectionEnabled(1);
+                 }
+             }
++#ifdef PLATFORM_VITA
++            {
++                /* the right stick switches targets as Type B's L and R do: the nearest one to
++                 * the left (0x200) or to the right (0x100) of the one locked on */
++                const int dir = vitaInputOff ? 0 : kh_vita_lockon_switch();
++                if (dir != 0 && (context->flags0 & 4) != 0) {
++                    Ov022_PickSelectorTarget(dir < 0 ? 0x200 : 0x100);
++                    Ov022_SetSelectionEnabled(1);
++                }
++            }
++#endif
+         }
+     } else if (Ov002_IsObjectFlag2000Set(object) == 0) {
+         if ((pressed & 0x100) != 0) {
 diff --git a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 index f3055d4ba..138ba3470 100644
 --- a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c

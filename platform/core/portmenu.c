@@ -66,7 +66,7 @@ static const Item s_screen[] = {
     { IT_PANELOP, 0, "Panel opacity", "Single screen: see the game through the panels." },
 };
 static const Item s_controls[] = {
-    { IT_CAMERA, 0, "Right stick camera", "The right stick turns the field camera." },
+    { IT_CAMERA, 0, "Right stick camera", "Turns the field camera; locked on, switches target." },
     { IT_CAMSPEED, 0, "Camera speed", "How far to tilt the stick for full speed." },
     { IT_INVX, 0, "Invert camera X", NULL },
     { IT_INVY, 0, "Invert camera Y", NULL },

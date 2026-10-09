@@ -62,6 +62,44 @@ int kh_vita_command_nav(void)
     return s_nav_queue[t & 7];
 }
 
+/* Locked on (camera_stick on), the right stick's sideways push switches targets: a flick
+ * left or right takes the nearest one on that side (Ov022_ReadSelectionInput, as Type B's L
+ * and R), held it goes on every LOCKON_REPEAT_US; back near the middle it is armed again. Read
+ * by the game thread once a game frame while locked on; a stick already pushed when the lock
+ * begins waits for the middle first. */
+#define LOCKON_PUSH 90  /* of 127: a flick */
+#define LOCKON_REST 50  /* under it: back in the middle */
+#define LOCKON_REPEAT_US 450000
+
+int kh_vita_lockon_switch(void)
+{
+    static int armed;
+    static uint64_t last_call, next_repeat;
+    const uint64_t now = sceKernelGetProcessTimeWide();
+    const int rx = s_rx, ax = rx < 0 ? -rx : rx;
+    int dir = 0;
+    if (now - last_call > 100000)
+        armed = 0; /* not locked on just before: the stick may be held from the camera */
+    last_call = now;
+    if (!kh_config.camera_stick)
+        return 0;
+    if (ax < LOCKON_REST) {
+        armed = 1;
+    } else if (ax >= LOCKON_PUSH) {
+        if (armed) {
+            armed = 0;
+            dir = rx < 0 ? -1 : 1;
+            next_repeat = now + LOCKON_REPEAT_US;
+        } else if (next_repeat && now >= next_repeat) {
+            dir = rx < 0 ? -1 : 1;
+            next_repeat = now + LOCKON_REPEAT_US;
+        }
+    }
+    if (!armed && ax < LOCKON_PUSH)
+        next_repeat = 0; /* let go part of the way: no repeat until the next flick */
+    return dir;
+}
+
 /* request bits for this camera tick: each axis pulsed in proportion to its deflection */
 unsigned int kh_vita_camera_bits(void)
 {
@@ -75,6 +113,9 @@ unsigned int kh_vita_camera_bits(void)
     int rx = s_rx * 127 / div, ry = s_ry * 127 / div;
     if (!kh_config.camera_stick)
         return 0;
+    /* locked on, sideways switches targets (kh_vita_lockon_switch): the camera only tilts */
+    if (kh_lockon_active)
+        rx = 0;
     rx = rx > 127 ? 127 : rx < -127 ? -127 : rx;
     ry = ry > 127 ? 127 : ry < -127 ? -127 : ry;
     if (kh_config.camera_invert_x)
