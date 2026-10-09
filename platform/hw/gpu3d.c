@@ -1075,19 +1075,26 @@ static int vertex_runs(const KhGxVertex *v, int n, VtxRun *out)
 }
 
 /* Whether a vertex can move from a to b in between (see mix_vertices); counts the long jumps. */
-static int can_mix(const KhGxVertex *a, const KhGxVertex *b, int *jumps)
+static int can_mix(const KhGxVertex *a, const KhGxVertex *b, int *jumps, int small)
 {
     /* a vertex that cannot be mixed: one side of the camera to the other (an in-between w near
      * 0 projects it off to infinity) or a long jump (a particle reborn elsewhere with the same
      * tag) is where the new frame has it. Mixed, a Heartless's death burst once drew a polygon
      * over half the screen (0.1.6) */
+    /* Only small runs (particles, sprites) are judged so: a large model's vertex near or
+     * behind the camera (a floor, the sky) has a screen position that runs off to infinity,
+     * and was taken for a jump while its neighbours were mixed: the floor and the sky shook
+     * as the camera turned (0.4.7). Mixed in clip space, such a vertex is the mix of the two
+     * frames' matrices, which the GPU clips like any other. */
     float dx, dy, d2;
     if (!(a->w > 0 && b->w > 0))
-        return 0;
+        return !small;
     dx = a->x / a->w - b->x / b->w, dy = a->y / a->w - b->y / b->w;
     d2 = dx * dx + dy * dy;
-    if (d2 > 1.0f) /* half the screen in one game frame */
+    if (d2 > 1.0f && a->w < 4.0f * b->w && b->w < 4.0f * a->w) /* half the screen at once */
         (*jumps)++;
+    if (!small)
+        return 1;
     return !(d2 > 0.25f || a->w > 4.0f * b->w || b->w > 4.0f * a->w);
 }
 
@@ -1145,7 +1152,8 @@ static int mix_vertices(const KhGxFrame *f)
         }
         for (k = 0; k < b->len; k++) {
             const int ia = ra[found].start + k;
-            s_pair[b->start + k] = can_mix(&s_prev_vtx[ia], &f->vtx[b->start + k], &jumps) ? ia : -1;
+            s_pair[b->start + k] =
+                can_mix(&s_prev_vtx[ia], &f->vtx[b->start + k], &jumps, b->len <= 8) ? ia : -1;
         }
         paired += b->len;
         i = found + 1;
