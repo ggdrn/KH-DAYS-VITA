@@ -46,6 +46,7 @@ static void seg_mark(int i)
  * 0.1.0 only waited at the swap, which also counted the frames queued for display. */
 static uint32_t s_gpu_total, s_gpu_max, s_gpu_n;
 static int s_gpu_probing;
+volatile int video_gpu_test;
 
 int video_gpu_probe_begin(void)
 {
@@ -501,7 +502,8 @@ static void compose_pass(const float *v, GLuint tex2d, int flip2d, GLuint tex3d,
     SET(g->flip, glUniform1f(g->flip, flip2d ? 1.0f : 0.0f));
     SET(g->fx, glUniform4f(g->fx, cap ? 0.0f : (float)kh_config.screen_effect, hud, alpha, 0.0f));
     /* Vita pixels per DS pixel, from the quad's height */
-    SET(g->filt, glUniform2f(g->filt, filter == FILTER_2D ? (float)kh_config.filter_2d : 0.0f,
+    SET(g->filt, glUniform2f(g->filt, filter == FILTER_2D && !(video_gpu_test & 1)
+                                          ? (float)kh_config.filter_2d : 0.0f,
                              fabsf(v[1] - v[9]) * (DISPLAY_H / 2.0f) / 192.0f));
     SET(g->panel, glUniform4f(g->panel, s_panel[0], s_panel[1], s_panel[2], s_panel[3]));
     SET(g->panel_rect, glUniform4f(g->panel_rect, s_panel_rect[0], s_panel_rect[1],
@@ -1092,7 +1094,9 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
                 draw_panels();
             continue;
         }
-        if (s_show_bank[i] >= 0 && s_compose) {
+        if (video_gpu_test & 2) {
+            draw_quad(&s_rect[i]); /* the GPU test's plain screens */
+        } else if (s_show_bank[i] >= 0 && s_compose) {
             /* the screen shows a VRAM bank a capture went to (engine A's VRAM display, or
              * engine B's bitmap BG or sprites in the dual-3D scenes) */
             float v[16];

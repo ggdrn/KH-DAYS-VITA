@@ -74,4 +74,7 @@ void kh_gpu3d_take_stats(KhGpu3dStats *out);
 /* a frame's 3D in one line of the log (the trace after an enemy's defeat, game.c) */
 void kh_gpu3d_describe(const KhGxFrame *f, char *out, int n);
 
+/* config debug = 3 (game.c): the 3D not drawn, the last picture kept */
+extern volatile int kh_gpu3d_test_skip;
+
 #endif

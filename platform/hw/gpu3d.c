@@ -1577,11 +1577,15 @@ void kh_gpu3d_describe(const KhGxFrame *f, char *out, int n)
     }
 }
 
+volatile int kh_gpu3d_test_skip;
+
 unsigned kh_gpu3d_render(const KhGxFrame *f)
 {
     apply_requests();
     if (!s_prog || !f)
         return 0;
+    if (kh_gpu3d_test_skip)
+        return s_color; /* config debug = 3: the GPU test without the 3D */
     if (kh_config.frame_interpolation && !kh_gpu3d_direct && kh_gpu3d_clock)
         return render_timed(f);
     s_last_nvtx = -1; /* the timed path starts afresh */

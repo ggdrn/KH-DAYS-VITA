@@ -121,4 +121,7 @@ void video_present(const uint32_t *top, const uint32_t *bottom);
  * dual-3D fights: the bottom screen's frame only feeds its screen memory, game.c) */
 void video_run_capture(const uint32_t *top, const uint32_t *bottom);
 
+/* config debug = 3 (game.c): 1 the 2D drawn without smoothing, 2 the screens as plain quads */
+extern volatile int video_gpu_test;
+
 #endif

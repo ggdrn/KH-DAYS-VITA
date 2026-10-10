@@ -225,7 +225,8 @@ static uint32_t s_locked;
 /* 60 fps: display frames swapped, those swapped a VBlank late or more, and of these the ones
  * with over 14 ms of the display thread's own work (the rest: the GPU, or the thread waiting) */
 static uint32_t s_swaps60, s_late60, s_late60_cpu;
-static uint32_t s_help_wall; /* the last display frame's 2D help after its swap (wall time) */   /* display frames swapped two VBlanks apart (the screen at 30 fps) */
+static uint32_t s_help_wall;
+static uint32_t s_test_swaps, s_test_late; /* config debug = 3: the GPU test's current mode */ /* the last display frame's 2D help after its swap (wall time) */   /* display frames swapped two VBlanks apart (the screen at 30 fps) */
 static uint32_t s_t3d_max, s_join_max, s_present_max, s_prep_max; /* the worst frame's */
 
 static inline void stage_max(uint32_t *max, uint64_t us)
@@ -663,7 +664,24 @@ static void present(void)
     kh_gpu2d_hud_mode = hud_on ? 2 : hud_wanted ? 1 : 0;
     kh_gpu2d_plain[KH_ENGINE_B] = single && PauseMenu_GetMode() != 0;
     /* with the detailed log, once a second: this frame's GPU time measured alone */
-    const int gpu_probe = video_gpu_probe_begin();
+    if (kh_config.debug == 3) {
+        /* the GPU test: 5 s in each mode in turn, each one's late swaps logged */
+        static const char *const names[5] = { "as usual", "2D not smoothed", "no 3D",
+                                              "plain screens", "3D at 1x" };
+        static int phase = -1;
+        const int p = (int)((s_vblanks / 300) % 5);
+        if (p != phase) {
+            if (phase >= 0)
+                LOG("gpu test: %s: %u swaps, %u a VBlank late", names[phase],
+                    (unsigned)s_test_swaps, (unsigned)s_test_late);
+            s_test_swaps = s_test_late = 0;
+            phase = p;
+            video_gpu_test = p == 1 ? 1 : p == 3 ? 2 : 0;
+            kh_gpu3d_test_skip = p == 2;
+            kh_gpu3d_set_scale(p == 4 ? 1 : kh_config.render_scale);
+        }
+    }
+    const int gpu_probe = kh_config.debug == 3 ? 0 : video_gpu_probe_begin();
     uint64_t t0 = sceKernelGetProcessTimeWide();
     unsigned tex3d = 0, raw3d;
     int a3d = 0, i, draw2d;
@@ -991,6 +1009,8 @@ static void present(void)
             const uint32_t vc = (uint32_t)sceDisplayGetVcount();
             if (last_vc && !gpu_probe) {
                 s_swaps60++;
+                s_test_swaps++;
+                s_test_late += vc - last_vc >= 2;
                 if (vc - last_vc >= 2) {
                     s_late60++;
                     /* this frame's work, and the 2D the thread helped with after the last swap */
