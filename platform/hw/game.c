@@ -1121,8 +1121,10 @@ static void movie_crop(int movie, int a_on_top, int uploaded)
                 min_b = b;
             if (++seen >= 8) {
                 latched = 1;
-                crop_t = min_t >= 8 ? min_t : 0;
-                crop_b = min_b >= 8 ? min_b : 0;
+                /* a row more each side: the smoothed 2D (config filter_2d) blends the edge
+                 * row with the black one next to it, a dark line along the cut (0.6.4) */
+                crop_t = min_t >= 8 ? min_t + 1 : 0;
+                crop_b = min_b >= 8 ? min_b + 1 : 0;
                 LOG("display: movie letterbox %d rows above, %d below: %s", min_t, min_b,
                     crop_t || crop_b ? "cut off" : "none");
             }
