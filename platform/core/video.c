@@ -71,7 +71,7 @@ static GLuint s_compose, s_compose_vbo, s_overlay_prog;
 enum { PROG_SCREEN, PROG_PANEL, PROG_CAP, PROGS };
 typedef struct {
     GLuint id;
-    GLint c2d, c3d, bright, hofs, blend, backdrop, prev, cap, flip, fx, filt, panel, panel_rect;
+    GLint vs, c2d, c3d, bright, hofs, blend, backdrop, prev, cap, flip, fx, filt, panel, panel_rect;
 } ComposeProg;
 static ComposeProg s_progs[PROGS];
 /* config hud_size: the HUD's corners on the DS top screen (x0, y0, x1, y1), as gpu2d's
@@ -112,11 +112,19 @@ static uint16_t s_3d_bright;
 
 /* engine A's 2D pixels (alpha = gpu2d.h code) with the 3D layer laid in, then master
  * brightness; positions in NDC, uv with 0 at the top of the screen */
+/* The 2D's and the 3D's texture coordinates come from here, ready: the fragment shader reads
+ * both without working them out first, which the Vita's GPU does far faster (a read at a
+ * computed coordinate waits for the computation; 0.6.1). uVs: x flips the 2D vertically, y the
+ * 2D's width kept 4:3 in a wide 3D (config hud), z BG0HOFS's scroll of the 3D layer. */
 static const char s_compose_vs[] =
-    "void main(float2 aPos, float2 aUv, out float4 vPos : POSITION, out float2 vUv : TEXCOORD0)\n"
+    "void main(float2 aPos, float2 aUv, uniform float4 uVs,\n"
+    "          out float4 vPos : POSITION, out float2 vUv : TEXCOORD0,\n"
+    "          out float2 v2d : TEXCOORD1, out float2 v3d : TEXCOORD2)\n"
     "{\n"
     "    vPos = float4(aPos, 0.0, 1.0);\n"
     "    vUv = aUv;\n"
+    "    v2d = float2((aUv.x - 0.5) / uVs.y + 0.5, uVs.x > 0.5 ? 1.0 - aUv.y : aUv.y);\n"
+    "    v3d = float2(aUv.x + uVs.z, 1.0 - aUv.y);\n"
     "}\n";
 static const char s_compose_fs[] =
     /* The 2D scaled up (config filter_2d, uFilt.x): 1 sharp, the DS's square pixels with
@@ -140,23 +148,20 @@ static const char s_compose_fs[] =
     "    return (a.rgb * wa + b.rgb * wb + c.rgb * wc + d.rgb * wd) / max(wa + wb + wc + wd, 0.0001);\n"
     "}\n"
     "\n"
-    "float4 main(float2 vUv : TEXCOORD0, uniform sampler2D u2d, uniform sampler2D u3d,\n"
-    "            uniform float2 uBright, uniform float uHofs, uniform float2 uBlend,\n"
+    "float4 main(float2 vUv : TEXCOORD0, float2 v2d : TEXCOORD1, float2 v3d : TEXCOORD2,\n"
+    "            uniform sampler2D u2d, uniform sampler2D u3d,\n"
+    "            uniform float2 uBright, uniform float2 uBlend,\n"
     "            uniform float3 uBackdrop, uniform sampler2D uPrev, uniform float4 uCap,\n"
-    "            uniform float uFlip, uniform float4 uFx, uniform float2 uFilt,\n"
+    "            uniform float4 uFx, uniform float2 uFilt,\n"
     "            uniform float4 uPanel, uniform float4 uPanelRect) : COLOR\n"
     "{\n"
-    "    float2 uv2 = vUv;\n"
-    "    if (uFlip > 0.5)\n"
-    "        uv2.y = 1.0 - vUv.y;\n"
-    /* uFx.y < 1: the 2D (HUD) kept 4:3 in the middle of a widescreen 3D; beside it, the 3D */
-    "    uv2.x = (uv2.x - 0.5) / uFx.y + 0.5;\n"
-    "    float4 b = float4(0.0, 0.0, 0.0, 0.0);\n"
-    "    if (uv2.x >= 0.0 && uv2.x <= 1.0) {\n"
-    "        b = tex2D(u2d, uv2);\n"
-    "        if (uFilt.x > 0.5 && b.a > 0.999)\n"
-    "            b.rgb = smooth2d(u2d, uv2, uFilt);\n"
-    "    }\n"
+    /* the 2D (HUD) kept 4:3 in the middle of a widescreen 3D: beside it, the 3D */
+    "    float4 b = tex2D(u2d, v2d);\n"
+    "    float4 t = tex2D(u3d, v3d);\n"
+    "    if (v2d.x < 0.0 || v2d.x > 1.0)\n"
+    "        b = float4(0.0, 0.0, 0.0, 0.0);\n"
+    "    else if (uFilt.x > 0.5 && b.a > 0.999)\n"
+    "        b.rgb = smooth2d(u2d, v2d, uFilt);\n"
     /* the HUD size's codes (gpu2d hud_codes): left out here, drawn again smaller in the
      * corners (a PANEL pass); the 3D over the backdrop in their place */
     "#ifndef PANEL\n"
@@ -169,9 +174,7 @@ static const char s_compose_fs[] =
     /* config hud_size: the four HUD blocks are drawn again smaller in their corners (a later
      * pass); here their 2D pixels give way to the 3D over the backdrop */
     "    float3 c = b.rgb;\n"
-    "    float u = vUv.x + uHofs;\n"
-    "    float4 t = tex2D(u3d, float2(u, 1.0 - vUv.y));\n"
-    "    if (u < 0.0 || u > 1.0)\n"
+    "    if (v3d.x < 0.0 || v3d.x > 1.0)\n"
     "        t = float4(0.0, 0.0, 0.0, 0.0);\n"
     /* uCap.z: a capture of the 3D layer alone */
     "#ifdef CAP\n"
@@ -257,7 +260,8 @@ static const char s_compose_fs[] =
 
 static uint32_t source_hash(const char *src, GLenum type)
 {
-    uint32_t h = 2166136261u ^ (uint32_t)type;
+    /* ^ 0x0601: compiled with 0.6.1's compiler settings (video_init) */
+    uint32_t h = (2166136261u ^ 0x0601u) ^ (uint32_t)type;
     while (*src)
         h = (h ^ (uint8_t)*src++) * 16777619u;
     return h;
@@ -408,6 +412,7 @@ static void compose_init(void)
             LOG("video: composition shader %d did not build: the 3D layer will not show", k);
             return;
         }
+        g->vs = glGetUniformLocation(g->id, "uVs");
         g->c2d = glGetUniformLocation(g->id, "u2d");
         g->c3d = glGetUniformLocation(g->id, "u3d");
         g->bright = glGetUniformLocation(g->id, "uBright");
@@ -498,8 +503,7 @@ static void compose_pass(const float *v, GLuint tex2d, int flip2d, GLuint tex3d,
     SET(g->c2d, glUniform1i(g->c2d, 0));
     SET(g->c3d, glUniform1i(g->c3d, 1));
     SET(g->prev, glUniform1i(g->prev, 2));
-    SET(g->hofs, glUniform1f(g->hofs, s_3d_hofs));
-    SET(g->flip, glUniform1f(g->flip, flip2d ? 1.0f : 0.0f));
+    SET(g->vs, glUniform4f(g->vs, flip2d ? 1.0f : 0.0f, hud, s_3d_hofs, 0.0f));
     SET(g->fx, glUniform4f(g->fx, cap ? 0.0f : (float)kh_config.screen_effect, hud, alpha, 0.0f));
     /* Vita pixels per DS pixel, from the quad's height */
     SET(g->filt, glUniform2f(g->filt, filter == FILTER_2D && !(video_gpu_test & 1)
@@ -916,6 +920,9 @@ void video_init(void)
     /* A GPU pool > 0 is required; vitaGL's defaults for the rest. */
     {
         const uint64_t t0 = sceKernelGetProcessTimeWide();
+        /* the shader compiler's O3 and fast maths (not its lower precision: the 3D's texture
+         * coordinates need all of theirs); the cache's names change with it (source_hash) */
+        vglSetupRuntimeShaderCompiler(SHARK_OPT_FAST, 1, 0, 0);
         vglInitExtended(0, DISPLAY_W, DISPLAY_H, 16 * 1024 * 1024, SCE_GXM_MULTISAMPLE_NONE);
         LOG("video: vitaGL initialised in %u ms",
             (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000));
