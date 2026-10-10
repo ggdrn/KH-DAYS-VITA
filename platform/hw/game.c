@@ -274,6 +274,7 @@ static volatile int s_dump_2d; /* L+R+Triangle: the 2D side of the frame too */
 static volatile int s_fast_forward; /* L+R+Square */
 static void dump_2d(int a_on_top);
 static void dynamic_resolution(int late);
+static void movie_crop(int movie, int a_on_top, int uploaded);
 
 /* the last screen toggle of a dual-3D scene (kh_dual3d_toggled), with the display registers
  * as the game set them for that frame: read later, they were sometimes the next frame's */
@@ -880,6 +881,7 @@ static void present(void)
             }
         }
     }
+    movie_crop(movie, a_on_top, upload2d ? upload_mask : 0);
     /* which pixels are 3D: from the last 2D picture finished */
     a3d = last_a3d;
     s_render_us = (uint32_t)(sceKernelGetProcessTimeWide() - t0);
@@ -1071,6 +1073,59 @@ static void sample_input(void);
  * without the composition. Over 120 swaps: more than 6 late, a step of 0.5x down (to 2x at
  * least); none late three times running, and 30 s after the last step down, 0.5x back up to
  * config render_scale. */
+/* The rows at the top (*t) and the bottom (*b) of a screen's picture that are black */
+static void letterbox(const uint32_t *fb, int *t, int *b)
+{
+    int y, x;
+    for (y = 0; y < 96; y++) {
+        for (x = 0; x < 256 && !(fb[y * 256 + x] & 0xe0e0e0u); x += 2)
+            ;
+        if (x < 256)
+            break;
+    }
+    *t = y;
+    for (y = 0; y < 96; y++) {
+        for (x = 0; x < 256 && !(fb[(191 - y) * 256 + x] & 0xe0e0e0u); x += 2)
+            ;
+        if (x < 256)
+            break;
+    }
+    *b = y;
+}
+
+/* A movie in a wide layout without its letterbox: the movies are 16:9 pictures in the DS's
+ * 4:3 screen, black above and below, which a 16:9 screen showed inside its own black. The
+ * black rows are measured over the movie's first 8 pictures with something in them (the
+ * fewest seen: dark scenes do not count as black) and cut off for the rest of it; what the
+ * player writes in them later (subtitles) is drawn over the picture (video.c). */
+static void movie_crop(int movie, int a_on_top, int uploaded)
+{
+    static int latched, seen, min_t, min_b, crop_t, crop_b;
+    const int scr = a_on_top ? 0 : 1;
+    const int want = movie && kh_config.aspect != KH_ASPECT_4_3 && video_screen_aspect(scr) > 1.6f;
+    if (!movie)
+        latched = seen = 0;
+    if (want && !latched && (uploaded & (1 << scr))) {
+        int t, b;
+        letterbox(scr ? s_bottom : s_top, &t, &b);
+        if (t + b < 150) {
+            if (!seen || t < min_t)
+                min_t = t;
+            if (!seen || b < min_b)
+                min_b = b;
+            if (++seen >= 8) {
+                latched = 1;
+                crop_t = min_t >= 8 ? min_t : 0;
+                crop_b = min_b >= 8 ? min_b : 0;
+                LOG("display: movie letterbox %d rows above, %d below: %s", min_t, min_b,
+                    crop_t || crop_b ? "cut off" : "none");
+            }
+        }
+    }
+    video_set_crop(scr, want && latched ? crop_t : 0, want && latched ? crop_b : 0);
+    video_set_crop(1 - scr, 0, 0);
+}
+
 static void dynamic_resolution(int late)
 {
     static uint32_t swaps, lates, calm, hold_until;
