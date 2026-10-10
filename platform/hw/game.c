@@ -274,7 +274,6 @@ static volatile int s_dump_2d; /* L+R+Triangle: the 2D side of the frame too */
 static volatile int s_fast_forward; /* L+R+Square */
 static void dump_2d(int a_on_top);
 static void dynamic_resolution(int late);
-static void movie_crop(int movie, int a_on_top, int uploaded);
 
 /* the last screen toggle of a dual-3D scene (kh_dual3d_toggled), with the display registers
  * as the game set them for that frame: read later, they were sometimes the next frame's */
@@ -881,7 +880,6 @@ static void present(void)
             }
         }
     }
-    movie_crop(movie, a_on_top, upload2d ? upload_mask : 0);
     /* which pixels are 3D: from the last 2D picture finished */
     a3d = last_a3d;
     s_render_us = (uint32_t)(sceKernelGetProcessTimeWide() - t0);
@@ -979,9 +977,7 @@ static void present(void)
         int k, lit = 0;
         for (k = 0; k < 256 * 192 && !lit; k += 7)
             lit = (s_bottom[k] & 0xe0e0e0u) != 0;
-        /* also with engine A on the bottom screen when it has no 3D there (a movie: the small
-         * screen was a black box) */
-        video_set_inset_blank(!lit && (a_on_top || !a3d));
+        video_set_inset_blank(a_on_top && !lit);
     }
     s_stage = "present";
     {
@@ -1075,94 +1071,6 @@ static void sample_input(void);
  * without the composition. Over 120 swaps: more than 6 late, a step of 0.5x down (to 2x at
  * least); none late three times running, and 30 s after the last step down, 0.5x back up to
  * config render_scale. */
-/* The rows at the top (*t) and the bottom (*b) of a screen's picture that are black */
-static void letterbox(const uint32_t *fb, int *t, int *b)
-{
-    int y, x;
-    for (y = 0; y < 96; y++) {
-        for (x = 0; x < 256 && !(fb[y * 256 + x] & 0xe0e0e0u); x += 2)
-            ;
-        if (x < 256)
-            break;
-    }
-    *t = y;
-    for (y = 0; y < 96; y++) {
-        for (x = 0; x < 256 && !(fb[(191 - y) * 256 + x] & 0xe0e0e0u); x += 2)
-            ;
-        if (x < 256)
-            break;
-    }
-    *b = y;
-}
-
-/* A movie in a wide layout without its letterbox: the movies are 16:9 pictures in the DS's
- * 4:3 screen, black above and below, which a 16:9 screen showed inside its own black. The
- * black rows are measured over the movie's first 8 pictures with something in them (the
- * fewest seen: dark scenes do not count as black) and cut off for the rest of it; what the
- * player writes in them later (subtitles) is drawn over the picture (video.c). */
-static void movie_crop(int movie, int a_on_top, int uploaded)
-{
-    static int latched, seen, tries, min_t, min_b, crop_t, crop_b;
-    /* the screen shown wide (the large one of the layout), whichever engine draws it: the
-     * movie is not always engine A's (0.6.3 looked at engine A's screen only, and cut
-     * nothing) */
-    const int scr = video_screen_aspect(0) > 1.6f ? 0 : video_screen_aspect(1) > 1.6f ? 1 : -1;
-    const int want = movie && kh_config.aspect != KH_ASPECT_4_3 && scr >= 0;
-    (void)a_on_top;
-    if (!movie)
-        latched = seen = tries = 0;
-    if (want && !latched && (uploaded & (1 << scr))) {
-        int t, b;
-        letterbox(scr ? s_bottom : s_top, &t, &b);
-        if (kh_log_verbose && tries++ < 24)
-            LOG("display: movie on screen %d: %d black rows above, %d below", scr, t, b);
-        if (t + b < 150) {
-            if (!seen || t < min_t)
-                min_t = t;
-            if (!seen || b < min_b)
-                min_b = b;
-            if (++seen >= 8) {
-                latched = 1;
-                /* the movie's edge rows are dark: a line along the cut with one row more
-                 * (0.6.5) or two (0.6.6); four, and the edges read at their rows' middle
-                 * (video.c) */
-                crop_t = min_t >= 8 ? min_t + 4 : 0;
-                crop_b = min_b >= 8 ? min_b + 4 : 0;
-                {
-                    /* each edge row's mean brightness (0-255), for the log */
-                    const uint32_t *fb = scr ? s_bottom : s_top;
-                    char line[160];
-                    int n = 0, k, y, x;
-                    for (k = 0; k < 16; k++) {
-                        const int row = k < 8 ? min_t + k : 191 - min_b - (k - 8);
-                        uint32_t sum = 0;
-                        if (row < 0 || row > 191)
-                            continue;
-                        for (x = 0; x < 256; x++) {
-                            const uint32_t p = fb[row * 256 + x];
-                            sum += (p & 0xff) + ((p >> 8) & 0xff) + ((p >> 16) & 0xff);
-                        }
-                        y = (int)(sum / (256 * 3));
-                        n += snprintf(line + n, sizeof(line) - (size_t)n, "%s%d", k == 8 ? " | " : k ? " " : "", y);
-                    }
-                    LOG("display: movie edge rows' brightness, from the top bar down | from the "
-                        "bottom bar up: %s", line);
-                }
-                LOG("display: movie letterbox %d rows above, %d below: %s", min_t, min_b,
-                    crop_t || crop_b ? "cut off" : "none");
-            }
-        }
-    }
-    {
-        int k;
-        for (k = 0; k < 2; k++) {
-            const int on = want && latched && scr == k;
-            video_set_crop(k, on ? crop_t : 0, on ? crop_b : 0, on && crop_t ? min_t : 0,
-                           on && crop_b ? min_b : 0);
-        }
-    }
-}
-
 static void dynamic_resolution(int late)
 {
     static uint32_t swaps, lates, calm, hold_until;

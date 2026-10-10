@@ -64,11 +64,7 @@ static ScreenLayout s_layout = LAYOUT_TOP_MAIN;
 static ScreenRect s_rect[2];
 static int s_inset = -1; /* the screen drawn small over the other one, -1 for none */
 static volatile int s_pending = -1; /* a layout asked for from another thread (input) */
-static GLuint s_compose, s_compose_vbo, s_overlay_prog, s_bar_prog;
-/* per screen: DS rows cut off at the top and the bottom (a movie's letterbox, video_set_crop) */
-static int s_crop[2][2];
-/* of those, the letterbox's own (black) rows: what is drawn over the picture's edges */
-static int s_bar[2][2];
+static GLuint s_compose, s_compose_vbo, s_overlay_prog;
 /* The composition shader in four builds, each with only what its passes use: the screens
  * (covering the whole display every frame), the screens with the HUD blocks masked, the panels
  * and HUD blocks, the display captures. One build with everything cost the GPU frames (0.1.8). */
@@ -450,24 +446,10 @@ static void compose_init(void)
             "{\n"
             "    return tex2D(uTex, vUv);\n"
             "}\n";
-        /* a movie's letterbox rows over the cropped picture (video_set_crop): their black
-         * clear, what the player writes there (subtitles) over the picture */
-        static const char bar_fs[] =
-            "float4 main(float2 vUv : TEXCOORD0, uniform sampler2D uTex) : COLOR\n"
-            "{\n"
-            "    float4 c = tex2D(uTex, vUv);\n"
-            "    return float4(c.rgb, max(c.r, max(c.g, c.b)) > 0.08 ? 1.0 : 0.0);\n"
-            "}\n";
         s_overlay_prog = video_build_program(vs, fs, attribs, 2);
         if (s_overlay_prog) {
             glUseProgram(s_overlay_prog);
             glUniform1i(glGetUniformLocation(s_overlay_prog, "uTex"), 0);
-            glUseProgram(0);
-        }
-        s_bar_prog = video_build_program(vs, bar_fs, attribs, 2);
-        if (s_bar_prog) {
-            glUseProgram(s_bar_prog);
-            glUniform1i(glGetUniformLocation(s_bar_prog, "uTex"), 0);
             glUseProgram(0);
         }
     }
@@ -571,11 +553,7 @@ static void screen_quad(int screen, float *v)
     const ScreenRect *r = &s_rect[screen];
     const float x0 = r->x / (DISPLAY_W / 2.0f) - 1.0f, x1 = (r->x + r->w) / (DISPLAY_W / 2.0f) - 1.0f;
     const float y0 = 1.0f - r->y / (DISPLAY_H / 2.0f), y1 = 1.0f - (r->y + r->h) / (DISPLAY_H / 2.0f);
-    /* a crop's edges at the middle of their rows: the smoothed 2D (smooth2d) reads that row
-     * alone there, not half of the one cut off next to it */
-    const float t = s_crop[screen][0] ? ((float)s_crop[screen][0] + 0.5f) / 192.0f : 0.0f;
-    const float b = s_crop[screen][1] ? 1.0f - ((float)s_crop[screen][1] + 0.5f) / 192.0f : 1.0f;
-    const float q[] = { x0, y0, 0, t, x1, y0, 1, t, x0, y1, 0, b, x1, y1, 1, b };
+    const float q[] = { x0, y0, 0, 0, x1, y0, 1, 0, x0, y1, 0, 1, x1, y1, 1, 1 };
     memcpy(v, q, sizeof(q));
 }
 
@@ -1089,65 +1067,6 @@ void video_run_capture(const uint32_t *top, const uint32_t *bottom)
         run_capture();
 }
 
-void video_set_crop(int screen, int top, int bottom, int bar_top, int bar_bottom)
-{
-    if (screen < 0 || screen > 1)
-        return;
-    s_crop[screen][0] = top < 0 ? 0 : top > 64 ? 64 : top;
-    s_crop[screen][1] = bottom < 0 ? 0 : bottom > 64 ? 64 : bottom;
-    s_bar[screen][0] = bar_top < 0 ? 0 : bar_top > s_crop[screen][0] ? s_crop[screen][0] : bar_top;
-    s_bar[screen][1] = bar_bottom < 0 ? 0 : bar_bottom > s_crop[screen][1] ? s_crop[screen][1]
-                                                                            : bar_bottom;
-}
-
-/* the letterbox's rows, at the picture's scale at the screen's top and bottom edges, their
- * black left out (the screen's texture is bound). Only the black rows: the movie's own edge
- * rows, cut off too, are dark and came out as a line along the cut (0.6.5). */
-static void draw_crop_bars(int screen)
-{
-    const ScreenRect *r = &s_rect[screen];
-    const int t = s_bar[screen][0], b = s_bar[screen][1];
-    const float sy = (float)r->h / (float)(192 - s_crop[screen][0] - s_crop[screen][1]);
-    int k;
-    if (!s_bar_prog || (!t && !b))
-        return;
-    /* texel by texel: filtered, the strip's inner edge took in half of the picture's first
-     * row, grey enough to be drawn, a line along the cut (0.6.4 to 0.6.7) */
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glUseProgram(s_bar_prog);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glBindBuffer(GL_ARRAY_BUFFER, s_compose_vbo);
-    for (k = 0; k < 2; k++) {
-        const int rows = k ? b : t;
-        /* a little inside the screen's edge (the subtitles at the DS screen's very bottom row
-         * came out against the Vita's), and the texture read a quarter texel inside the
-         * rows */
-        const float margin = k ? 28.0f : 10.0f; /* 0.6.8's 10 left the subtitles too low */
-        const float py0 = k ? r->y + r->h - rows * sy - margin : (float)r->y + margin;
-        const float py1 = py0 + rows * sy;
-        const float v0 = (k ? 192.0f - (float)rows + 0.25f : 0.25f) / 192.0f;
-        const float v1 = (k ? 191.75f : (float)rows - 0.25f) / 192.0f;
-        const float x0 = r->x / (DISPLAY_W / 2.0f) - 1.0f, x1 = (r->x + r->w) / (DISPLAY_W / 2.0f) - 1.0f;
-        const float y0 = 1.0f - py0 / (DISPLAY_H / 2.0f), y1 = 1.0f - py1 / (DISPLAY_H / 2.0f);
-        const float v[16] = { x0, y0, 0, v0, x1, y0, 1, v0, x0, y1, 0, v1, x1, y1, 1, v1 };
-        if (!rows)
-            continue;
-        glBufferData(GL_ARRAY_BUFFER, sizeof(v), v, GL_DYNAMIC_DRAW);
-        glEnableVertexAttribArray(0);
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, (void *)0);
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, (void *)8);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-        glDisableVertexAttribArray(0);
-        glDisableVertexAttribArray(1);
-    }
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glUseProgram(0);
-    glDisable(GL_BLEND);
-}
-
 void video_present(const uint32_t *top, const uint32_t *bottom)
 {
     const uint32_t *src[2] = { top, bottom };
@@ -1198,11 +1117,6 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
             float v[16];
             screen_quad(i, v);
             compose_pass(v, s_tex_cur(i), 0, 0, 0, 0, 1.0f, screen_alpha(i), FILTER_2D);
-        }
-        if ((s_crop[i][0] || s_crop[i][1]) && !(video_gpu_test & 2) &&
-            !(s_show_bank[i] >= 0 && s_compose)) {
-            glBindTexture(GL_TEXTURE_2D, s_tex_cur(i));
-            draw_crop_bars(i);
         } else {
             draw_quad(&s_rect[i]);
         }

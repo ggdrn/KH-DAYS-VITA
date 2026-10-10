@@ -124,9 +124,4 @@ void video_run_capture(const uint32_t *top, const uint32_t *bottom);
 /* config debug = 3 (game.c): 1 the 2D drawn without smoothing, 2 the screens as plain quads */
 extern volatile int video_gpu_test;
 
-/* A screen shown without its top and bottom rows (a movie's letterbox in a wide layout): the
- * rest fills the screen. Of those, the letterbox's own rows (bar_top, bar_bottom) are drawn
- * over it at its edges with their black clear (the subtitles). 0s: the whole screen. */
-void video_set_crop(int screen, int top, int bottom, int bar_top, int bar_bottom);
-
 #endif
