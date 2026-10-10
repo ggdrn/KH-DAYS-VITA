@@ -1047,6 +1047,16 @@ void video_set_swap_interval(int vblanks)
     }
 }
 
+void video_run_capture(const uint32_t *top, const uint32_t *bottom)
+{
+    if (top)
+        upload_screen(0, top);
+    if (bottom)
+        upload_screen(1, bottom);
+    if (s_cap.pending)
+        run_capture();
+}
+
 void video_present(const uint32_t *top, const uint32_t *bottom)
 {
     const uint32_t *src[2] = { top, bottom };

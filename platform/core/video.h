@@ -117,5 +117,8 @@ unsigned video_build_program(const char *vs, const char *fs, const char *const *
 /* each swap shown for this many VBlanks: 1 (60 fps), 2 (the screen at 30 fps) */
 void video_set_swap_interval(int vblanks);
 void video_present(const uint32_t *top, const uint32_t *bottom);
+/* The frame's screens uploaded and its pending capture done, without drawing or swapping (the
+ * dual-3D fights: the bottom screen's frame only feeds its screen memory, game.c) */
+void video_run_capture(const uint32_t *top, const uint32_t *bottom);
 
 #endif

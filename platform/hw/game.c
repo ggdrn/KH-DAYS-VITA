@@ -276,8 +276,12 @@ void kh_dual3d_toggled(void)
      * for several frames, then the other (0.0.89). While the scene runs the game waits for the
      * display to finish the last toggle (33 ms at most), so that each one is shown. */
     if (s_vblanks - s_toggle_vb < 8) {
+        /* in the field's fights (ov022), for the frame's 2D and 3D only: waiting for its swap
+         * too held the game back to some 25 top-screen frames a second (0.5.1) */
+        const int field = kh_overlay_loaded(22);
         const uint64_t until = sceKernelGetProcessTimeWide() + 33000;
-        while (s_toggle_done != s_toggle_seq && sceKernelGetProcessTimeWide() < until)
+        while ((field ? s_toggle_drawn : s_toggle_done) != s_toggle_seq &&
+               sceKernelGetProcessTimeWide() < until)
             sceKernelDelayThread(100);
     }
     s_toggle_top = (KH_IO16(0x04000304) >> 15) & 1;
@@ -536,7 +540,8 @@ static void present(void)
      * show) done at once. Drawn like a cutscene, both screens' 2D and 3D every toggle with the
      * game waiting for each, the single screen went off, the screen fell to 40 fps and the 3D
      * jumped between the two views (0.5.0's log). */
-    const int dual_top_only = dual && kh_config.single_screen && kh_overlay_loaded(22);
+    const int dual_field = dual && kh_overlay_loaded(22);
+    const int dual_top_only = dual_field && kh_config.single_screen;
     int trace_before = a_on_top;
     uint32_t trace_wait = 0;
     int trace_polys = -1;
@@ -568,7 +573,7 @@ static void present(void)
      * second). Each display frame is then a new game frame, its 3D shown at once and its 2D
      * drawn with it (33 ms to do both). Not in dual 3D (a screen per VBlank) nor with the
      * port menu open. */
-    const int lock30 = !kh_config.frame_interpolation && (!dual || dual_top_only) &&
+    const int lock30 = !kh_config.frame_interpolation && (!dual || dual_field) &&
                        !portmenu_is_open();
     /* config confirm_cross (input.c): the fonts' A and B drawn to match */
     kh_button_glyphs_menu(kh_config.confirm_cross);
@@ -810,7 +815,8 @@ static void present(void)
         const int a_shows_bank = ((s_toggle_regs.dispcnt_a >> 16) & 3) == 2;
         if (!dual) {
             kh_capture_run(raw3d);
-        } else if (captured_seq != s_toggle_seq) {
+        } else if (captured_seq != s_toggle_seq && !(dual_field && a_on_top)) {
+            /* (a fight's top-screen frame is shown live, never from its copy: none made) */
             /* not the game's own capture into bank C or D: what engine A drew is kept for the
              * screen it was on, and that screen shows it while engine B has it. The banks'
              * roles did not follow a fixed two-frame turn (the Sora video on the bottom screen
@@ -879,7 +885,14 @@ static void present(void)
         const uint64_t c = threadstat_self_us();
         const uint32_t *top = upload2d && (upload_mask & 1) ? s_top : NULL;
         const uint32_t *bottom = upload2d && (upload_mask & 2) ? s_bottom : NULL;
-        video_present(top, bottom);
+        /* A dual-3D fight's bottom-screen frame is not shown by itself: it only feeds the
+         * bottom screen's memory (the capture), which the next top-screen frame shows. Swapped
+         * too, each screen showed in turn its live picture and the copy, drawn with other
+         * filtering: the scenery shimmered (0.5.0) */
+        if (dual_field && !a_on_top)
+            video_run_capture(top, bottom);
+        else
+            video_present(top, bottom);
         if (dual)
             s_toggle_done = toggle_seq;
         t = sceKernelGetProcessTimeWide() - t;
