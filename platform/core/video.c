@@ -1124,7 +1124,7 @@ static void draw_crop_bars(int screen)
         /* a little inside the screen's edge (the subtitles at the DS screen's very bottom row
          * came out against the Vita's), and the texture read a quarter texel inside the
          * rows */
-        const float margin = 10.0f;
+        const float margin = k ? 28.0f : 10.0f; /* 0.6.8's 10 left the subtitles too low */
         const float py0 = k ? r->y + r->h - rows * sy - margin : (float)r->y + margin;
         const float py1 = py0 + rows * sy;
         const float v0 = (k ? 192.0f - (float)rows + 0.25f : 0.25f) / 192.0f;
