@@ -1,6 +1,6 @@
 # khdays-vita: resumo do trabalho e próximos passos
 
-Versão atual: **0.5.5** (testes). Último release: **v0.5.0** (tag `v0.5.0`, notas em `docs/releases/v0.5.0.md`).
+Versão atual: **0.6.9** (testes). Último release: **v0.5.0** (tag `v0.5.0`, notas em `docs/releases/v0.5.0.md`).
 
 ## O que foi feito
 
@@ -67,12 +67,31 @@ O jogo alterna o 3D entre as telas a cada VBlank (cada tela a 30 Hz).
 - **0.5.4:** em duas telas, a tela volta a ser travada em 2 VBlanks por troca. O log mostra ~97% das trocas exatas.
 - **0.5.5, tremor do cenário só em duas telas:** o fator de widescreen do 3D era um valor só, trocado pelo display a cada toggle, e o jogo montava frames com a largura da outra tela. Agora cada frame usa o fator da tela para a qual é montado. **Testado: resolvido** (log: 1 frame trocado só no início da luta).
 
+### Desempenho e vídeos (0.5.6–0.6.9)
+- **0.5.6, leitura da ROM:**
+  - cache de 16 MiB com leitura antecipada em outra thread;
+  - durante o jogo, quase nenhuma leitura no cartão (antes até ~900 ms a cada 10 s);
+  - linha `hitch:` no log para os engasgos do lado do jogo.
+- **0.5.7, menu de pausa:** o 2D da captura (desfoque) é desenhado em faixas nos dois núcleos, junto com o 2D do quadro. De 47 quadros lentos para 1.
+- **0.5.8–0.5.9, medições:**
+  - a 60 fps, quadros atrasados separados entre CPU e GPU;
+  - modo de teste de GPU (`debug = 3`): a soma de 3D em 3x e composição passava de uma VBlank.
+- **0.6.0, resolução dinâmica do 3D a 60 fps:** desce de 3x até 2x em passos de 0,5x enquanto há atrasos e volta a subir depois.
+- **0.6.1, composição:** coordenadas vindas do vertex shader (sem leituras dependentes) e compilador de shaders em O3 com matemática rápida.
+- **0.6.2, vídeos:** a 30 fps também no modo 60.
+- **0.6.3–0.6.9, vídeos em wide sem as faixas pretas:**
+  - corte medido por vídeo (16+16 linhas, mais 4 de folga);
+  - legendas desenhadas sobre a imagem, 28 px acima da borda;
+  - a tela de baixo preta fica oculta.
+
+**Testado: ok.**
+
 ### Outros
 - **Tela única:** os painéis passam a seguir o zoom da câmera, a visão aproximada do Select (0.1.24).
 - **Release v0.4.0:** publicado com tag no GitHub e changelog em `docs/releases/v0.4.0.md`.
 - **Release v0.5.0:** notas em `docs/releases/v0.5.0.md`; versão VitaDB em `docs/releases/vitadb_v0.5.0.md`.
 
-## Pendências e plano de ação (depois da 0.5.5)
+## Pendências e plano de ação (depois da 0.6.9)
 
 Números do log da 0.5.5 (30 fps, render_scale 3):
 - **Entrada em área nova:** pior quadro de texturas ainda ~16–18 ms (checagem e decodificação de até ~60 texturas).
@@ -81,12 +100,9 @@ Números do log da 0.5.5 (30 fps, render_scale 3):
 
 | Prioridade | Item | Ação |
 |---|---|---|
-| 1 | Release 0.5.x (correções da luta dual) | Fechar notas de `v0.5.1` (ou `v0.6.0` se entrar mais coisa) com as correções do Sora/dual 3D; tag e VitaDB |
-| 2 | Engasgos ao entrar em área nova | Pior quadro ~17 ms nas texturas. Tirar a checagem (hash da VRAM) do quadro: só re-hashear o que a VRAM mudou (marcar páginas escritas pelo DMA/memcpy da VRAM), otimizar `texels_smooth` e espalhar o envio por 2–3 quadros durante o fade |
-| 3 | Campo abaixo de 60 VBlanks/s em áreas cheias | Medir por área (game core vs display) e atacar o que limita: 2D do motor A ("the rest" ~12 ms de CPU por quadro: composição por linha) |
-| 4 | Ícones do DS restantes | Varrer telas ainda não vistas (loja, tutoriais `UI/btlttr`, resultados de missão, manual `UI/mnl`) com dumps; acrescentar ao gerador |
-| 5 | Vídeos a ~51 fps | Travar a troca de tela no ritmo do vídeo, como no modo 30 fps |
-| 6 | Outras cenas com 3D nas duas telas | Conferir chefes e cutscenes dual 3D fora de Olympus com o mesmo caminho (widescreen por frame, trava de 30) |
-| 7 | 60 fps (experimental) | Interpolar também na luta dual (hoje desligada lá); interpolar a rolagem dos fundos 2D; folga de CPU nas batalhas cheias |
-| 8 | Áudio, mais um passo (opcional) | PCM direto em 16 bits e soma com NEON (estimativa 1,5–2×) |
-| 9 | Distribuição | Auditoria que falhe o build se bytes da ROM entrarem no ELF; atualizar o `ROADMAP.md` |
+| 1 | Release (no fim) | Notas de 0.5.1–0.6.9 (dual 3D, ROM, pausa, 60 fps, vídeos), tag e VitaDB. A próxima versão de teste vira 0.7.0 (APP_VER não aceita patch ≥ 10) |
+| 2 | Ícones do DS restantes | Varrer telas ainda não vistas (loja, tutoriais `UI/btlttr`, resultados de missão, manual `UI/mnl`) com dumps; acrescentar ao gerador |
+| 3 | Outras cenas com 3D nas duas telas | Conferir chefes e cutscenes dual 3D fora de Olympus |
+| 4 | 60 fps: custo restante | Envio do 3D duas vezes por quadro do jogo e ~4 ms de CPU no swap do vitaGL; interpolar a rolagem dos fundos 2D |
+| 5 | Áudio, mais um passo (opcional) | PCM direto em 16 bits e soma com NEON |
+| 6 | Distribuição | Auditoria que falhe o build se bytes da ROM entrarem no ELF; atualizar o `ROADMAP.md` |
