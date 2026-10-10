@@ -63,8 +63,8 @@ static void wav(const char *name, const int16_t *s, int frames)
     FILE *f = fopen(name, "wb");
     uint8_t h[44] = "RIFF\0\0\0\0WAVEfmt \x10\0\0\0\x01\0\x02\0\0\0\0\0\0\0\0\0\x04\0\x10\0data";
     wr32(h + 4, 36 + frames * 4);
-    wr32(h + 24, SND7_RATE);
-    wr32(h + 28, SND7_RATE * 4);
+    wr32(h + 24, (uint32_t)snd7_rate);
+    wr32(h + 28, (uint32_t)snd7_rate * 4);
     wr32(h + 40, frames * 4);
     fwrite(h, 1, 44, f);
     fwrite(s, 4, frames, f);
@@ -97,6 +97,8 @@ int main(int argc, char **argv)
         printf("sound_data.sdat: %u bytes\n", end - start);
     }
     snd7_ptr_base = (uintptr_t)s_arena;
+    if (getenv("SND7_RATE"))
+        snd7_rate = atoi(getenv("SND7_RATE"));
     snd7_send_to_arm9 = to_arm9;
     {
         const uint8_t *S = s_arena + sdat;
@@ -116,7 +118,7 @@ int main(int argc, char **argv)
         const uint32_t nseq = rd32(s_arena + seqrec);
         uint32_t sinfo, bfile, sfile, binfo, cmd;
         uint16_t bank;
-        int k, frames = SND7_RATE * 12;
+        int k, frames = snd7_rate * 12;
         int16_t *buf;
         double sum = 0;
         Snd7Stats st;

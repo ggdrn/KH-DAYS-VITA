@@ -579,6 +579,8 @@ static WaveCache *wave_cache_get(const uint8_t *src, uint32_t end, uint32_t ls_b
  * about a quarter of a core on the Vita (0.4.0's log). A channel at zero volume (a note's
  * release run out, a muted track) only moves on. */
 #define MIX_MUL(s, g) ((int32_t)(((int64_t)(s) * (g)) >> 16))
+/* the same with the gain in 15 bits (g15 = g >> 9): a 32-bit multiply, 16 x 15 bits */
+#define MIX_MUL15(s, g15) (((s) * (g15)) >> 7)
 
 /* How many of the next left output samples, from pos by step, have both samples they
  * interpolate between before sample limit (i + 1 < limit): those need no end or loop test,
@@ -600,6 +602,7 @@ static void mix_channel(Channel *c, int32_t *al, int32_t *ar, int count, uint64_
 {
     const int32_t gl = (int32_t)(c->gain_l * 16777216.0f + 0.5f);
     const int32_t gr = (int32_t)(c->gain_r * 16777216.0f + 0.5f);
+    const int32_t gl15 = (gl + 256) >> 9, gr15 = (gr + 256) >> 9;
     const int silent = gl == 0 && gr == 0;
     const uint8_t *d = c->data;
     int k;
@@ -624,8 +627,8 @@ static void mix_channel(Channel *c, int32_t *al, int32_t *ar, int count, uint64_
                     for (; k < e; k++) {
                         const uint32_t ii = POS_INT(pos);
                         const int v = lerp15(p16[ii], p16[ii + 1], pos);
-                        al[k] += MIX_MUL(v, gl);
-                        ar[k] += MIX_MUL(v, gr);
+                        al[k] += MIX_MUL15(v, gl15);
+                        ar[k] += MIX_MUL15(v, gr15);
                         pos += step;
                     }
                 } else {
@@ -633,8 +636,8 @@ static void mix_channel(Channel *c, int32_t *al, int32_t *ar, int count, uint64_
                     for (; k < e; k++) {
                         const uint32_t ii = POS_INT(pos);
                         const int v = lerp15(p8[ii] * 256, p8[ii + 1] * 256, pos);
-                        al[k] += MIX_MUL(v, gl);
-                        ar[k] += MIX_MUL(v, gr);
+                        al[k] += MIX_MUL15(v, gl15);
+                        ar[k] += MIX_MUL15(v, gr15);
                         pos += step;
                     }
                 }
@@ -700,8 +703,8 @@ static void mix_channel(Channel *c, int32_t *al, int32_t *ar, int count, uint64_
                     for (; k < e; k++) {
                         const uint32_t ii = POS_INT(pos);
                         const int s = lerp15(pcm[ii], pcm[ii + 1], pos);
-                        al[k] += MIX_MUL(s, gl);
-                        ar[k] += MIX_MUL(s, gr);
+                        al[k] += MIX_MUL15(s, gl15);
+                        ar[k] += MIX_MUL15(s, gr15);
                         pos += step;
                     }
                     continue;
@@ -1779,6 +1782,7 @@ static void alarms_run(void)
  * scenes neither crackle nor have to be mixed quieter. */
 #define MIX_GAIN 1.0f
 volatile float snd7_port_volume = 1.0f;
+int snd7_rate = SND7_RATE;
 #define KNEE 0.75f
 /* the most samples mixed at once (a driver frame is about 250 at 48 kHz) */
 #define MIX_MAX 512
@@ -1795,7 +1799,7 @@ static inline float soft_limit(float x)
 
 void snd7_render(int16_t *out, int frames)
 {
-    const double dt = 1.0 / SND7_RATE;
+    const double dt = 1.0 / snd7_rate;
     uint64_t (*const clock)(void) = snd7_clock_us;
     uint64_t t = clock ? clock() : 0, t1;
     int n = 0;

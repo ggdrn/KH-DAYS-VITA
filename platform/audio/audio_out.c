@@ -9,10 +9,10 @@
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
 
-/* 512 frames: 10.7 ms, about two driver frames. sceAudioOutOutput costs the thread CPU time
- * of its own on every call, more than the render at 256 (0.6.8's log: ~0.5 s of each 10 s
- * at 187 calls a second); half the calls, half of that */
-#define GRAIN 512
+/* 320 frames at 32 kHz (10 ms, about two driver frames); 512 at 48 kHz (10.7 ms) */
+#define GRAIN_32K 320
+#define GRAIN_48K 512
+static int s_grain = GRAIN_48K;
 
 static int s_port = -1;
 
@@ -32,13 +32,13 @@ static volatile uint32_t s_output_run_us, s_output_wall_us;
 
 static int audio_thread(SceSize args, void *argp)
 {
-    static int16_t buf[2][GRAIN * 2];
+    static int16_t buf[2][GRAIN_48K * 2];
     int k = 0;
     (void)args;
     (void)argp;
     for (;;) {
         uint64_t r, w;
-        snd7_render(buf[k], GRAIN);
+        snd7_render(buf[k], s_grain);
         r = threadstat_self_us();
         w = sceKernelGetProcessTimeWide();
         sceAudioOutOutput(s_port, buf[k]);
@@ -61,8 +61,19 @@ void audio_out_init(void)
     SceUID th;
     snd7_send_to_arm9 = to_arm9;
     snd7_clock_us = clock_us;
-    s_port = sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_MAIN, GRAIN, SND7_RATE,
+    /* the DS's rate on the BGM port (the system resamples it), else 48 kHz on the main one */
+    s_port = sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_BGM, GRAIN_32K, 32000,
                                  SCE_AUDIO_OUT_MODE_STEREO);
+    if (s_port >= 0) {
+        snd7_rate = 32000;
+        s_grain = GRAIN_32K;
+    } else {
+        LOG("audio: no 32 kHz BGM port (%08x), 48 kHz on the main one", s_port);
+        s_port = sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_MAIN, GRAIN_48K, 48000,
+                                     SCE_AUDIO_OUT_MODE_STEREO);
+        snd7_rate = 48000;
+        s_grain = GRAIN_48K;
+    }
     if (s_port < 0) {
         LOG("audio: no output port (%08x): silent", s_port);
         return;
@@ -79,5 +90,5 @@ void audio_out_init(void)
     }
     threadstat_add("audio", th);
     snd7_set_running(1);
-    LOG("audio: 48 kHz stereo, %d-frame grain, ARM7 sound driver on core 2", GRAIN);
+    LOG("audio: %d Hz stereo, %d-frame grain, ARM7 sound driver on core 2", snd7_rate, s_grain);
 }

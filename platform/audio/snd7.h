@@ -1,7 +1,7 @@
 /* The ARM7's sound driver, high-level: what the NitroSDK's ARM7 SND library does with the
  * command lists the ARM9 sends over PXI tag 7. Sequences (SSEQ) are played with their banks
  * (SBNK) and wave archives (SWAR) where the game loaded them, on 16 channels (PCM8, PCM16,
- * IMA-ADPCM, PSG, noise) mixed to stereo 48 kHz; channels the ARM9 sets up itself (NNS sound
+ * IMA-ADPCM, PSG, noise) mixed to stereo at snd7_rate; channels the ARM9 sets up itself (NNS sound
  * streams) and alarms work as on the DS.
  *
  * Plain C: the Vita side (platform/audio/audio_out.c) runs snd7_render on an audio thread and
@@ -11,7 +11,13 @@
 
 #include <stdint.h>
 
+/* The mixing rate: 32 kHz, the DS's own (its mixer runs at 32768 Hz), on the Vita's BGM port,
+ * whose resampling to the display's 48 kHz the system does; 48 kHz on the main port when that
+ * one cannot open. Set before the first snd7_render. Mixed at 48 kHz, half the channel samples
+ * were interpolated in between for nothing the DS had (0.7.1's log: mixing 85% of the audio
+ * thread's 9-11% of a core). */
 #define SND7_RATE 48000
+extern int snd7_rate;
 
 /* A word the ARM9 sent on PXI tag 7: the head of a command list (0: "process now"). The list
  * is copied at once; its finished tag advances once snd7_render has processed it. */
