@@ -571,7 +571,10 @@ static void screen_quad(int screen, float *v)
     const ScreenRect *r = &s_rect[screen];
     const float x0 = r->x / (DISPLAY_W / 2.0f) - 1.0f, x1 = (r->x + r->w) / (DISPLAY_W / 2.0f) - 1.0f;
     const float y0 = 1.0f - r->y / (DISPLAY_H / 2.0f), y1 = 1.0f - (r->y + r->h) / (DISPLAY_H / 2.0f);
-    const float t = (float)s_crop[screen][0] / 192.0f, b = 1.0f - (float)s_crop[screen][1] / 192.0f;
+    /* a crop's edges at the middle of their rows: the smoothed 2D (smooth2d) reads that row
+     * alone there, not half of the one cut off next to it */
+    const float t = s_crop[screen][0] ? ((float)s_crop[screen][0] + 0.5f) / 192.0f : 0.0f;
+    const float b = s_crop[screen][1] ? 1.0f - ((float)s_crop[screen][1] + 0.5f) / 192.0f : 1.0f;
     const float q[] = { x0, y0, 0, t, x1, y0, 1, t, x0, y1, 0, b, x1, y1, 1, b };
     memcpy(v, q, sizeof(q));
 }

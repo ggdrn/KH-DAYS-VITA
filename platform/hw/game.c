@@ -1121,10 +1121,31 @@ static void movie_crop(int movie, int a_on_top, int uploaded)
                 min_b = b;
             if (++seen >= 8) {
                 latched = 1;
-                /* two rows more each side: the movie's edge rows are dark, a line along
-                 * the cut (0.6.4, and thicker in 0.6.5 with one row more) */
-                crop_t = min_t >= 8 ? min_t + 2 : 0;
-                crop_b = min_b >= 8 ? min_b + 2 : 0;
+                /* the movie's edge rows are dark: a line along the cut with one row more
+                 * (0.6.5) or two (0.6.6); four, and the edges read at their rows' middle
+                 * (video.c) */
+                crop_t = min_t >= 8 ? min_t + 4 : 0;
+                crop_b = min_b >= 8 ? min_b + 4 : 0;
+                {
+                    /* each edge row's mean brightness (0-255), for the log */
+                    const uint32_t *fb = scr ? s_bottom : s_top;
+                    char line[160];
+                    int n = 0, k, y, x;
+                    for (k = 0; k < 16; k++) {
+                        const int row = k < 8 ? min_t + k : 191 - min_b - (k - 8);
+                        uint32_t sum = 0;
+                        if (row < 0 || row > 191)
+                            continue;
+                        for (x = 0; x < 256; x++) {
+                            const uint32_t p = fb[row * 256 + x];
+                            sum += (p & 0xff) + ((p >> 8) & 0xff) + ((p >> 16) & 0xff);
+                        }
+                        y = (int)(sum / (256 * 3));
+                        n += snprintf(line + n, sizeof(line) - (size_t)n, "%s%d", k == 8 ? " | " : k ? " " : "", y);
+                    }
+                    LOG("display: movie edge rows' brightness, from the top bar down | from the "
+                        "bottom bar up: %s", line);
+                }
                 LOG("display: movie letterbox %d rows above, %d below: %s", min_t, min_b,
                     crop_t || crop_b ? "cut off" : "none");
             }
