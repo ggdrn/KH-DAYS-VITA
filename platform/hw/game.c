@@ -221,7 +221,11 @@ static uint32_t s_2d_async; /* 2D pictures drawn over two Vita frames (60 fps mo
 static uint32_t s_dual_drawn, s_dual_skipped; /* dual-3D toggles drawn, and passed over */
 static uint32_t s_dual_gap[4];
 static uint32_t s_dual_misbuilt; /* dual-3D frames built while A was on the screen they show on */ /* VBlanks between a dual-3D fight's top-screen swaps */
-static uint32_t s_locked;   /* display frames swapped two VBlanks apart (the screen at 30 fps) */
+static uint32_t s_locked;
+/* 60 fps: display frames swapped, those swapped a VBlank late or more, and of these the ones
+ * with over 14 ms of the display thread's own work (the rest: the GPU, or the thread waiting) */
+static uint32_t s_swaps60, s_late60, s_late60_cpu;
+static uint32_t s_help_wall; /* the last display frame's 2D help after its swap (wall time) */   /* display frames swapped two VBlanks apart (the screen at 30 fps) */
 static uint32_t s_t3d_max, s_join_max, s_present_max, s_prep_max; /* the worst frame's */
 
 static inline void stage_max(uint32_t *max, uint64_t us)
@@ -659,7 +663,7 @@ static void present(void)
     kh_gpu2d_hud_mode = hud_on ? 2 : hud_wanted ? 1 : 0;
     kh_gpu2d_plain[KH_ENGINE_B] = single && PauseMenu_GetMode() != 0;
     /* with the detailed log, once a second: this frame's GPU time measured alone */
-    video_gpu_probe_begin();
+    const int gpu_probe = video_gpu_probe_begin();
     uint64_t t0 = sceKernelGetProcessTimeWide();
     unsigned tex3d = 0, raw3d;
     int a3d = 0, i, draw2d;
@@ -982,6 +986,19 @@ static void present(void)
         static uint32_t logged;
         uint32_t up, sw;
         video_present_times(&up, &sw);
+        if (!lock30 && !dual) {
+            static uint32_t last_vc;
+            const uint32_t vc = (uint32_t)sceDisplayGetVcount();
+            if (last_vc && !gpu_probe) {
+                s_swaps60++;
+                if (vc - last_vc >= 2) {
+                    s_late60++;
+                    /* this frame's work, and the 2D the thread helped with after the last swap */
+                    s_late60_cpu += total - (sw < total ? sw : total) + s_help_wall > 14000;
+                }
+            }
+            last_vc = vc;
+        }
         /* the swap's own wait (two VBlanks a swap at 30 fps) is not the frame's work */
         if (kh_log_verbose && total - (sw < total ? sw : total) > 20000 && logged < 400) {
             logged++;
@@ -996,11 +1013,13 @@ static void present(void)
     /* the 2D drawn over two frames: this thread is idle until the next VBlank, so it takes
      * its share of the chunks rather than leave them all to the helper (which shares its
      * core with the sound) */
+    s_help_wall = 0;
     if (async_2d) {
-        const uint64_t c = threadstat_self_us();
+        const uint64_t c = threadstat_self_us(), w = sceKernelGetProcessTimeWide();
         s_stage = "2d help";
         workers_help();
         s_help_cpu += threadstat_self_us() - c;
+        s_help_wall = (uint32_t)(sceKernelGetProcessTimeWide() - w);
     }
     s_stage = "loop";
     s_beats++;
@@ -1394,6 +1413,12 @@ void kh_game_run(void)
                         LOG("display: screen at 30 fps (two VBlanks a swap) in %u of 600 "
                             "display frames", (unsigned)s_locked);
                     s_locked = 0;
+                    if (s_swaps60)
+                        LOG("display: 60 fps: %u swaps, %u of them a VBlank late or more: %u with "
+                            "over 14 ms of display-thread work, %u with less (the GPU)",
+                            (unsigned)s_swaps60, (unsigned)s_late60, (unsigned)s_late60_cpu,
+                            (unsigned)(s_late60 - s_late60_cpu));
+                    s_swaps60 = s_late60 = s_late60_cpu = 0;
                     if (s_dual_drawn + s_dual_skipped)
                         LOG("display: dual 3D: %u toggles drawn, %u bottom-screen ones passed "
                             "over (single screen)", (unsigned)s_dual_drawn,

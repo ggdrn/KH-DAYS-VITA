@@ -50,9 +50,10 @@ static int s_gpu_probing;
 int video_gpu_probe_begin(void)
 {
     static uint32_t n;
-    /* config debug = 2 only: draining the GPU costs frames, the logs of debug = 1 runs showed
-     * lower frame rates than the game had */
-    s_gpu_probing = kh_config.debug >= 2 && ++n % 60 == 0;
+    /* with the detailed log (config debug): once a second. Draining the GPU costs that frame
+     * (game.c leaves it out of the late-frame count); the logs of 0.1.x showed lower frame
+     * rates with it, so it ran with debug = 2 only until 0.5.8 */
+    s_gpu_probing = kh_config.debug >= 1 && ++n % 60 == 0;
     if (s_gpu_probing)
         glFinish();
     return s_gpu_probing;
