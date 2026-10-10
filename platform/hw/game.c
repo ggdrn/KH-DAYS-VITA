@@ -214,6 +214,7 @@ static uint64_t s_t3d_total, s_join_total, s_present_total;
 static uint64_t s_present_cpu, s_help_cpu, s_loop_cpu; /* the display thread's CPU time */
 static uint32_t s_2d_async; /* 2D pictures drawn over two Vita frames (60 fps mode) */
 static uint32_t s_dual_drawn, s_dual_skipped; /* dual-3D toggles drawn, and passed over */
+static uint32_t s_dual_gap[4]; /* VBlanks between a dual-3D fight's top-screen swaps */
 static uint32_t s_locked;   /* display frames swapped two VBlanks apart (the screen at 30 fps) */
 static uint32_t s_t3d_max, s_join_max, s_present_max, s_prep_max; /* the worst frame's */
 
@@ -593,10 +594,14 @@ static void present(void)
      * second). Each display frame is then a new game frame, its 3D shown at once and its 2D
      * drawn with it (33 ms to do both). Not in dual 3D (a screen per VBlank) nor with the
      * port menu open. */
-    /* In a dual-3D fight neither: the game's toggles pace it (a pair of them, a top-screen
-     * frame swapped, every two VBlanks); held to two VBlanks a swap as well, a pair a little
-     * late waited two more, and the fight ran at some 25 frames a second (0.5.2) */
-    const int lock30 = !kh_config.frame_interpolation && !dual && !portmenu_is_open();
+    /* A dual-3D fight on both screens is held to two VBlanks a swap too (a pair of toggles,
+     * the top screen's frame swapped): left to the toggles' own pace, a top-screen frame
+     * finished a little after the VBlank stayed up three VBlanks and the next one a single
+     * one, and the scenery shook (0.5.3). 0.5.2 held it too, but drew engine B on every
+     * toggle: a pair did not fit in two VBlanks. With the single screen (bottom frames
+     * passed over) the toggles pace it. */
+    const int lock30 = !kh_config.frame_interpolation && (!dual || (dual_field && !dual_top_only)) &&
+                       !portmenu_is_open();
     /* config confirm_cross (input.c): the fonts' A and B drawn to match */
     kh_button_glyphs_menu(kh_config.confirm_cross);
     video_set_swap_interval(lock30 ? 2 : 1);
@@ -913,10 +918,18 @@ static void present(void)
          * bottom screen's memory (the capture), which the next top-screen frame shows. Swapped
          * too, each screen showed in turn its live picture and the copy, drawn with other
          * filtering: the scenery shimmered (0.5.0) */
-        if (dual_field && !a_on_top)
+        if (dual_field && !a_on_top) {
             video_run_capture(top, bottom);
-        else
+        } else {
             video_present(top, bottom);
+            if (dual_field) {
+                /* VBlanks between a fight's top-screen swaps (1, 2, 3, 4 or more) */
+                static uint32_t last_vc;
+                const uint32_t vc = (uint32_t)sceDisplayGetVcount(), d = vc - last_vc;
+                last_vc = vc;
+                s_dual_gap[d < 1 ? 0 : d > 4 ? 3 : d - 1]++;
+            }
+        }
         if (dual)
             s_toggle_done = toggle_seq;
         t = sceKernelGetProcessTimeWide() - t;
@@ -1328,6 +1341,11 @@ void kh_game_run(void)
                             "over (single screen)", (unsigned)s_dual_drawn,
                             (unsigned)s_dual_skipped);
                     s_dual_drawn = s_dual_skipped = 0;
+                    if (s_dual_gap[0] + s_dual_gap[1] + s_dual_gap[2] + s_dual_gap[3])
+                        LOG("display: dual 3D top-screen swaps %u/%u/%u/%u apart by 1/2/3/4+ "
+                            "VBlanks", (unsigned)s_dual_gap[0], (unsigned)s_dual_gap[1],
+                            (unsigned)s_dual_gap[2], (unsigned)s_dual_gap[3]);
+                    memset(s_dual_gap, 0, sizeof(s_dual_gap));
                     {
                         uint64_t sc, sw, su;
                         const uint64_t all = threadstat_self_us();
