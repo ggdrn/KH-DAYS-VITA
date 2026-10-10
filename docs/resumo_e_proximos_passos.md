@@ -93,10 +93,10 @@ O jogo alterna o 3D entre as telas a cada VBlank (cada tela a 30 Hz).
 
 ## Pendências e plano de ação (depois da 0.6.9)
 
-Números do log da 0.5.5 (30 fps, render_scale 3):
-- **Entrada em área nova:** pior quadro de texturas ainda ~16–18 ms (checagem e decodificação de até ~60 texturas).
-- **Campo normal:** jogo a ~50–53 VBlanks/s em algumas áreas (mínimo 37 num trecho de carga).
-- **Fora de batalha:** CPU com folga (display 16%, jogo 15%).
+Estado na 0.6.9:
+- entrada em área sem engasgo visível (o pico de texturas cai com a tela ainda preta);
+- 60 fps com 3–6% de quadros atrasados nas lutas mais cheias;
+- vídeos a 30 fps, sem faixas pretas em wide.
 
 | Prioridade | Item | Ação |
 |---|---|---|
