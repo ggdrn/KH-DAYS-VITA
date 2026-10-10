@@ -979,7 +979,9 @@ static void present(void)
         int k, lit = 0;
         for (k = 0; k < 256 * 192 && !lit; k += 7)
             lit = (s_bottom[k] & 0xe0e0e0u) != 0;
-        video_set_inset_blank(a_on_top && !lit);
+        /* also with engine A on the bottom screen when it has no 3D there (a movie: the small
+         * screen was a black box) */
+        video_set_inset_blank(!lit && (a_on_top || !a3d));
     }
     s_stage = "present";
     {

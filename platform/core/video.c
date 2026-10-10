@@ -1111,15 +1111,24 @@ static void draw_crop_bars(int screen)
     int k;
     if (!s_bar_prog || (!t && !b))
         return;
+    /* texel by texel: filtered, the strip's inner edge took in half of the picture's first
+     * row, grey enough to be drawn, a line along the cut (0.6.4 to 0.6.7) */
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glUseProgram(s_bar_prog);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glBindBuffer(GL_ARRAY_BUFFER, s_compose_vbo);
     for (k = 0; k < 2; k++) {
         const int rows = k ? b : t;
-        const float py0 = k ? r->y + r->h - rows * sy : (float)r->y;
+        /* a little inside the screen's edge (the subtitles at the DS screen's very bottom row
+         * came out against the Vita's), and the texture read a quarter texel inside the
+         * rows */
+        const float margin = 10.0f;
+        const float py0 = k ? r->y + r->h - rows * sy - margin : (float)r->y + margin;
         const float py1 = py0 + rows * sy;
-        const float v0 = k ? 1.0f - (float)rows / 192.0f : 0.0f, v1 = k ? 1.0f : (float)rows / 192.0f;
+        const float v0 = (k ? 192.0f - (float)rows + 0.25f : 0.25f) / 192.0f;
+        const float v1 = (k ? 191.75f : (float)rows - 0.25f) / 192.0f;
         const float x0 = r->x / (DISPLAY_W / 2.0f) - 1.0f, x1 = (r->x + r->w) / (DISPLAY_W / 2.0f) - 1.0f;
         const float y0 = 1.0f - py0 / (DISPLAY_H / 2.0f), y1 = 1.0f - py1 / (DISPLAY_H / 2.0f);
         const float v[16] = { x0, y0, 0, v0, x1, y0, 1, v0, x0, y1, 0, v1, x1, y1, 1, v1 };
