@@ -9,8 +9,10 @@
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
 
-/* 256 frames: 5.3 ms, about one driver frame */
-#define GRAIN 256
+/* 512 frames: 10.7 ms, about two driver frames. sceAudioOutOutput costs the thread CPU time
+ * of its own on every call, more than the render at 256 (0.6.8's log: ~0.5 s of each 10 s
+ * at 187 calls a second); half the calls, half of that */
+#define GRAIN 512
 
 static int s_port = -1;
 

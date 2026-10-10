@@ -580,6 +580,22 @@ static WaveCache *wave_cache_get(const uint8_t *src, uint32_t end, uint32_t ls_b
  * release run out, a muted track) only moves on. */
 #define MIX_MUL(s, g) ((int32_t)(((int64_t)(s) * (g)) >> 16))
 
+/* How many of the next left output samples, from pos by step, have both samples they
+ * interpolate between before sample limit (i + 1 < limit): those need no end or loop test,
+ * and are mixed in a loop of their own (0.6.x: the loop with the tests, and the position kept
+ * in the channel, was most of the mixing time) */
+static inline int span_before(uint64_t pos, uint64_t step, uint32_t limit, int left)
+{
+    uint64_t room, m;
+    if (limit < 2 || POS_INT(pos) + 1 >= limit || !step)
+        return 0;
+    room = ((uint64_t)(limit - 1) << 32) - pos; /* positions below sample limit - 1 */
+    m = (room - 1) / step + 1;
+    return m < (uint64_t)left ? (int)m : left;
+}
+
+typedef int16_t __attribute__((aligned(1), may_alias)) s16u;
+
 static void mix_channel(Channel *c, int32_t *al, int32_t *ar, int count, uint64_t step)
 {
     const int32_t gl = (int32_t)(c->gain_l * 16777216.0f + 0.5f);
@@ -595,21 +611,50 @@ static void mix_channel(Channel *c, int32_t *al, int32_t *ar, int count, uint64_
         const int b16 = c->format == FMT_PCM16;
         const uint32_t n = b16 ? c->end / 2 : c->end, ls = b16 ? c->loop_start / 2 : c->loop_start;
         const int loops = c->repeat == 1 && n > ls;
-        for (k = 0; k < count; k++) {
-            uint32_t i = POS_INT(c->pos), j;
+        uint64_t pos = c->pos;
+        for (k = 0; k < count;) {
+            uint32_t i, j;
             int s0, s1, s;
+            const int span = silent ? 0 : span_before(pos, step, n, count - k);
+            if (span > 0) {
+                /* away from the end: no tests */
+                const int e = k + span;
+                if (b16) {
+                    const s16u *p16 = (const s16u *)d;
+                    for (; k < e; k++) {
+                        const uint32_t ii = POS_INT(pos);
+                        const int v = lerp15(p16[ii], p16[ii + 1], pos);
+                        al[k] += MIX_MUL(v, gl);
+                        ar[k] += MIX_MUL(v, gr);
+                        pos += step;
+                    }
+                } else {
+                    const int8_t *p8 = (const int8_t *)d;
+                    for (; k < e; k++) {
+                        const uint32_t ii = POS_INT(pos);
+                        const int v = lerp15(p8[ii] * 256, p8[ii + 1] * 256, pos);
+                        al[k] += MIX_MUL(v, gl);
+                        ar[k] += MIX_MUL(v, gr);
+                        pos += step;
+                    }
+                }
+                continue;
+            }
+            i = POS_INT(pos);
             if (i >= n) {
                 if (loops) {
-                    while (POS_INT(c->pos) >= n)
-                        c->pos -= (uint64_t)(n - ls) << 32;
-                    i = POS_INT(c->pos);
+                    while (POS_INT(pos) >= n)
+                        pos -= (uint64_t)(n - ls) << 32;
+                    i = POS_INT(pos);
                 } else {
+                    c->pos = pos;
                     c->hw_on = 0;
                     return;
                 }
             }
             if (silent) {
-                c->pos += step;
+                pos += step;
+                k++;
                 continue;
             }
             j = i + 1;
@@ -622,11 +667,13 @@ static void mix_channel(Channel *c, int32_t *al, int32_t *ar, int count, uint64_
                 s0 = (int8_t)d[i] * 256;
                 s1 = (int8_t)d[j] * 256;
             }
-            s = lerp15(s0, s1, c->pos);
+            s = lerp15(s0, s1, pos);
             al[k] += MIX_MUL(s, gl);
             ar[k] += MIX_MUL(s, gr);
-            c->pos += step;
+            pos += step;
+            k++;
         }
+        c->pos = pos;
         break;
     }
     case FMT_ADPCM:
@@ -644,8 +691,22 @@ static void mix_channel(Channel *c, int32_t *al, int32_t *ar, int count, uint64_
                 if (w->done < n)
                     wave_decode(w, loops && POS_INT(last) >= n ? n : need);
             }
-            for (k = 0; k < count; k++) {
-                uint32_t i = POS_INT(pos);
+            for (k = 0; k < count;) {
+                uint32_t i;
+                /* pcm holds n + 1 samples: away from sample n, no tests */
+                const int span = silent ? 0 : span_before(pos, step, n + 1, count - k);
+                if (span > 0) {
+                    const int e = k + span;
+                    for (; k < e; k++) {
+                        const uint32_t ii = POS_INT(pos);
+                        const int s = lerp15(pcm[ii], pcm[ii + 1], pos);
+                        al[k] += MIX_MUL(s, gl);
+                        ar[k] += MIX_MUL(s, gr);
+                        pos += step;
+                    }
+                    continue;
+                }
+                i = POS_INT(pos);
                 if (i >= n) {
                     if (!loops) {
                         c->pos = pos;
@@ -662,6 +723,7 @@ static void mix_channel(Channel *c, int32_t *al, int32_t *ar, int count, uint64_
                     ar[k] += MIX_MUL(s, gr);
                 }
                 pos += step;
+                k++;
             }
             c->pos = pos;
             break;
@@ -1780,14 +1842,33 @@ void snd7_render(int16_t *out, int frames)
                 s_stats.mix_us += (uint32_t)(t1 - t);
                 t = t1;
             }
-            for (k = 0; k < chunk; k++) {
-                int sl, sr;
-                const float l = soft_limit((float)al[k] * mv);
-                const float r = soft_limit((float)ar[k] * mv);
-                sl = (int)(l * 32767.0f);
-                sr = (int)(r * 32767.0f);
-                out[(n + k) * 2] = (int16_t)sl;
-                out[(n + k) * 2 + 1] = (int16_t)sr;
+            {
+                /* the chunk's peak: below the knee (nearly always), a plain integer scaling;
+                 * the limiter's float maths on every sample was a third of the render */
+                int32_t peak = 0;
+                for (k = 0; k < chunk; k++) {
+                    const int32_t a = al[k] < 0 ? -al[k] : al[k], b = ar[k] < 0 ? -ar[k] : ar[k];
+                    peak = a > peak ? a : peak;
+                    peak = b > peak ? b : peak;
+                }
+                if ((float)peak * mv <= KNEE) {
+                    /* mv is about 2^-23: the factor in 32 fractional bits keeps 24 of it */
+                    const int64_t m = (int64_t)((double)mv * 32767.0 * 4294967296.0);
+                    for (k = 0; k < chunk; k++) {
+                        out[(n + k) * 2] = (int16_t)((al[k] * m) / 4294967296LL);
+                        out[(n + k) * 2 + 1] = (int16_t)((ar[k] * m) / 4294967296LL);
+                    }
+                } else {
+                    for (k = 0; k < chunk; k++) {
+                        int sl, sr;
+                        const float l = soft_limit((float)al[k] * mv);
+                        const float r = soft_limit((float)ar[k] * mv);
+                        sl = (int)(l * 32767.0f);
+                        sr = (int)(r * 32767.0f);
+                        out[(n + k) * 2] = (int16_t)sl;
+                        out[(n + k) * 2 + 1] = (int16_t)sr;
+                    }
+                }
             }
         }
         n += chunk;
