@@ -616,8 +616,18 @@ static void present(void)
      * one, and the scenery shook (0.5.3). 0.5.2 held it too, but drew engine B on every
      * toggle: a pair did not fit in two VBlanks. With the single screen (bottom frames
      * passed over) the toggles pace it. */
-    const int lock30 = !kh_config.frame_interpolation && (!dual || (dual_field && !dual_top_only)) &&
-                       !portmenu_is_open();
+    /* A movie (the player's loop, Ov024_MobiClip_UpdatePlayback, ran in the last half second)
+     * at 30 too, in the 60 fps mode as well: its pictures come at 30 a second, and the screen
+     * left at 60 showed them unevenly, at some 51 a second (0.5.0's known issues) */
+    extern volatile unsigned int kh_mobiclip_passes;
+    static uint32_t movie_passes, movie_vb = 0x80000000u;
+    if (kh_mobiclip_passes != movie_passes) {
+        movie_passes = kh_mobiclip_passes;
+        movie_vb = s_vblanks;
+    }
+    const int movie = s_vblanks - movie_vb < 30;
+    const int lock30 = (!kh_config.frame_interpolation || movie) &&
+                       (!dual || (dual_field && !dual_top_only)) && !portmenu_is_open();
     /* config confirm_cross (input.c): the fonts' A and B drawn to match */
     kh_button_glyphs_menu(kh_config.confirm_cross);
     video_set_swap_interval(lock30 ? 2 : 1);
