@@ -67,6 +67,8 @@ static volatile int s_pending = -1; /* a layout asked for from another thread (i
 static GLuint s_compose, s_compose_vbo, s_overlay_prog, s_bar_prog;
 /* per screen: DS rows cut off at the top and the bottom (a movie's letterbox, video_set_crop) */
 static int s_crop[2][2];
+/* of those, the letterbox's own (black) rows: what is drawn over the picture's edges */
+static int s_bar[2][2];
 /* The composition shader in four builds, each with only what its passes use: the screens
  * (covering the whole display every frame), the screens with the HUD blocks masked, the panels
  * and HUD blocks, the display captures. One build with everything cost the GPU frames (0.1.8). */
@@ -1084,21 +1086,25 @@ void video_run_capture(const uint32_t *top, const uint32_t *bottom)
         run_capture();
 }
 
-void video_set_crop(int screen, int top, int bottom)
+void video_set_crop(int screen, int top, int bottom, int bar_top, int bar_bottom)
 {
     if (screen < 0 || screen > 1)
         return;
     s_crop[screen][0] = top < 0 ? 0 : top > 64 ? 64 : top;
     s_crop[screen][1] = bottom < 0 ? 0 : bottom > 64 ? 64 : bottom;
+    s_bar[screen][0] = bar_top < 0 ? 0 : bar_top > s_crop[screen][0] ? s_crop[screen][0] : bar_top;
+    s_bar[screen][1] = bar_bottom < 0 ? 0 : bar_bottom > s_crop[screen][1] ? s_crop[screen][1]
+                                                                            : bar_bottom;
 }
 
-/* the rows a crop cut off, at the same scale at the screen's top and bottom edges, their
- * black left out (the screen's texture is bound) */
+/* the letterbox's rows, at the picture's scale at the screen's top and bottom edges, their
+ * black left out (the screen's texture is bound). Only the black rows: the movie's own edge
+ * rows, cut off too, are dark and came out as a line along the cut (0.6.5). */
 static void draw_crop_bars(int screen)
 {
     const ScreenRect *r = &s_rect[screen];
-    const int t = s_crop[screen][0], b = s_crop[screen][1];
-    const float sy = (float)r->h / (float)(192 - t - b);
+    const int t = s_bar[screen][0], b = s_bar[screen][1];
+    const float sy = (float)r->h / (float)(192 - s_crop[screen][0] - s_crop[screen][1]);
     int k;
     if (!s_bar_prog || (!t && !b))
         return;

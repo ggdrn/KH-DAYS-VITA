@@ -1121,17 +1121,23 @@ static void movie_crop(int movie, int a_on_top, int uploaded)
                 min_b = b;
             if (++seen >= 8) {
                 latched = 1;
-                /* a row more each side: the smoothed 2D (config filter_2d) blends the edge
-                 * row with the black one next to it, a dark line along the cut (0.6.4) */
-                crop_t = min_t >= 8 ? min_t + 1 : 0;
-                crop_b = min_b >= 8 ? min_b + 1 : 0;
+                /* two rows more each side: the movie's edge rows are dark, a line along
+                 * the cut (0.6.4, and thicker in 0.6.5 with one row more) */
+                crop_t = min_t >= 8 ? min_t + 2 : 0;
+                crop_b = min_b >= 8 ? min_b + 2 : 0;
                 LOG("display: movie letterbox %d rows above, %d below: %s", min_t, min_b,
                     crop_t || crop_b ? "cut off" : "none");
             }
         }
     }
-    video_set_crop(0, want && latched && scr == 0 ? crop_t : 0, want && latched && scr == 0 ? crop_b : 0);
-    video_set_crop(1, want && latched && scr == 1 ? crop_t : 0, want && latched && scr == 1 ? crop_b : 0);
+    {
+        int k;
+        for (k = 0; k < 2; k++) {
+            const int on = want && latched && scr == k;
+            video_set_crop(k, on ? crop_t : 0, on ? crop_b : 0, on && crop_t ? min_t : 0,
+                           on && crop_b ? min_b : 0);
+        }
+    }
 }
 
 static void dynamic_resolution(int late)

@@ -125,8 +125,8 @@ void video_run_capture(const uint32_t *top, const uint32_t *bottom);
 extern volatile int video_gpu_test;
 
 /* A screen shown without its top and bottom rows (a movie's letterbox in a wide layout): the
- * rest fills the screen, the rows cut off drawn over it at their edges with their black clear
- * (the subtitles). 0, 0: the whole screen. */
-void video_set_crop(int screen, int top, int bottom);
+ * rest fills the screen. Of those, the letterbox's own rows (bar_top, bar_bottom) are drawn
+ * over it at its edges with their black clear (the subtitles). 0s: the whole screen. */
+void video_set_crop(int screen, int top, int bottom, int bar_top, int bar_bottom);
 
 #endif
