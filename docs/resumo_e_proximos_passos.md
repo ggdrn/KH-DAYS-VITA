@@ -1,6 +1,6 @@
 # khdays-vita: resumo do trabalho e próximos passos
 
-Versão atual: **0.5.0** (tag `v0.5.0`, notas em `docs/releases/v0.5.0.md`). Versão anterior publicada: **v0.4.0**.
+Versão atual: **0.5.5** (testes). Último release: **v0.5.0** (tag `v0.5.0`, notas em `docs/releases/v0.5.0.md`).
 
 ## O que foi feito
 
@@ -55,20 +55,38 @@ Versão atual: **0.5.0** (tag `v0.5.0`, notas em `docs/releases/v0.5.0.md`). Ver
 ### Flash branco do Possessor (0.4.16–0.4.18)
 - Rastreamento por derrota no log mostrou ~150 polígonos translúcidos a mais (a explosão). Implementada a regra do DS: pixel translúcido não é desenhado sobre outro do mesmo ID de polígono (bit 7 do stencil).
 
+### Luta com 3D nas duas telas (Sora em Olympus, 0.5.1–0.5.5)
+O jogo alterna o 3D entre as telas a cada VBlank (cada tela a 30 Hz).
+- **0.5.1–0.5.2, one screen:** os frames da tela de baixo são descartados na hora e só os de cima são trocados na tela.
+- **0.5.3:**
+  - o one screen desliga sozinho nos primeiros 10 s da luta (Sora na tela de baixo) e volta depois;
+  - o motor B deixa de ser desenhado nos frames de baixo (de 9,4 ms para 0);
+  - cada toggle guarda o próprio 3D e os próprios registradores, e o 3D não pula mais de tela.
+
+  **Testado:** jogo de 51 para 60 VBlanks/s.
+- **0.5.4:** em duas telas, a tela volta a ser travada em 2 VBlanks por troca. O log mostra ~97% das trocas exatas.
+- **0.5.5, tremor do cenário só em duas telas:** o fator de widescreen do 3D era um valor só, trocado pelo display a cada toggle, e o jogo montava frames com a largura da outra tela. Agora cada frame usa o fator da tela para a qual é montado. **Testado: resolvido** (log: 1 frame trocado só no início da luta).
+
 ### Outros
 - **Tela única:** os painéis passam a seguir o zoom da câmera, a visão aproximada do Select (0.1.24).
 - **Release v0.4.0:** publicado com tag no GitHub e changelog em `docs/releases/v0.4.0.md`.
-- **Release v0.5.0:** notas em `docs/releases/v0.5.0.md`.
+- **Release v0.5.0:** notas em `docs/releases/v0.5.0.md`; versão VitaDB em `docs/releases/vitadb_v0.5.0.md`.
 
-## Pendências e plano de ação (depois da 0.5.0)
+## Pendências e plano de ação (depois da 0.5.5)
+
+Números do log da 0.5.5 (30 fps, render_scale 3):
+- **Entrada em área nova:** pior quadro de texturas ainda ~16–18 ms (checagem e decodificação de até ~60 texturas).
+- **Campo normal:** jogo a ~50–53 VBlanks/s em algumas áreas (mínimo 37 num trecho de carga).
+- **Fora de batalha:** CPU com folga (display 16%, jogo 15%).
 
 | Prioridade | Item | Ação |
 |---|---|---|
-| 1 | Validar a 0.5.0 no Vita | Possessor sem flash; botões do Vita em todas as telas visitadas; Confirm button nos dois modos; Mission balance |
-| 2 | Engasgos ao entrar em área nova | Pior quadro: ~70 texturas, ~11–17 ms de decodificação + envio à GPU. Otimizar `texels_smooth` (duas passadas, 9 vizinhos) e espalhar o envio por 2–3 quadros durante o fade |
-| 3 | Ícones do DS restantes | Varrer telas ainda não vistas (loja, tutoriais `UI/btlttr`, resultados de missão, manual `UI/mnl`) com dumps; acrescentar ao gerador |
-| 4 | Vídeos a ~51 fps | Entrega de quadros nos vídeos (swap ~19 ms): travar a tela no ritmo do vídeo, como no modo 30 fps |
-| 5 | Folga de CPU no 60 fps | Batalhas cheias: jogo 70–80%, vídeo 45–50%. Medir o envio do 3D (3–4 ms/quadro) e reduzir |
-| 6 | 2D a 60 fps | Interpolar a rolagem dos fundos 2D que acompanham a câmera |
-| 7 | Áudio, mais um passo (opcional) | PCM direto em 16 bits e soma com NEON (estimativa 1,5–2×) |
-| 8 | Distribuição | Auditoria que falhe o build se bytes da ROM entrarem no ELF; atualizar o `ROADMAP.md` |
+| 1 | Release 0.5.x (correções da luta dual) | Fechar notas de `v0.5.1` (ou `v0.6.0` se entrar mais coisa) com as correções do Sora/dual 3D; tag e VitaDB |
+| 2 | Engasgos ao entrar em área nova | Pior quadro ~17 ms nas texturas. Tirar a checagem (hash da VRAM) do quadro: só re-hashear o que a VRAM mudou (marcar páginas escritas pelo DMA/memcpy da VRAM), otimizar `texels_smooth` e espalhar o envio por 2–3 quadros durante o fade |
+| 3 | Campo abaixo de 60 VBlanks/s em áreas cheias | Medir por área (game core vs display) e atacar o que limita: 2D do motor A ("the rest" ~12 ms de CPU por quadro: composição por linha) |
+| 4 | Ícones do DS restantes | Varrer telas ainda não vistas (loja, tutoriais `UI/btlttr`, resultados de missão, manual `UI/mnl`) com dumps; acrescentar ao gerador |
+| 5 | Vídeos a ~51 fps | Travar a troca de tela no ritmo do vídeo, como no modo 30 fps |
+| 6 | Outras cenas com 3D nas duas telas | Conferir chefes e cutscenes dual 3D fora de Olympus com o mesmo caminho (widescreen por frame, trava de 30) |
+| 7 | 60 fps (experimental) | Interpolar também na luta dual (hoje desligada lá); interpolar a rolagem dos fundos 2D; folga de CPU nas batalhas cheias |
+| 8 | Áudio, mais um passo (opcional) | PCM direto em 16 bits e soma com NEON (estimativa 1,5–2×) |
+| 9 | Distribuição | Auditoria que falhe o build se bytes da ROM entrarem no ELF; atualizar o `ROADMAP.md` |
