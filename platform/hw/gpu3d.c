@@ -94,7 +94,7 @@ static const char s_fs[] =
 
 enum { A_POS, A_TEX, A_COL };
 
-static int s_scale, s_w, s_h;
+static int s_scale, s_w, s_h; /* s_scale in quarters: 12 is 3x (768x576) */
 static GLuint s_prog, s_fbo, s_color, s_depth, s_vbo, s_toon_tex;
 /* the two builds of the polygon shader: [0] with the alpha test, [1] OPAQUE without */
 typedef struct {
@@ -402,7 +402,17 @@ static volatile int s_want_scale, s_want_reload;
 
 void kh_gpu3d_set_scale(int scale)
 {
-    s_want_scale = scale < 1 ? 1 : scale > 4 ? 4 : scale;
+    s_want_scale = (scale < 1 ? 1 : scale > 4 ? 4 : scale) * 4;
+}
+
+void kh_gpu3d_set_scale_quarters(int q)
+{
+    s_want_scale = q < 4 ? 4 : q > 16 ? 16 : q;
+}
+
+int kh_gpu3d_scale_quarters(void)
+{
+    return s_scale;
 }
 
 void kh_gpu3d_reload_textures(void)
@@ -420,11 +430,11 @@ static void apply_requests(void)
         glDeleteRenderbuffers(1, &s_depth);
         glDeleteTextures(1, &s_color);
         s_scale = s_want_scale;
-        s_w = 256 * s_scale;
-        s_h = 192 * s_scale;
+        s_w = 64 * s_scale;
+        s_h = 48 * s_scale;
         make_target();
         s_last_serial = 0; /* draw the frame again into the new target */
-        LOG("gpu3d: now %dx%d (scale %d)", s_w, s_h, s_scale);
+        LOG("gpu3d: now %dx%d (scale %d.%02d)", s_w, s_h, s_scale / 4, s_scale % 4 * 25);
     }
     s_want_scale = 0;
     if (s_want_reload) {
@@ -442,9 +452,9 @@ int kh_gpu3d_init(int scale)
 {
     static const char *const attribs[] = { "aPos", "aTex", "aCol" };
 
-    s_scale = scale < 1 ? 1 : scale > 4 ? 4 : scale;
-    s_w = 256 * s_scale;
-    s_h = 192 * s_scale;
+    s_scale = (scale < 1 ? 1 : scale > 4 ? 4 : scale) * 4;
+    s_w = 64 * s_scale;
+    s_h = 48 * s_scale;
 
     {
         static char opaque_fs[sizeof(s_fs) + 32];
@@ -479,7 +489,7 @@ int kh_gpu3d_init(int scale)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     glGenBuffers(1, &s_vbo);
-    LOG("gpu3d: %dx%d (scale %d)", s_w, s_h, s_scale);
+    LOG("gpu3d: %dx%d (scale %d)", s_w, s_h, s_scale / 4);
     return 1;
 }
 

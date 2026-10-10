@@ -273,6 +273,7 @@ static int engine_b_bank(uint32_t db, uint8_t cnt_c, uint8_t cnt_d)
 static volatile int s_dump_2d; /* L+R+Triangle: the 2D side of the frame too */
 static volatile int s_fast_forward; /* L+R+Square */
 static void dump_2d(int a_on_top);
+static void dynamic_resolution(int late);
 
 /* the last screen toggle of a dual-3D scene (kh_dual3d_toggled), with the display registers
  * as the game set them for that frame: read later, they were sometimes the next frame's */
@@ -1017,7 +1018,14 @@ static void present(void)
                     s_late60_cpu += total - (sw < total ? sw : total) + s_help_wall > 14000;
                 }
             }
+            if (last_vc && !gpu_probe && kh_config.debug != 3)
+                dynamic_resolution(vc - last_vc >= 2);
             last_vc = vc;
+        } else if (lock30 && kh_config.debug != 3) {
+            /* 30 fps: the configured size (two VBlanks a frame leave the GPU room) */
+            const int top = kh_config.render_scale * 4;
+            if (kh_gpu3d_scale_quarters() != top)
+                kh_gpu3d_set_scale_quarters(top);
         }
         /* the swap's own wait (two VBlanks a swap at 30 fps) is not the frame's work */
         if (kh_log_verbose && total - (sw < total ? sw : total) > 20000 && logged < 400) {
@@ -1046,6 +1054,42 @@ static void present(void)
 }
 
 static void sample_input(void);
+
+/* 60 fps: the 3D drawn smaller while the GPU cannot keep up. The GPU test (0.5.9, debug = 3)
+ * left the 3D at 3x and the screens' composition each fitting in a VBlank on their own, not
+ * together: a field full of Heartless lost 8-12% of its swaps, none with the 3D at 1x or
+ * without the composition. Over 120 swaps: more than 6 late, a step of 0.5x down (to 2x at
+ * least); none late three times running, and 30 s after the last step down, 0.5x back up to
+ * config render_scale. */
+static void dynamic_resolution(int late)
+{
+    static uint32_t swaps, lates, calm, hold_until;
+    const int top = kh_config.render_scale * 4, floor_q = top < 8 ? top : 8;
+    const int q = kh_gpu3d_scale_quarters();
+    swaps++;
+    lates += (uint32_t)late;
+    if (swaps < 120)
+        return;
+    if (q > top) {
+        kh_gpu3d_set_scale_quarters(top); /* render_scale lowered in the port menu */
+    } else if (lates > 6 && q > floor_q) {
+        kh_gpu3d_set_scale_quarters(q - 2);
+        hold_until = s_vblanks + 1800;
+        calm = 0;
+        LOG("display: 60 fps: %u of 120 swaps late, 3D down to %d.%02dx", (unsigned)lates,
+            (q - 2) / 4, (q - 2) % 4 * 25);
+    } else if (lates == 0) {
+        if (++calm >= 3 && q < top && (int32_t)(s_vblanks - hold_until) >= 0) {
+            kh_gpu3d_set_scale_quarters(q + 2);
+            calm = 0;
+            LOG("display: 60 fps: no swap late for 6 s, 3D up to %d.%02dx", (q + 2) / 4,
+                (q + 2) % 4 * 25);
+        }
+    } else {
+        calm = 0;
+    }
+    swaps = lates = 0;
+}
 
 /* The 60 fps mix's clock: the display's own VBlank count. s_vblanks comes from the VBlank
  * thread a little after the VBlank (after the input), and the display frame right after it

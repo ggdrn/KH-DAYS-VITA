@@ -12,6 +12,10 @@ int kh_gpu3d_init(int scale);
 /* From the port menu, any thread: a new internal resolution (1-4), the textures decoded again
  * (after the filter changed). Applied at the next kh_gpu3d_render. */
 void kh_gpu3d_set_scale(int scale);
+/* The same in quarters (4 = 1x .. 16 = 4x): the 60 fps mode's dynamic resolution (game.c),
+ * and the size drawn now */
+void kh_gpu3d_set_scale_quarters(int q);
+int kh_gpu3d_scale_quarters(void);
 void kh_gpu3d_reload_textures(void);
 /* The next frame is not to be mixed with the last (60 fps mode): a different picture. */
 void kh_gpu3d_forget_previous(void);
