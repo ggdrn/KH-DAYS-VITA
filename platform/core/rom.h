@@ -36,9 +36,15 @@ const uint8_t *rom_header(void); /* the 0x200-byte cartridge header */
 
 typedef struct {
     uint32_t reads, hits, io_calls, io_us;
+    uint32_t ahead_calls, ahead_us, ahead_hits, wait_us;
 } RomStats;
-/* Since the last call: reads served, cache hits, file reads made and the time they took. */
+/* Since the last call: reads served, cache hits, file reads made and the time they took; the
+ * read-ahead thread's reads and their time, the blocks it read that were then used, and the
+ * time readers waited for one it was still reading. */
 void rom_take_stats(RomStats *out);
+/* Since the start: the file reads' time and count (the readers' own, not the read-ahead's)
+ * and the time waited for a block being read ahead. */
+void rom_totals(uint32_t *io_us, uint32_t *io_calls, uint32_t *wait_us);
 void rom_close(void);
 
 #endif

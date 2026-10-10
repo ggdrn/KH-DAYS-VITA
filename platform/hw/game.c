@@ -952,10 +952,11 @@ static void present(void)
         /* a display frame over 20 ms (a VBlank missed): its stages, to find the hitches */
         const uint32_t total = (uint32_t)(sceKernelGetProcessTimeWide() - t0);
         static uint32_t logged;
-        if (kh_log_verbose && total > 20000 && logged < 400) {
+        uint32_t up, sw;
+        video_present_times(&up, &sw);
+        /* the swap's own wait (two VBlanks a swap at 30 fps) is not the frame's work */
+        if (kh_log_verbose && total - (sw < total ? sw : total) > 20000 && logged < 400) {
             logged++;
-            uint32_t up, sw;
-            video_present_times(&up, &sw);
             LOG("slow frame: %uus at vb %u: textures %uus, 3d submit %uus, 2d wait %uus, "
                 "present %uus (uploads %uus, swap %uus)%s", (unsigned)total, (unsigned)s_vblanks,
                 (unsigned)s_cur.prep, (unsigned)s_cur.t3d, (unsigned)s_cur.join,
@@ -1208,6 +1209,24 @@ static void swap_wait(void)
     while (*count == last && sceKernelGetProcessTimeWide() < give_up)
         sceKernelDelayThread(200);
     last = *count;
+    {
+        /* Game-side hitches in the field: a 3D frame more than 50 ms after the one before it
+         * (the game's 30 fps is 33 ms), with the cartridge reads made meanwhile (the reads
+         * are the game thread's own: the memory card takes ~6.6 ms a 64 KiB block) */
+        static uint64_t prev;
+        static uint32_t io0, calls0, wait0, logged;
+        const uint64_t now = sceKernelGetProcessTimeWide();
+        uint32_t io, calls, wait;
+        rom_totals(&io, &calls, &wait);
+        if (prev && now - prev > 50000 && kh_overlay_loaded(22) && logged < 300) {
+            logged++;
+            LOG("hitch: game frame of %u ms: card %u ms in %u file reads, %u ms waiting for "
+                "the read-ahead", (unsigned)((now - prev) / 1000), (unsigned)((io - io0) / 1000),
+                (unsigned)(calls - calls0), (unsigned)((wait - wait0) / 1000));
+        }
+        prev = now;
+        io0 = io, calls0 = calls, wait0 = wait;
+    }
 }
 
 static void set_volume(int percent)
@@ -1502,9 +1521,12 @@ void kh_game_run(void)
                 RomStats rs2;
                 rom_take_stats(&rs2);
                 if (rs2.reads)
-                    LOG("rom: 10 s: %u reads, %u from the cache, %u file reads in %u ms",
+                    LOG("rom: 10 s: %u reads, %u from the cache, %u file reads in %u ms; read "
+                        "ahead %u in %u ms, %u of them used, %u ms waited for them",
                         (unsigned)rs2.reads, (unsigned)rs2.hits, (unsigned)rs2.io_calls,
-                        (unsigned)(rs2.io_us / 1000));
+                        (unsigned)(rs2.io_us / 1000), (unsigned)rs2.ahead_calls,
+                        (unsigned)(rs2.ahead_us / 1000), (unsigned)rs2.ahead_hits,
+                        (unsigned)(rs2.wait_us / 1000));
             }
             {
                 Snd7Stats ss;
