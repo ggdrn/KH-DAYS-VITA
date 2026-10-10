@@ -264,10 +264,15 @@ static volatile uint32_t s_toggle_seq, s_toggle_vb = 0x80000000u, s_toggle_seria
 /* the last toggle the display finished showing, and the last whose 2D it has drawn */
 static volatile uint32_t s_toggle_done, s_toggle_drawn;
 static volatile int s_toggle_top;
-static struct {
+typedef struct {
     uint32_t dispcnt_a, dispcnt_b, vramcnt, dispcapcnt;
     uint16_t bright_a, bright_b;
-} s_toggle_regs;
+} ToggleRegs;
+static ToggleRegs s_toggle_regs;
+/* the toggle's 3D frame (kh_gx3d_pin's copy): taken with the toggle, not when the display
+ * gets to the 3D; a toggle the game made meanwhile (its wait run out) had put the other
+ * screen's view on this one (0.5.2: the 3D jumped between the screens) */
+static const KhGxFrame *volatile s_toggle_frame;
 
 void kh_dual3d_toggled(void)
 {
@@ -295,6 +300,7 @@ void kh_dual3d_toggled(void)
     /* the frame these screens are for, kept: the game may swap the next one before the
      * display gets to it (0.0.84 drew the next frame half the time) */
     kh_gx3d_pin();
+    s_toggle_frame = kh_gx3d_pinned();
     s_toggle_vb = s_vblanks;
     __atomic_add_fetch(&s_toggle_seq, 1, __ATOMIC_RELEASE);
 }
@@ -541,7 +547,19 @@ static void present(void)
      * game waiting for each, the single screen went off, the screen fell to 40 fps and the 3D
      * jumped between the two views (0.5.0's log). */
     const int dual_field = dual && kh_overlay_loaded(22);
-    const int dual_top_only = dual_field && kh_config.single_screen;
+    /* the single screen gives way to both for the first 10 s of such a fight (Sora is on the
+     * bottom screen then), and comes back after; a pause of the toggles under 2 s (the pause
+     * menu) is the same fight */
+    static uint32_t dual_field_since, dual_field_last = 0x80000000u;
+    if (dual_field) {
+        if (s_vblanks - dual_field_last > 120)
+            dual_field_since = s_vblanks;
+        dual_field_last = s_vblanks;
+    }
+    const int dual_top_only = dual_field && kh_config.single_screen &&
+                              s_vblanks - dual_field_since >= 600;
+    static ToggleRegs tr;
+    const KhGxFrame *toggle_frame = NULL;
     int trace_before = a_on_top;
     uint32_t trace_wait = 0;
     int trace_polys = -1;
@@ -558,6 +576,8 @@ static void present(void)
         }
         toggle_seq = s_toggle_seq;
         a_on_top = s_toggle_top;
+        tr = s_toggle_regs;
+        toggle_frame = s_toggle_frame;
         if (dual_top_only && !a_on_top) {
             /* the bottom screen's frame: nothing of it is shown */
             s_toggle_drawn = toggle_seq;
@@ -573,8 +593,10 @@ static void present(void)
      * second). Each display frame is then a new game frame, its 3D shown at once and its 2D
      * drawn with it (33 ms to do both). Not in dual 3D (a screen per VBlank) nor with the
      * port menu open. */
-    const int lock30 = !kh_config.frame_interpolation && (!dual || dual_field) &&
-                       !portmenu_is_open();
+    /* In a dual-3D fight neither: the game's toggles pace it (a pair of them, a top-screen
+     * frame swapped, every two VBlanks); held to two VBlanks a swap as well, a pair a little
+     * late waited two more, and the fight ran at some 25 frames a second (0.5.2) */
+    const int lock30 = !kh_config.frame_interpolation && !dual && !portmenu_is_open();
     /* config confirm_cross (input.c): the fonts' A and B drawn to match */
     kh_button_glyphs_menu(kh_config.confirm_cross);
     video_set_swap_interval(lock30 ? 2 : 1);
@@ -589,8 +611,8 @@ static void present(void)
     }
     /* the 2D drawn with the frame's own layers: the game changes engine A's visible layers
      * (and B's) with every screen it draws for */
-    kh_gpu2d_dispcnt_override[KH_ENGINE_A] = dual ? s_toggle_regs.dispcnt_a : 0;
-    kh_gpu2d_dispcnt_override[KH_ENGINE_B] = dual ? s_toggle_regs.dispcnt_b : 0;
+    kh_gpu2d_dispcnt_override[KH_ENGINE_A] = dual ? tr.dispcnt_a : 0;
+    kh_gpu2d_dispcnt_override[KH_ENGINE_B] = dual ? tr.dispcnt_b : 0;
     /* experimental single screen (config single_screen): in the field (ov022, its action code,
      * loaded; the same test as the widescreen 3D) with engine A on the top screen, the top
      * screen alone and the bottom one's map, target and mission gauge as panels over it */
@@ -689,11 +711,13 @@ static void present(void)
         const int inset_engine = inset < 0 ? -1 : ((inset == 0) == a_on_top ? KH_ENGINE_A : KH_ENGINE_B);
         /* dual 3D: engine B's screen shows the last picture engine A gave it, its own 2D (a
          * bitmap the size of the screen) is not seen; it was half the 2D time there */
-        const int skip_b = dual && engine_b_bank(s_toggle_regs.dispcnt_b,
-                                                 (uint8_t)(s_toggle_regs.vramcnt >> 16),
-                                                 (uint8_t)(s_toggle_regs.vramcnt >> 24)) >= 0 &&
-                           ((s_toggle_regs.dispcnt_a >> 16) & 3) != 2 &&
-                           video_screen_memory_valid(a_on_top ? 1 : 0);
+        /* a fight's bottom-screen frame only feeds the bottom screen's memory: engine B's
+         * picture (on top) is not shown */
+        const int skip_b = (dual_field && !a_on_top) || (dual && engine_b_bank(tr.dispcnt_b,
+                                                 (uint8_t)(tr.vramcnt >> 16),
+                                                 (uint8_t)(tr.vramcnt >> 24)) >= 0 &&
+                           ((tr.dispcnt_a >> 16) & 3) != 2 &&
+                           video_screen_memory_valid(a_on_top ? 1 : 0));
         /* single screen: the bottom screen only shows through small panels; drawn one 2D
          * frame in three (every other one for a tutorial page) it was a third of the 2D time
          * at full rate (0.1.6) */
@@ -727,7 +751,7 @@ static void present(void)
             /* new textures first, decoded on both cores while the helper is free */
             uint64_t t = sceKernelGetProcessTimeWide();
             s_stage = "3d textures";
-            frame3d = dual ? kh_gx3d_pinned() : kh_gx3d_acquire();
+            frame3d = dual ? toggle_frame : kh_gx3d_acquire();
             trace_polys = frame3d ? frame3d->npoly : -1;
             defeat_trace(frame3d);
             kh_gpu3d_prepare(frame3d);
@@ -812,7 +836,7 @@ static void present(void)
         static uint32_t captured_seq;
         /* engine A showing a VRAM bank itself (the cross-fades of these scenes: display
          * mode 2, each capture blended with the last): the game's own captures are needed */
-        const int a_shows_bank = ((s_toggle_regs.dispcnt_a >> 16) & 3) == 2;
+        const int a_shows_bank = ((tr.dispcnt_a >> 16) & 3) == 2;
         if (!dual) {
             kh_capture_run(raw3d);
         } else if (captured_seq != s_toggle_seq && !(dual_field && a_on_top)) {
@@ -824,10 +848,10 @@ static void present(void)
              * picture now and then (0.0.80 to 0.0.87). */
             captured_seq = s_toggle_seq;
             if (a_shows_bank)
-                kh_capture_run_regs(raw3d, s_toggle_regs.dispcapcnt, s_toggle_regs.dispcnt_a);
+                kh_capture_run_regs(raw3d, tr.dispcapcnt, tr.dispcnt_a);
             else
                 kh_capture_screen(a_on_top ? s_top : s_bottom, tex3d, a_on_top ? 0 : 1,
-                              tex3d ? s_toggle_regs.bright_a : 0);
+                              tex3d ? tr.bright_a : 0);
             KH_IO32(0x04000064) &= ~0x80000000u;
         }
     }
@@ -836,23 +860,23 @@ static void present(void)
          * display mode (dialogue blends), or engine B with nothing but a bitmap BG3 from bank C
          * or bitmap sprites from bank D (the dual-3D scenes: 3D on both screens, one frame each,
          * the other screen showing the last capture) */
-        const uint32_t dc = dual ? s_toggle_regs.dispcnt_a : KH_IO32(0x04000000);
-        const uint32_t db = dual ? s_toggle_regs.dispcnt_b : KH_IO32(0x04001000);
-        const uint8_t cnt_c = dual ? (uint8_t)(s_toggle_regs.vramcnt >> 16) : kh_ds_io[0x242];
-        const uint8_t cnt_d = dual ? (uint8_t)(s_toggle_regs.vramcnt >> 24) : kh_ds_io[0x243];
+        const uint32_t dc = dual ? tr.dispcnt_a : KH_IO32(0x04000000);
+        const uint32_t db = dual ? tr.dispcnt_b : KH_IO32(0x04001000);
+        const uint8_t cnt_c = dual ? (uint8_t)(tr.vramcnt >> 16) : kh_ds_io[0x242];
+        const uint8_t cnt_d = dual ? (uint8_t)(tr.vramcnt >> 24) : kh_ds_io[0x243];
         const int bank_a = ((dc >> 16) & 3) == 2 ? (int)((dc >> 18) & 3) : -1;
         int bank_b = engine_b_bank(db, cnt_c, cnt_d);
         /* dual 3D: engine B's screen shows the last picture engine A gave it, or with engine
          * A showing a bank, the bank's capture as on the DS (0.0.88 to 0.0.90 kept the
          * cross-fades' banks stale) */
         video_show_capture(a_on_top ? 0 : 1, kh_capture_shown(bank_a, !dual) ? bank_a : -1,
-                           dual ? s_toggle_regs.bright_a : KH_IO16(0x0400006c));
+                           dual ? tr.bright_a : KH_IO16(0x0400006c));
         if (dual && bank_b >= 0 && bank_a < 0)
             bank_b = VIDEO_SCREEN_MEMORY + (a_on_top ? 1 : 0); /* its own brightness */
         else if (!kh_capture_shown(bank_b, !dual))
             bank_b = -1;
         video_show_capture(a_on_top ? 1 : 0, bank_b,
-                           dual ? s_toggle_regs.bright_b : KH_IO16(0x0400106c));
+                           dual ? tr.bright_b : KH_IO16(0x0400106c));
     }
     if (kh_log_verbose && dual) {
         /* dual 3D, frame by frame: what each screen gets (the first 240 frames of the run) */
@@ -863,8 +887,8 @@ static void present(void)
                 (unsigned)s_toggle_serial, trace_polys, trace_before,
                 a_on_top, (unsigned)trace_wait, (unsigned)KH_IO32(0x04000064),
                 video_shown_bank(a_on_top ? 0 : 1), video_shown_bank(a_on_top ? 1 : 0),
-                draw2d, f2d.neng, a3d, tex3d, (unsigned)s_toggle_regs.dispcnt_a,
-                (unsigned)s_toggle_regs.dispcnt_b);
+                draw2d, f2d.neng, a3d, tex3d, (unsigned)tr.dispcnt_a,
+                (unsigned)tr.dispcnt_b);
         }
     }
     if (s_dump_2d) {
