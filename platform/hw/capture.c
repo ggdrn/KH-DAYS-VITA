@@ -22,6 +22,12 @@
 
 static uint32_t s_gfx[256 * 192], s_srcb[256 * 192];
 static uint32_t s_captures;
+static const uint32_t *s_pre_gfx;
+
+void kh_capture_use_graphics(const uint32_t *gfx)
+{
+    s_pre_gfx = gfx;
+}
 /* per VRAM bank A-D: a capture is held on the GPU for it, and the bank's bytes then */
 static int s_valid[4];
 static uint32_t s_hash[4];
@@ -54,16 +60,21 @@ int kh_capture_run_regs(unsigned tex3d, uint32_t cnt, uint32_t dispcnt)
     const int dest = (int)((cnt >> 16) & 3), bank_b = (int)((dispcnt >> 18) & 3);
     int eva = cnt & 31, evb = (cnt >> 8) & 31;
     float ka, kb;
-    const uint32_t *srcb = NULL;
+    const uint32_t *srcb = NULL, *gfx = s_gfx, *pre = s_pre_gfx;
 
+    s_pre_gfx = NULL;
     if (!(cnt & 0x80000000u))
         return 0;
     if (eva > 16) eva = 16;
     if (evb > 16) evb = 16;
     ka = mode == 0 ? 1.0f : mode == 1 ? 0.0f : (float)eva / 16.0f;
     kb = mode == 0 ? 0.0f : mode == 1 ? 1.0f : (float)evb / 16.0f;
-    if (mode != 1 && !src_a_3d)
-        kh_gpu2d_render_graphics(KH_ENGINE_A, s_gfx);
+    if (mode != 1 && !src_a_3d) {
+        if (pre)
+            gfx = pre;
+        else
+            kh_gpu2d_render_graphics(KH_ENGINE_A, s_gfx);
+    }
     if (kb > 0 && !src_b_fifo && !kh_capture_shown(bank_b, 1)) {
         /* source B from the bank's bytes, bottom row first like the GPU targets */
         const uint8_t *src = kh_vram_bank_home(bank_b);
@@ -82,7 +93,7 @@ int kh_capture_run_regs(unsigned tex3d, uint32_t cnt, uint32_t dispcnt)
         memset(s_srcb, 0, sizeof(s_srcb));
         srcb = s_srcb;
     }
-    video_capture(mode != 1 && !src_a_3d ? s_gfx : NULL, src_a_3d && mode != 1, tex3d, ka, kb, srcb,
+    video_capture(mode != 1 && !src_a_3d ? gfx : NULL, src_a_3d && mode != 1, tex3d, ka, kb, srcb,
                   kb > 0 && !srcb ? bank_b : -1, dest);
     if (kh_log_verbose) {
         static uint32_t logged;

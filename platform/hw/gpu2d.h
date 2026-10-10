@@ -41,6 +41,8 @@ void kh_gpu2d_dump_layers(int engine, uint32_t *bg[4], uint32_t *obj);
 /* The engine's graphics screen (BGs, sprites, 3D codes) whatever DISPCNT's display mode, before
  * master brightness: what the display capture's source A sees. Returns 1 when it has 3D pixels. */
 int kh_gpu2d_render_graphics(int engine, uint32_t *fb);
+/* The same, lines y0..y1-1 only (bands in parallel, as kh_gpu2d_render_lines). */
+int kh_gpu2d_render_graphics_lines(int engine, uint32_t *fb, int y0, int y1);
 
 /* An engine's DISPCNT to draw with instead of the register's (0: the register): the value
  * recorded with a dual-3D frame, the register having moved on to the next one. */

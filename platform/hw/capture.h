@@ -22,4 +22,8 @@ int kh_capture_shown(int bank, int check_bytes);
 /* captures since the last call, for the statistics */
 uint32_t kh_capture_take_count(void);
 
+/* Source A's graphics for the next capture, already drawn (game.c draws them with the frame's
+ * 2D, in bands on both cores): the capture then does not draw them again on its own. */
+void kh_capture_use_graphics(const uint32_t *gfx);
+
 #endif

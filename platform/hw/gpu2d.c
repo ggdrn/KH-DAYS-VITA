@@ -1098,6 +1098,11 @@ int kh_gpu2d_render_graphics(int engine, uint32_t *fb)
     return render_lines(engine, fb, 0, 192, 1);
 }
 
+int kh_gpu2d_render_graphics_lines(int engine, uint32_t *fb, int y0, int y1)
+{
+    return render_lines(engine, fb, y0, y1, 1);
+}
+
 int kh_gpu2d_render(int engine, uint32_t *fb)
 {
     init_rgba();

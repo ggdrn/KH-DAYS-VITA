@@ -183,10 +183,14 @@ static int power_thread(SceSize args, void *argp)
 #define BANDS 8
 #define BAND_LINES (192 / BANDS)
 
+/* the third "engine" of a frame's 2D: engine A's graphics for a display capture (capture.c),
+ * drawn in bands with the rest */
+#define ENG_CAPTURE 2
+
 typedef struct {
-    uint32_t *fb[2]; /* engine A's screen, engine B's */
+    uint32_t *fb[3]; /* engine A's screen, engine B's, the capture's source A */
     int a3d[BANDS];
-    int eng[2], neng; /* the engines drawn this frame */
+    int eng[3], neng; /* the engines drawn this frame */
 } Frame2d;
 
 /* engine A was among the engines drawn: only then do the bands say where its 3D pixels are */
@@ -205,7 +209,8 @@ static int drawn_screens(const Frame2d *f, int a_on_top)
 {
     int i, m = 0;
     for (i = 0; i < f->neng; i++)
-        m |= (f->eng[i] == KH_ENGINE_A) == a_on_top ? 1 : 2;
+        if (f->eng[i] != ENG_CAPTURE)
+            m |= (f->eng[i] == KH_ENGINE_A) == a_on_top ? 1 : 2;
     return m;
 }
 
@@ -227,18 +232,22 @@ static inline void stage_max(uint32_t *max, uint64_t us)
 
 /* this display frame's stages, for the slow-frame lines of the detailed log */
 static struct {
-    uint32_t prep, t3d, join, present;
+    uint32_t prep, t3d, join, present, capture;
 } s_cur;
 
 /* the 2D's CPU time per engine (both cores together), for the statistics */
-static volatile uint32_t s_2d_engine_us[2];
+static volatile uint32_t s_2d_engine_us[3];
 
 static void render_chunk(int chunk, void *arg)
 {
     Frame2d *f = arg;
     const int engine = f->eng[chunk % f->neng], band = chunk / f->neng;
     const uint64_t t = sceKernelGetProcessTimeWide();
-    int r = kh_gpu2d_render_lines(engine, f->fb[engine], band * BAND_LINES, (band + 1) * BAND_LINES);
+    int r = engine == ENG_CAPTURE
+                ? kh_gpu2d_render_graphics_lines(KH_ENGINE_A, f->fb[engine], band * BAND_LINES,
+                                                 (band + 1) * BAND_LINES)
+                : kh_gpu2d_render_lines(engine, f->fb[engine], band * BAND_LINES,
+                                        (band + 1) * BAND_LINES);
     if (engine == KH_ENGINE_A)
         f->a3d[band] = r;
     __atomic_add_fetch(&s_2d_engine_us[engine], (uint32_t)(sceKernelGetProcessTimeWide() - t),
@@ -661,7 +670,7 @@ static void present(void)
      * and shown with the next one, where the new frame's 3D (after its halfway mix at 60 fps)
      * is shown too; it no longer has to fit in one frame with everything else */
     static int async_2d, async_top;
-    int upload2d = 0, upload_mask = 0;
+    int upload2d = 0, upload_mask = 0, capture_gfx = 0;
 
 
     if (async_2d) {
@@ -740,6 +749,21 @@ static void present(void)
                     f2d.eng[f2d.neng++] = i;
             parity++;
         }
+        /* A display capture armed with engine A's graphics as source A (the pause menu's
+         * blurred field, dialogue blends): drawn here in bands on both cores with the frame's
+         * 2D, which is then joined before the capture. The capture drew them on its own, on
+         * one core, after the frame's 2D: 47 display frames of 21-36 ms in a row when the
+         * pause menu opened at 60 fps (0.5.6's log). */
+        capture_gfx = 0;
+        if (!dual) {
+            const uint32_t cnt = KH_IO32(0x04000064);
+            if ((cnt & 0x80000000u) && ((cnt >> 29) & 3) != 1 && !((cnt >> 24) & 1)) {
+                static uint32_t gfx[256 * 192];
+                f2d.fb[ENG_CAPTURE] = gfx;
+                f2d.eng[f2d.neng++] = ENG_CAPTURE;
+                capture_gfx = 1;
+            }
+        }
     }
     {
         /* widescreen in the field (ov022, the field's action code, is loaded; menus over a
@@ -780,11 +804,11 @@ static void present(void)
          * helper, on the game's core, can take a share of it while the game waits for its
          * next frame. At 30 fps too since 0.4.0: joined at once there, the display thread
          * waited about 4 ms a frame for it (0.1.27's log) */
-        if (f2d.neng && !dual && !lock30)
+        if (f2d.neng && !dual && !lock30 && !capture_gfx)
             workers_begin_spare(render_chunk, BANDS * f2d.neng, &f2d);
         else
             workers_begin(render_chunk, BANDS * f2d.neng, &f2d);
-        if (f2d.neng && !dual && !lock30) {
+        if (f2d.neng && !dual && !lock30 && !capture_gfx) {
             async_2d = 1;
             async_top = a_on_top;
             s_2d_async++;
@@ -853,7 +877,11 @@ static void present(void)
          * mode 2, each capture blended with the last): the game's own captures are needed */
         const int a_shows_bank = ((tr.dispcnt_a >> 16) & 3) == 2;
         if (!dual) {
-            kh_capture_run(raw3d);
+            const uint64_t t = sceKernelGetProcessTimeWide();
+            if (capture_gfx)
+                kh_capture_use_graphics(f2d.fb[ENG_CAPTURE]);
+            if (kh_capture_run(raw3d))
+                s_cur.capture = (uint32_t)(sceKernelGetProcessTimeWide() - t);
         } else if (captured_seq != s_toggle_seq && !(dual_field && a_on_top)) {
             /* (a fight's top-screen frame is shown live, never from its copy: none made) */
             /* not the game's own capture into bank C or D: what engine A drew is kept for the
@@ -958,8 +986,9 @@ static void present(void)
         if (kh_log_verbose && total - (sw < total ? sw : total) > 20000 && logged < 400) {
             logged++;
             LOG("slow frame: %uus at vb %u: textures %uus, 3d submit %uus, 2d wait %uus, "
-                "present %uus (uploads %uus, swap %uus)%s", (unsigned)total, (unsigned)s_vblanks,
-                (unsigned)s_cur.prep, (unsigned)s_cur.t3d, (unsigned)s_cur.join,
+                "capture %uus, present %uus (uploads %uus, swap %uus)%s", (unsigned)total,
+                (unsigned)s_vblanks, (unsigned)s_cur.prep, (unsigned)s_cur.t3d,
+                (unsigned)s_cur.join, (unsigned)s_cur.capture,
                 (unsigned)s_cur.present, (unsigned)up, (unsigned)sw, dual ? " (dual 3D)" : "");
         }
         memset(&s_cur, 0, sizeof(s_cur));
@@ -1409,7 +1438,7 @@ void kh_game_run(void)
                     }
                     LOG("display: 2d cpu per frame: engine A %uus, B %uus",
                         (unsigned)(s_2d_engine_us[0] / 600), (unsigned)(s_2d_engine_us[1] / 600));
-                    s_2d_engine_us[0] = s_2d_engine_us[1] = 0;
+                    s_2d_engine_us[0] = s_2d_engine_us[1] = s_2d_engine_us[2] = 0;
                     if (kh_gpu2d_profiling) {
                         uint32_t us[2][3], spr[2][3];
                         int k;
