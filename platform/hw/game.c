@@ -1100,14 +1100,20 @@ static void letterbox(const uint32_t *fb, int *t, int *b)
  * player writes in them later (subtitles) is drawn over the picture (video.c). */
 static void movie_crop(int movie, int a_on_top, int uploaded)
 {
-    static int latched, seen, min_t, min_b, crop_t, crop_b;
-    const int scr = a_on_top ? 0 : 1;
-    const int want = movie && kh_config.aspect != KH_ASPECT_4_3 && video_screen_aspect(scr) > 1.6f;
+    static int latched, seen, tries, min_t, min_b, crop_t, crop_b;
+    /* the screen shown wide (the large one of the layout), whichever engine draws it: the
+     * movie is not always engine A's (0.6.3 looked at engine A's screen only, and cut
+     * nothing) */
+    const int scr = video_screen_aspect(0) > 1.6f ? 0 : video_screen_aspect(1) > 1.6f ? 1 : -1;
+    const int want = movie && kh_config.aspect != KH_ASPECT_4_3 && scr >= 0;
+    (void)a_on_top;
     if (!movie)
-        latched = seen = 0;
+        latched = seen = tries = 0;
     if (want && !latched && (uploaded & (1 << scr))) {
         int t, b;
         letterbox(scr ? s_bottom : s_top, &t, &b);
+        if (kh_log_verbose && tries++ < 24)
+            LOG("display: movie on screen %d: %d black rows above, %d below", scr, t, b);
         if (t + b < 150) {
             if (!seen || t < min_t)
                 min_t = t;
@@ -1122,8 +1128,8 @@ static void movie_crop(int movie, int a_on_top, int uploaded)
             }
         }
     }
-    video_set_crop(scr, want && latched ? crop_t : 0, want && latched ? crop_b : 0);
-    video_set_crop(1 - scr, 0, 0);
+    video_set_crop(0, want && latched && scr == 0 ? crop_t : 0, want && latched && scr == 0 ? crop_b : 0);
+    video_set_crop(1, want && latched && scr == 1 ? crop_t : 0, want && latched && scr == 1 ? crop_b : 0);
 }
 
 static void dynamic_resolution(int late)

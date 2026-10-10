@@ -1180,10 +1180,11 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
             float v[16];
             screen_quad(i, v);
             compose_pass(v, s_tex_cur(i), 0, 0, 0, 0, 1.0f, screen_alpha(i), FILTER_2D);
-            if (s_crop[i][0] || s_crop[i][1]) {
-                glBindTexture(GL_TEXTURE_2D, s_tex_cur(i));
-                draw_crop_bars(i);
-            }
+        }
+        if ((s_crop[i][0] || s_crop[i][1]) && !(video_gpu_test & 2) &&
+            !(s_show_bank[i] >= 0 && s_compose)) {
+            glBindTexture(GL_TEXTURE_2D, s_tex_cur(i));
+            draw_crop_bars(i);
         } else {
             draw_quad(&s_rect[i]);
         }
