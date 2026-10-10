@@ -213,6 +213,7 @@ static int drawn_screens(const Frame2d *f, int a_on_top)
 static uint64_t s_t3d_total, s_join_total, s_present_total;
 static uint64_t s_present_cpu, s_help_cpu, s_loop_cpu; /* the display thread's CPU time */
 static uint32_t s_2d_async; /* 2D pictures drawn over two Vita frames (60 fps mode) */
+static uint32_t s_dual_drawn, s_dual_skipped; /* dual-3D toggles drawn, and passed over */
 static uint32_t s_locked;   /* display frames swapped two VBlanks apart (the screen at 30 fps) */
 static uint32_t s_t3d_max, s_join_max, s_present_max, s_prep_max; /* the worst frame's */
 
@@ -529,6 +530,13 @@ static void present(void)
      * 0.0.83). While the scene runs, the display waits for that toggle (8 ms at most) and
      * takes the screens it recorded. */
     const int dual = s_vblanks - s_toggle_vb < 8;
+    /* Dual 3D in the field's action (a fight with a second 3D view on the bottom screen: Sora,
+     * ov091, beside Roxas in Olympus) with the single screen on: only the top screen's frames
+     * are drawn, the bottom one's (its 3D drawn for a screen copy the single screen does not
+     * show) done at once. Drawn like a cutscene, both screens' 2D and 3D every toggle with the
+     * game waiting for each, the single screen went off, the screen fell to 40 fps and the 3D
+     * jumped between the two views (0.5.0's log). */
+    const int dual_top_only = dual && kh_config.single_screen && kh_overlay_loaded(22);
     int trace_before = a_on_top;
     uint32_t trace_wait = 0;
     int trace_polys = -1;
@@ -545,6 +553,14 @@ static void present(void)
         }
         toggle_seq = s_toggle_seq;
         a_on_top = s_toggle_top;
+        if (dual_top_only && !a_on_top) {
+            /* the bottom screen's frame: nothing of it is shown */
+            s_toggle_drawn = toggle_seq;
+            s_toggle_done = toggle_seq;
+            s_dual_skipped++;
+            return;
+        }
+        s_dual_drawn++;
     }
     /* 30 fps: the Vita's screen at 30 too, each swap shown for two VBlanks (the display
      * queue's own wait, exact; 0.4.9 held every other display frame by the VBlank thread's
@@ -552,7 +568,8 @@ static void present(void)
      * second). Each display frame is then a new game frame, its 3D shown at once and its 2D
      * drawn with it (33 ms to do both). Not in dual 3D (a screen per VBlank) nor with the
      * port menu open. */
-    const int lock30 = !kh_config.frame_interpolation && !dual && !portmenu_is_open();
+    const int lock30 = !kh_config.frame_interpolation && (!dual || dual_top_only) &&
+                       !portmenu_is_open();
     /* config confirm_cross (input.c): the fonts' A and B drawn to match */
     kh_button_glyphs_menu(kh_config.confirm_cross);
     video_set_swap_interval(lock30 ? 2 : 1);
@@ -572,7 +589,8 @@ static void present(void)
     /* experimental single screen (config single_screen): in the field (ov022, its action code,
      * loaded; the same test as the widescreen 3D) with engine A on the top screen, the top
      * screen alone and the bottom one's map, target and mission gauge as panels over it */
-    const int single = kh_config.single_screen && !dual && a_on_top && kh_overlay_loaded(22);
+    const int single = kh_config.single_screen && (!dual || dual_top_only) && a_on_top &&
+                       kh_overlay_loaded(22);
     video_set_single_screen(single);
     /* a tutorial page (Ov002_OpenTutorialPage leaves the sub engine with BG2 and BG3 alone,
      * which nothing else in the field does) is shown whole; while the game is paused the bottom
@@ -586,7 +604,7 @@ static void present(void)
      * hud_codes), which the composition leaves out and draws again smaller: no texture, no
      * upload and no pass over the screen more than without it (0.1.12-0.1.15 sorted the HUD
      * out with a layer map and a texture of its own, and lost up to 20 frames a second) */
-    const int hud_wanted = !dual && a_on_top && kh_overlay_loaded(22) &&
+    const int hud_wanted = (!dual || dual_top_only) && a_on_top && kh_overlay_loaded(22) &&
                            PauseMenu_GetMode() == 0 && kh_config.hud_size < 100;
     const int hud_on = hud_wanted && !s_dialog_open;
     static int hud_was;
@@ -1268,6 +1286,11 @@ void kh_game_run(void)
                         LOG("display: screen at 30 fps (two VBlanks a swap) in %u of 600 "
                             "display frames", (unsigned)s_locked);
                     s_locked = 0;
+                    if (s_dual_drawn + s_dual_skipped)
+                        LOG("display: dual 3D: %u toggles drawn, %u bottom-screen ones passed "
+                            "over (single screen)", (unsigned)s_dual_drawn,
+                            (unsigned)s_dual_skipped);
+                    s_dual_drawn = s_dual_skipped = 0;
                     {
                         uint64_t sc, sw, su;
                         const uint64_t all = threadstat_self_us();
