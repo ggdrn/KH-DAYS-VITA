@@ -214,7 +214,8 @@ static uint64_t s_t3d_total, s_join_total, s_present_total;
 static uint64_t s_present_cpu, s_help_cpu, s_loop_cpu; /* the display thread's CPU time */
 static uint32_t s_2d_async; /* 2D pictures drawn over two Vita frames (60 fps mode) */
 static uint32_t s_dual_drawn, s_dual_skipped; /* dual-3D toggles drawn, and passed over */
-static uint32_t s_dual_gap[4]; /* VBlanks between a dual-3D fight's top-screen swaps */
+static uint32_t s_dual_gap[4];
+static uint32_t s_dual_misbuilt; /* dual-3D frames built while A was on the screen they show on */ /* VBlanks between a dual-3D fight's top-screen swaps */
 static uint32_t s_locked;   /* display frames swapped two VBlanks apart (the screen at 30 fps) */
 static uint32_t s_t3d_max, s_join_max, s_present_max, s_prep_max; /* the worst frame's */
 
@@ -743,9 +744,15 @@ static void present(void)
     {
         /* widescreen in the field (ov022, the field's action code, is loaded; menus over a
          * 3D model keep the DS's picture) when engine A's screen is drawn wider than 4:3 */
-        const float aspect = video_screen_aspect(a_on_top ? 0 : 1);
-        kh_gx3d_wide_x = (kh_config.aspect == KH_ASPECT_WIDE && kh_overlay_loaded(22) && aspect > 1.4f)
-                             ? (4.0f / 3.0f) / aspect : 1.0f;
+        const int wide_ok = kh_config.aspect == KH_ASPECT_WIDE && kh_overlay_loaded(22);
+        int k;
+        for (k = 0; k < 2; k++) {
+            const float aspect = video_screen_aspect(k);
+            kh_gx3d_wide_screen[k] = wide_ok && aspect > 1.4f ? (4.0f / 3.0f) / aspect : 1.0f;
+        }
+        /* dual 3D: each frame takes its own screen's (gx3d.h) */
+        kh_gx3d_dual = dual;
+        kh_gx3d_wide_x = kh_gx3d_wide_screen[a_on_top ? 0 : 1];
         /* config hud: the 2D kept 4:3 in the middle while the 3D is wide */
         video_set_hud_scale(kh_config.hud && kh_gx3d_wide_x < 0.999f ? kh_gx3d_wide_x : 1.0f);
     }
@@ -758,6 +765,9 @@ static void present(void)
             s_stage = "3d textures";
             frame3d = dual ? toggle_frame : kh_gx3d_acquire();
             trace_polys = frame3d ? frame3d->npoly : -1;
+            /* a dual-3D frame is built with engine A on the other screen than it is shown */
+            if (dual && frame3d && frame3d->built_a_top == a_on_top)
+                s_dual_misbuilt++;
             defeat_trace(frame3d);
             kh_gpu3d_prepare(frame3d);
             s_cur.prep = (uint32_t)(sceKernelGetProcessTimeWide() - t);
@@ -1346,6 +1356,10 @@ void kh_game_run(void)
                             "VBlanks", (unsigned)s_dual_gap[0], (unsigned)s_dual_gap[1],
                             (unsigned)s_dual_gap[2], (unsigned)s_dual_gap[3]);
                     memset(s_dual_gap, 0, sizeof(s_dual_gap));
+                    if (s_dual_misbuilt)
+                        LOG("display: dual 3D: %u frames built for the other screen",
+                            (unsigned)s_dual_misbuilt);
+                    s_dual_misbuilt = 0;
                     {
                         uint64_t sc, sw, su;
                         const uint64_t all = threadstat_self_us();

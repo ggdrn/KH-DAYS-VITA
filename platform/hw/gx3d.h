@@ -47,6 +47,7 @@ typedef struct {
     uint32_t disp3dcnt;   /* 0x04000060 */
     uint8_t regs[0x90];   /* 0x04000330-0x040003bf: edge, alpha test, clear, fog, toon */
     uint32_t serial;      /* counts published frames */
+    int built_a_top;      /* POWCNT's engine-A-on-top bit while the game built it */
 } KhGxFrame;
 
 void kh_gx3d_init(void);
@@ -65,6 +66,15 @@ const KhGxFrame *kh_gx3d_pinned(void);
  * drawn (1 = the DS's 4:3), and the box test sees the wider view. The game's own reads of
  * the matrices and position tests stay as on the DS. Set by the display loop. */
 extern volatile float kh_gx3d_wide_x;
+/* Dual 3D (kh_gx3d_dual set): a frame built with engine A on the top screen is shown with it
+ * on the bottom one, and the other way round; the factor is taken per frame from the screen
+ * it is built for, kh_gx3d_wide_screen[POWCNT's bit 15 while building] (0 top, 1 bottom).
+ * One factor for both, set by the display for the screen of the frame it was showing, gave
+ * the frames of the two views each other's width now and then: the scenery shook (to 0.5.4,
+ * on both screens; with the single screen, which passes the bottom frames over before the
+ * factor is set, it did not). */
+extern volatile float kh_gx3d_wide_screen[2];
+extern volatile int kh_gx3d_dual;
 
 /* A word written to a GX register as the decomp's KH_GX_CMD (or a FIFO copy) does it. */
 void kh_gx_cmd(volatile void *reg, unsigned long value);

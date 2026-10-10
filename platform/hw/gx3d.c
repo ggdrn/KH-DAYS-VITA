@@ -28,11 +28,18 @@ static uint8_t s_valid[256];
 
 static Mtx s_proj, s_pos, s_vec, s_tex, s_clip;
 volatile float kh_gx3d_wide_x = 1.0f;
+volatile float kh_gx3d_wide_screen[2] = { 1.0f, 1.0f };
+volatile int kh_gx3d_dual;
+
+static float wide_k(void)
+{
+    return kh_gx3d_dual ? kh_gx3d_wide_screen[(KH_IO16(0x04000304) >> 15) & 1] : kh_gx3d_wide_x;
+}
 
 /* a perspective projection (w taken from z): the field's camera, not a flat 2D-like layout */
 static int wide_now(void)
 {
-    return kh_gx3d_wide_x < 0.999f && s_proj[11] != 0;
+    return wide_k() < 0.999f && s_proj[11] != 0;
 }
 static Mtx s_proj_stack[1], s_pos_stack[32], s_vec_stack[32], s_tex_stack[1];
 static int s_proj_sp, s_pos_sp, s_tex_sp, s_mtx_mode, s_stack_error;
@@ -90,6 +97,7 @@ void kh_gx3d_pin(void)
     dst->swap = src->swap;
     dst->disp3dcnt = src->disp3dcnt;
     dst->serial = src->serial;
+    dst->built_a_top = src->built_a_top;
     memcpy(dst->regs, src->regs, sizeof(dst->regs));
     memcpy(dst->vtx, src->vtx, sizeof(KhGxVertex) * (size_t)src->nvtx);
     memcpy(dst->poly, src->poly, sizeof(KhGxPolygon) * (size_t)src->npoly);
@@ -521,7 +529,7 @@ static void emit_vertex(void)
     }
     transform(s_vtx, c);
     if (wide_now())
-        c[0] = (int32_t)((float)c[0] * kh_gx3d_wide_x);
+        c[0] = (int32_t)((float)c[0] * wide_k());
     idx = f->nvtx++;
     out = &f->vtx[idx];
     {
@@ -592,7 +600,7 @@ static void box_test(const uint32_t *p)
                          (int16_t)(z + ((i & 4) ? d : 0)) };
         transform(v, c[i]);
         if (wide_now())
-            c[i][0] = (int32_t)((float)c[i][0] * kh_gx3d_wide_x);
+            c[i][0] = (int32_t)((float)c[i][0] * wide_k());
     }
     /* invisible when every corner lies outside one and the same frustum plane */
     for (plane = 0; plane < 6 && visible; plane++) {
@@ -621,7 +629,7 @@ static void pos_test(const uint32_t *p)
     transform(s_vtx, c);
     /* in widescreen too, so that 2D markers the game places from it stay on their models */
     if (wide_now())
-        c[0] = (int32_t)((float)c[0] * kh_gx3d_wide_x);
+        c[0] = (int32_t)((float)c[0] * wide_k());
     for (i = 0; i < 4; i++)
         KH_IO32(0x04000620 + i * 4) = (uint32_t)c[i];
 }
@@ -686,6 +694,7 @@ static void swap_buffers(uint32_t param)
     int old;
     /* the DS's geometry engine takes nothing after a swap until the next VBlank: a game loop
      * that does not wait for the VBlank itself is paced by that */
+    f->built_a_top = (KH_IO16(0x04000304) >> 15) & 1;
     if (kh_gx3d_swap_wait)
         kh_gx3d_swap_wait();
     f->swap = param & 3;

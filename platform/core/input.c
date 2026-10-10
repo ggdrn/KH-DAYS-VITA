@@ -143,16 +143,32 @@ unsigned int kh_vita_camera_bits(void)
     return bits;
 }
 
-/* diagnostics: whether the camera takes manual turns where the stick is used */
+/* diagnostics: whether the camera takes manual turns where the stick is used. manual 1 it
+ * turns, 0 it takes no manual turns, -1 the stream holds the camera (the stick not read), -2
+ * the camera is in its own turn. Counted per camera tick while the stick is pushed, and
+ * logged when that mix changes (at most 60 lines a run). */
 void kh_vita_camera_state(int manual, unsigned int bits)
 {
-    static int logged_on, logged_off;
+    static uint32_t n[4], ticks, logged;
+    static int last = -9;
+    int state;
+    (void)bits;
     if (!(s_rx | s_ry))
         return;
-    if (manual && bits && !logged_on++)
-        LOG("input: right stick turning the camera");
-    if (!manual && !logged_off++)
-        LOG("input: right stick used while the camera takes no manual turns");
+    state = manual == 1 ? 0 : manual == 0 ? 1 : manual == -1 ? 2 : 3;
+    n[state]++;
+    if (++ticks >= 60 || state != last) {
+        if (logged < 60 && (state != last || n[0] != ticks)) {
+            logged++;
+            LOG("input: right stick over %u camera ticks: turning %u, no manual turns %u, "
+                "held by the stream %u, own turn %u%s", (unsigned)ticks, (unsigned)n[0],
+                (unsigned)n[1], (unsigned)n[2], (unsigned)n[3],
+                kh_lockon_active ? " (locked on)" : "");
+        }
+        last = state;
+        ticks = 0;
+        memset(n, 0, sizeof(n));
+    }
 }
 
 static int stick_axis(int v)
