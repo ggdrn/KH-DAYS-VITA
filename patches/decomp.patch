@@ -9068,10 +9068,10 @@ index 7241b50d8..8a8872ba7 100644
      packed |= Ov105_GetStatusLow();
      Heap_SetCurrent(0);
 diff --git a/src/engine/GetPlayerSlotTableEntry.c b/src/engine/GetPlayerSlotTableEntry.c
-index 4b7ab6feb..8e52d94d5 100644
+index 4b7ab6feb..b240cb1b5 100644
 --- a/src/engine/GetPlayerSlotTableEntry.c
 +++ b/src/engine/GetPlayerSlotTableEntry.c
-@@ -2,7 +2,41 @@
+@@ -2,7 +2,45 @@
   * outside [0,2). */
  
  extern char data_0204c500[];
@@ -9107,7 +9107,11 @@ index 4b7ab6feb..8e52d94d5 100644
 +
  int GetPlayerSlotTableEntry(int idx) {
 +#ifdef PLATFORM_VITA
-+    if (idx == 255 && kh_partner_swap_index > 0)
++    /* also after the swap ended: Roxas can still be in a state the partner AI put him in
++     * (stuck / respawn) for a while, and that state asks for his slot (0.7.9 faulted when a
++     * switch's scene gave him back to player 1 there); the slot of the last swap of this field,
++     * -1 before any (the ROM's NULL) */
++    if (idx == 255 && kh_partner_swap_slot >= 0)
 +        idx = kh_partner_swap_slot;
 +#endif
      if (idx < 0 || idx >= 2) {

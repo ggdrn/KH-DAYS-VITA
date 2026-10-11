@@ -673,7 +673,9 @@ static void present(void)
             kh_partner_swap_fresh;
         kh_partner_swap_hold = s_dialog_open || movie;
         if (!kh_overlay_loaded(22)) {
+            extern volatile int kh_partner_swap_slot;
             kh_partner_swap_index = kh_partner_swap_member = 0;
+            kh_partner_swap_slot = -1;
             kh_partner_swap_fresh = 1;
         }
     }
