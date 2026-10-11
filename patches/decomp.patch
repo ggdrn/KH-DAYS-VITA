@@ -11490,7 +11490,7 @@ index c77ecd174..24eb1d7e8 100644
      u16 nHp;                     /* 0x12 */
  };
 diff --git a/src/overlays/field/ov022_battle/Ov022_BuildActorSlot.c b/src/overlays/field/ov022_battle/Ov022_BuildActorSlot.c
-index eb0c2fd62..8b0bc05d1 100644
+index eb0c2fd62..1844a3a86 100644
 --- a/src/overlays/field/ov022_battle/Ov022_BuildActorSlot.c
 +++ b/src/overlays/field/ov022_battle/Ov022_BuildActorSlot.c
 @@ -1,3 +1,4 @@
@@ -11508,174 +11508,44 @@ index eb0c2fd62..8b0bc05d1 100644
  
  #define CONTAINER_HEAP 6
  #define BLOCK_COUNT 2
-@@ -98,3 +102,175 @@ void Ov022_BuildActorSlot(struct Actor *pActor)
+@@ -64,6 +68,7 @@ extern void Ov022_BuildActionTable(u8 *pBlkActions, struct Actor *pActor,
+ extern void Ov022_AllocateSlotWithClass(void **papSlots, int nId, int nIndex,
+                                 struct SlotInitParams *pParams);
+ extern void ZeroHalfThenFree(void *pContainer);
++extern int Slot_EvalPackedParam(int nId, int nRule);
+ 
+ void Ov022_BuildActorSlot(struct Actor *pActor)
+ {
+@@ -98,3 +103,37 @@ void Ov022_BuildActorSlot(struct Actor *pActor)
      Ov022_AllocateSlotWithClass(pActor->aSlots, pActor->nId, 0, &params);
      ZeroHalfThenFree(pActor->pContainer);
  }
 +
 +#ifdef PLATFORM_VITA
-+/* config partner_swap: an actor's weapon set to weapon (panel) index nWeapon, as the mission's
-+ * set-up above builds it, with no new slot: its action table from that row of its character's
-+ * weapon table (moves, reach) and its setup hook (the animation tables, block +0xf0c).
-+ *
-+ * Each weapon is built once per field and kept: the actor's own (as the set-up built it) and
-+ * the other one, the two traded by copying the table and the animation block. Torn down and
-+ * built again at each swap, a combo under way read the freed table (0.7.12 faulted swapping in
-+ * the middle of an attack), and the builds filled the heap (0.7.11). Nothing is freed while the
-+ * field runs; the field's own teardown frees the one in place, the other is the heap's at the
-+ * field's end. ov022's statics start over with each field. */
-+#define SWAP_TABLE_OFFSET 0x910
-+#define SWAP_TABLE_SIZE 0x47c
-+#define SWAP_BLOCK_OFFSET 0xf0c
-+#define SWAP_BLOCK_SIZE 0x164
-+/* the animation state the setup hook's tables go with (Ov002_LoadAnimTables: the ids, the
-+ * loaded blocks, the tables; its first 8 bytes, the mode playing and its change flag, stay as
-+ * they are): kept apart from the block, a swap back paired the own block with the other
-+ * weapon's tables and a mode change bound through a bad pointer (0.7.15) */
-+#define SWAP_STATE_OFFSET 0x2c54
-+#define SWAP_STATE_SIZE 0x54
-+#define SWAP_STATE_LIVE 8
++/* config partner_swap: an actor's weapon figures (the 0x20-byte block of its action table,
++ * +8: power, reach, combo) taken from row nWeapon of its character's weapon table, as the
++ * set-up's Ov022_BuildActionTable reads it -- nothing else rebuilt. 0.7.11 to 0.7.19 built the
++ * whole table and the animation tables again for the other weapon: each build stayed
++ * allocated, the field's end freed only the one in place, and after a few fields with swaps a
++ * scene's objects could not be made (a constructor called through a bad pointer); a combo or
++ * a mode change under way also met the other weapon's tables. The block alone allocates
++ * nothing (the table file is read and freed at once). */
++#define SWAP_REACH_QUERY 0x59
 +
-+struct SwapWeapon {
-+    int nWeapon; /* -1: none kept */
-+    u8 aTable[SWAP_TABLE_SIZE];
-+    u8 aBlock[SWAP_BLOCK_SIZE];
-+    u8 aState[SWAP_STATE_SIZE];
-+};
-+static struct SwapWeaponCache {
-+    void *pActor;
-+    int nCurrent;           /* the weapon in place */
-+    int nWant, nOwn;        /* the one asked for (kh_swap_set_weapon), the set-up's */
-+    int nWaited;            /* frames the change has waited for a combo to end */
-+    struct SwapWeapon own;  /* the set-up's */
-+    struct SwapWeapon other;
-+} s_swapWeapons[2];
++extern void Ov002_LoadCharacterWeapon(void *dst, int slot, int arg);
 +
-+static void swap_weapon_save(struct SwapWeapon *w, const u8 *a, int nWeapon)
-+{
-+    w->nWeapon = nWeapon;
-+    memcpy(w->aTable, a + SWAP_TABLE_OFFSET, SWAP_TABLE_SIZE);
-+    memcpy(w->aBlock, a + SWAP_BLOCK_OFFSET, SWAP_BLOCK_SIZE);
-+    memcpy(w->aState, a + SWAP_STATE_OFFSET, SWAP_STATE_SIZE);
-+}
-+
-+/* the combo under way lives in the table too (its lock, +0x470: Ov022_StepComboState): kept
-+ * as it is, pointing into the last table, which stays allocated (0.7.13 copied the kept
-+ * table's over it, a null lock, and faulted swapping in the middle of a combo) */
-+#define SWAP_LIVE_OFFSET 0x470
-+#define SWAP_LIVE_SIZE 0xc
-+
-+static void swap_weapon_load(const struct SwapWeapon *w, u8 *a)
-+{
-+    u8 live[SWAP_LIVE_SIZE];
-+    u32 flags;
-+    memcpy(live, a + SWAP_TABLE_OFFSET + SWAP_LIVE_OFFSET, SWAP_LIVE_SIZE);
-+    memcpy(&flags, a + SWAP_TABLE_OFFSET, 4);
-+    memcpy(a + SWAP_TABLE_OFFSET, w->aTable, SWAP_TABLE_SIZE);
-+    memcpy(a + SWAP_TABLE_OFFSET + SWAP_LIVE_OFFSET, live, SWAP_LIVE_SIZE);
-+    {
-+        /* the table's first word is the combo's flags as well: only bit 0 (the voices
-+         * loaded) is the table's own */
-+        u32 kept;
-+        memcpy(&kept, w->aTable, 4);
-+        flags = (flags & ~1u) | (kept & 1u);
-+        memcpy(a + SWAP_TABLE_OFFSET, &flags, 4);
-+    }
-+    memcpy(a + SWAP_BLOCK_OFFSET, w->aBlock, SWAP_BLOCK_SIZE);
-+    memcpy(a + SWAP_STATE_OFFSET + SWAP_STATE_LIVE, w->aState + SWAP_STATE_LIVE,
-+           SWAP_STATE_SIZE - SWAP_STATE_LIVE);
-+}
-+
-+static void swap_weapon_apply(struct SwapWeaponCache *c);
-+
-+/* Asked for, the weapon goes in when the actor is out of any combo (its lock, +0x470 of the
-+ * table, clear): changed in the middle of the partner's attack, the attack went on with the
-+ * other weapon's animation block and faulted at its next mode change (0.7.16) */
 +void kh_swap_set_weapon(void *actor, int nWeapon, int nOwn)
 +{
-+    struct SwapWeaponCache *c = 0;
-+    int i;
-+    for (i = 0; i < 2 && !c; i++)
-+        if (s_swapWeapons[i].pActor == actor)
-+            c = &s_swapWeapons[i];
-+    for (i = 0; i < 2 && !c; i++)
-+        if (s_swapWeapons[i].pActor == 0) {
-+            c = &s_swapWeapons[i];
-+            c->pActor = actor;
-+            c->nCurrent = nOwn;
-+            c->own.nWeapon = -1;
-+            c->other.nWeapon = -1;
-+            c->nWant = nOwn;
-+        }
-+    if (!c)
-+        return;
-+    c->nWant = nWeapon;
-+    c->nOwn = nOwn;
-+    swap_weapon_apply(c);
++    struct Actor *pActor = actor;
++    u8 *blk = (u8 *)&pActor->blkActions + 8;
++    (void)nOwn;
++    Ov002_LoadCharacterWeapon(blk, pActor->nKind, nWeapon);
++    if (Slot_EvalPackedParam(pActor->nId, SWAP_REACH_QUERY) != 0)
++        *(short *)(blk + 2) = *(short *)(blk + 0xe); /* the reach query's second angle */
 +}
 +
-+/* each frame (Ov022_RefreshSlotRows): the weapons asked for while their actor fought */
 +void kh_swap_weapon_tick(void)
 +{
-+    int i;
-+    for (i = 0; i < 2; i++)
-+        if (s_swapWeapons[i].pActor != 0)
-+            swap_weapon_apply(&s_swapWeapons[i]);
-+}
-+
-+static void swap_weapon_apply(struct SwapWeaponCache *c)
-+{
-+    struct Actor *pActor = c->pActor;
-+    u8 *a = c->pActor;
-+    const int nWeapon = c->nWant, nOwn = c->nOwn;
-+    char szName[0x80];
-+    if (nWeapon == c->nCurrent)
-+        return;
-+    extern volatile int kh_partner_swap_force;
-+    if (!kh_partner_swap_force &&
-+        (*(void **)(a + SWAP_TABLE_OFFSET + SWAP_LIVE_OFFSET) != 0 ||
-+         (*(u32 *)(a + SWAP_TABLE_OFFSET) & ~1u) != 0) &&
-+        c->nWaited < 300) {
-+        c->nWaited++; /* a combo under way (5 s at most) */
-+        return;
-+    }
-+    if (c->nWaited)
-+        KH_TRACE_ALWAYS("swap: weapon %d -> %d for actor %d after %d frames of its combo%s",
-+                        c->nCurrent, nWeapon, ((u8 *)a)[9], c->nWaited,
-+                        c->nWaited >= 300 ? " (gave up waiting)" : "");
-+    c->nWaited = 0;
-+    /* the one in place kept as it is now */
-+    if (c->nCurrent == nOwn)
-+        swap_weapon_save(&c->own, a, nOwn);
-+    else
-+        swap_weapon_save(&c->other, a, c->nCurrent);
-+    if (nWeapon == nOwn && c->own.nWeapon == nOwn) {
-+        swap_weapon_load(&c->own, a);
-+    } else if (c->other.nWeapon == nWeapon) {
-+        swap_weapon_load(&c->other, a);
-+    } else {
-+        /* built in place: the old table stays allocated (kept above); the combo under way
-+         * kept (the build clears +0x478) */
-+        u8 live[SWAP_LIVE_SIZE];
-+        u32 flags;
-+        memcpy(live, a + SWAP_TABLE_OFFSET + SWAP_LIVE_OFFSET, SWAP_LIVE_SIZE);
-+        memcpy(&flags, a + SWAP_TABLE_OFFSET, 4);
-+        Ov002_ClearBytes01AndWord160(&pActor->aBlocks[1]);
-+        OS_SPrintf(szName, gOv022BaChWPathFmt, data_02042a70[pActor->nKind]);
-+        pActor->pContainer = Msg_OpenContainerAndReadHeader(szName, CONTAINER_HEAP);
-+        Ov022_BuildActionTable(&pActor->blkActions, pActor, pActor->nKind, nWeapon);
-+        pActor->pfnSetup(pActor, (u8)nWeapon);
-+        ZeroHalfThenFree(pActor->pContainer);
-+        memcpy(a + SWAP_TABLE_OFFSET + SWAP_LIVE_OFFSET, live, SWAP_LIVE_SIZE);
-+        {
-+            u32 built;
-+            memcpy(&built, a + SWAP_TABLE_OFFSET, 4);
-+            flags = (flags & ~1u) | (built & 1u);
-+            memcpy(a + SWAP_TABLE_OFFSET, &flags, 4);
-+        }
-+        swap_weapon_save(&c->other, a, nWeapon);
-+    }
-+    c->nCurrent = nWeapon;
 +}
 +
 +/* the weapon index of party member nId's record (its weapon panel) */
@@ -12161,7 +12031,7 @@ index e43f5318f..60c3f4296 100644
      } else if (Ov002_IsObjectFlag2000Set(object) == 0) {
          if ((pressed & 0x100) != 0) {
 diff --git a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
-index f3055d4ba..cd8cf755d 100644
+index f3055d4ba..a37a70c7a 100644
 --- a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 +++ b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 @@ -1,3 +1,4 @@
@@ -12178,7 +12048,7 @@ index f3055d4ba..cd8cf755d 100644
  } Ov022FlagsView;
  
  typedef struct Ov022NodeOwner {
-@@ -90,6 +91,239 @@ extern void func_ov022_0208a1a4(void);
+@@ -90,6 +91,271 @@ extern void func_ov022_0208a1a4(void);
  extern unsigned short gPadPressed;
  extern unsigned short gPadHeld;
  
@@ -12236,15 +12106,16 @@ index f3055d4ba..cd8cf755d 100644
 +static void swap_hp(Ov022Node *a, Ov022Node *b)
 +{
 +    unsigned short *ha = (unsigned short *)a, *hb = (unsigned short *)b;
-+    const unsigned int ma = ha[0xb], mb = hb[0xb]; /* 0x16: HP max; 0x12: HP */
-+    if (!ma || !mb)
++    /* 0x12: HP, 0x16: HP max -- traded as they are: the one player 1 plays has Roxas's HP,
++     * what it takes is Roxas's own when he comes back (0.7.5 to 0.7.19 kept each one's HP in
++     * proportion to the other's maximum) */
++    const unsigned short h = ha[9], m = ha[0xb];
++    if (!ha[0xb] || !hb[0xb])
 +        return;
-+    if (ha[9])
-+        ha[9] = (unsigned short)(ha[9] * mb / ma ? ha[9] * mb / ma : 1);
-+    if (hb[9])
-+        hb[9] = (unsigned short)(hb[9] * ma / mb ? hb[9] * ma / mb : 1);
-+    ha[0xb] = (unsigned short)mb;
-+    hb[0xb] = (unsigned short)ma;
++    ha[9] = hb[9];
++    ha[0xb] = hb[0xb];
++    hb[9] = h;
++    hb[0xb] = m;
 +}
 +
 +/* Ov022_ActorUpdate: the spot (drop) context a pickup looks in -- the played partner looks in
@@ -12256,6 +12127,30 @@ index f3055d4ba..cd8cf755d 100644
 +        return nSlotIndex;
 +    root = NNSi_FndGetCurrentRootHeap();
 +    return root && root->count > 0 ? swap_node(root, 0)->field066 : nSlotIndex;
++}
++
++/* Actor_SetVecAndSyncChild: game/engine.h */
++
++/* The two actors trade places (position, aim point, facing), as the game's own respawn of a
++ * partner places it (Ov022_StepStuckRespawnState): given back for an event or an area's exit
++ * the partner walked into, Roxas has to be where the player was (0.7.18, 0.7.19: the exit's
++ * walk went on with Roxas elsewhere and took the player back to the last area) */
++static void swap_places(Ov022Node *a, Ov022Node *b)
++{
++    char *ca = (char *)a, *cb = (char *)b;
++    void *na = *(void **)(ca + 0x20), *nb = *(void **)(cb + 0x20);
++    VecFx32 pa = *(VecFx32 *)(ca + 0x48c), pb = *(VecFx32 *)(cb + 0x48c);
++    unsigned short fa, fb;
++    if (!na || !nb)
++        return;
++    fa = *(unsigned short *)((char *)na + 0x80);
++    fb = *(unsigned short *)((char *)nb + 0x80);
++    Actor_SetVecAndSyncChild(na, &pb);
++    *(VecFx32 *)(ca + 0x48c) = pb;
++    *(unsigned short *)((char *)na + 0x80) = fb;
++    Actor_SetVecAndSyncChild(nb, &pa);
++    *(VecFx32 *)(cb + 0x48c) = pa;
++    *(unsigned short *)((char *)nb + 0x80) = fa;
 +}
 +
 +static void swap_log_hp(const char *when, Ov022Node *roxas, Ov022Node *partner)
@@ -12392,10 +12287,14 @@ index f3055d4ba..cd8cf755d 100644
 +                          : partner->field012 == 0 ? "the partner down"
 +                          : roxas->field012 == 0 ? "Roxas down"
 +                          : (root->flags & 4) ? "the field stopped" : NULL;
-+        /* the game holding the player (an event): back to Roxas after a third of a second */
++        int place = 0;
++        /* the game holding the player (an event, an exit's walk): back to Roxas after a tenth
++         * of a second, Roxas put where the partner is */
 +        if (Ov022_IsInputAllowedForActiveSlot() != 0) {
-+            if (++locked > 20 && !why)
++            if (++locked > 6 && !why) {
 +                why = "input held by the game";
++                place = 1;
++            }
 +        } else {
 +            locked = 0;
 +        }
@@ -12404,7 +12303,10 @@ index f3055d4ba..cd8cf755d 100644
 +            /* out of the gameplay (not a touch): the weapons back at once, no combo to wait
 +             * for there */
 +            kh_partner_swap_force = 1;
-+            KH_TRACE_ALWAYS("swap: back to Roxas: %s", why);
++            KH_TRACE_ALWAYS("swap: back to Roxas: %s%s", why,
++                            place ? " (Roxas put where the partner was)" : "");
++            if (place && partner)
++                swap_places(roxas, partner);
 +        }
 +    } else {
 +        locked = 0;
@@ -12418,7 +12320,7 @@ index f3055d4ba..cd8cf755d 100644
  void Ov022_RefreshSlotRows(int unused)
  {
      Ov022Root *root = NNSi_FndGetCurrentRootHeap();
-@@ -119,6 +353,13 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -119,6 +385,13 @@ void Ov022_RefreshSlotRows(int unused)
          gPadHeld |= root->savedMask1;
          func_ov022_02087a70();
      }
@@ -12432,7 +12334,7 @@ index f3055d4ba..cd8cf755d 100644
      primaryNode = root->firstOwner->node;
      primaryField66 = primaryNode->field066;
      resourceBase = Ov022_GetGlobalPlus14();
-@@ -143,7 +384,16 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -143,7 +416,16 @@ void Ov022_RefreshSlotRows(int unused)
              if ((int)(*(long long *)node & 0x10000LL) == 0) {
                  Ov022_LoadNodeFromResource(node, cursor->rowIndex);
              } else {
