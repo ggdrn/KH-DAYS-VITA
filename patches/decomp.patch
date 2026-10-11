@@ -11495,7 +11495,7 @@ index c77ecd174..24eb1d7e8 100644
      u16 nHp;                     /* 0x12 */
  };
 diff --git a/src/overlays/field/ov022_battle/Ov022_BuildActorSlot.c b/src/overlays/field/ov022_battle/Ov022_BuildActorSlot.c
-index eb0c2fd62..272eac4e0 100644
+index eb0c2fd62..e249a30ae 100644
 --- a/src/overlays/field/ov022_battle/Ov022_BuildActorSlot.c
 +++ b/src/overlays/field/ov022_battle/Ov022_BuildActorSlot.c
 @@ -9,6 +9,9 @@
@@ -11508,7 +11508,7 @@ index eb0c2fd62..272eac4e0 100644
  
  #define CONTAINER_HEAP 6
  #define BLOCK_COUNT 2
-@@ -98,3 +101,93 @@ void Ov022_BuildActorSlot(struct Actor *pActor)
+@@ -98,3 +101,106 @@ void Ov022_BuildActorSlot(struct Actor *pActor)
      Ov022_AllocateSlotWithClass(pActor->aSlots, pActor->nId, 0, &params);
      ZeroHalfThenFree(pActor->pContainer);
  }
@@ -11548,9 +11548,18 @@ index eb0c2fd62..272eac4e0 100644
 +    memcpy(w->aBlock, a + SWAP_BLOCK_OFFSET, SWAP_BLOCK_SIZE);
 +}
 +
++/* the combo under way lives in the table too (its lock, +0x470: Ov022_StepComboState): kept
++ * as it is, pointing into the last table, which stays allocated (0.7.13 copied the kept
++ * table's over it, a null lock, and faulted swapping in the middle of a combo) */
++#define SWAP_LIVE_OFFSET 0x470
++#define SWAP_LIVE_SIZE 0xc
++
 +static void swap_weapon_load(const struct SwapWeapon *w, u8 *a)
 +{
++    u8 live[SWAP_LIVE_SIZE];
++    memcpy(live, a + SWAP_TABLE_OFFSET + SWAP_LIVE_OFFSET, SWAP_LIVE_SIZE);
 +    memcpy(a + SWAP_TABLE_OFFSET, w->aTable, SWAP_TABLE_SIZE);
++    memcpy(a + SWAP_TABLE_OFFSET + SWAP_LIVE_OFFSET, live, SWAP_LIVE_SIZE);
 +    memcpy(a + SWAP_BLOCK_OFFSET, w->aBlock, SWAP_BLOCK_SIZE);
 +}
 +
@@ -11584,13 +11593,17 @@ index eb0c2fd62..272eac4e0 100644
 +    } else if (c->other.nWeapon == nWeapon) {
 +        swap_weapon_load(&c->other, a);
 +    } else {
-+        /* built in place: the old table stays allocated (kept above) */
++        /* built in place: the old table stays allocated (kept above); the combo under way
++         * kept (the build clears +0x478) */
++        u8 live[SWAP_LIVE_SIZE];
++        memcpy(live, a + SWAP_TABLE_OFFSET + SWAP_LIVE_OFFSET, SWAP_LIVE_SIZE);
 +        Ov002_ClearBytes01AndWord160(&pActor->aBlocks[1]);
 +        OS_SPrintf(szName, gOv022BaChWPathFmt, data_02042a70[pActor->nKind]);
 +        pActor->pContainer = Msg_OpenContainerAndReadHeader(szName, CONTAINER_HEAP);
 +        Ov022_BuildActionTable(&pActor->blkActions, pActor, pActor->nKind, nWeapon);
 +        pActor->pfnSetup(pActor, (u8)nWeapon);
 +        ZeroHalfThenFree(pActor->pContainer);
++        memcpy(a + SWAP_TABLE_OFFSET + SWAP_LIVE_OFFSET, live, SWAP_LIVE_SIZE);
 +        swap_weapon_save(&c->other, a, nWeapon);
 +    }
 +    c->nCurrent = nWeapon;
