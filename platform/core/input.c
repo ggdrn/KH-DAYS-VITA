@@ -18,6 +18,7 @@ volatile int kh_lockon_active;
  * the party entry player 1 plays (0 Roxas), the AI slot Roxas borrows, a scene that needs
  * Roxas (game.c), and the touches on the partner's HUD */
 volatile int kh_partner_swap_index, kh_partner_swap_slot, kh_partner_swap_hold;
+volatile int kh_partner_swap_member; /* the partner's member id while swapped (the panels) */
 volatile unsigned int kh_partner_swap_requests;
 
 int kh_partner_swap_enabled(void)

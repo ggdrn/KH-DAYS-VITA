@@ -9068,10 +9068,10 @@ index 7241b50d8..8a8872ba7 100644
      packed |= Ov105_GetStatusLow();
      Heap_SetCurrent(0);
 diff --git a/src/engine/GetPlayerSlotTableEntry.c b/src/engine/GetPlayerSlotTableEntry.c
-index 4b7ab6feb..8832330b1 100644
+index 4b7ab6feb..8e52d94d5 100644
 --- a/src/engine/GetPlayerSlotTableEntry.c
 +++ b/src/engine/GetPlayerSlotTableEntry.c
-@@ -2,7 +2,17 @@
+@@ -2,7 +2,41 @@
   * outside [0,2). */
  
  extern char data_0204c500[];
@@ -9080,7 +9080,31 @@ index 4b7ab6feb..8832330b1 100644
 + * drives Roxas, asking for his slot as (u8)(0 - 1) = 255; he takes the partner's (whose AI
 + * does not run then). The engine's own calls ask with member - 1 = -1 for Roxas: unchanged. */
 +extern volatile int kh_partner_swap_index, kh_partner_swap_slot;
++
++/* The party member a stat or panel query reads (gPartyMembers): while player 1 plays the
++ * partner, the panels are swapped -- the partner reads Roxas's member (level, abilities,
++ * attack, defence) and Roxas the partner's. kh_partner_swap_member: the partner's id then. */
++extern volatile int kh_partner_swap_member;
++int kh_swap_member(int id)
++{
++    const int p = kh_partner_swap_member;
++    if (p > 0) {
++        if (id == 0)
++            return p;
++        if (id == p)
++            return 0;
++    }
++    return id;
++}
++
++/* Who a pickup (munny, mission tally, inventory) is credited to: the partner's are Roxas's */
++int kh_swap_credit(int id)
++{
++    const int p = kh_partner_swap_member;
++    return p > 0 && id == p ? 0 : id;
++}
 +#endif
++
  int GetPlayerSlotTableEntry(int idx) {
 +#ifdef PLATFORM_VITA
 +    if (idx == 255 && kh_partner_swap_index > 0)
@@ -9881,6 +9905,24 @@ index 056098149..b2f6bc834 100644
      else
 -        G2x_SetBlendAlpha_(0x04000050, 0, alpha, 0x10, 0);
 +        G2x_SetBlendAlpha_(KH_HW(0x04000050), 0, alpha, 0x10, 0);
+ }
+diff --git a/src/engine/Slot_EvalPackedParam.c b/src/engine/Slot_EvalPackedParam.c
+index 89376fcd5..37e2b73e6 100644
+--- a/src/engine/Slot_EvalPackedParam.c
++++ b/src/engine/Slot_EvalPackedParam.c
+@@ -14,7 +14,13 @@ extern struct Params data_0204c590[];
+ extern unsigned char gPartyMembers[];
+ extern int BitArray_GetField(unsigned char *p, int hi, int lo);
+ 
++#ifdef PLATFORM_VITA
++extern int kh_swap_member(int id); /* config partner_swap: the panels swapped */
++#endif
+ int Slot_EvalPackedParam(int a, int b) {
+     struct Params *v = &data_0204c590[b - 1];
++#ifdef PLATFORM_VITA
++    a = kh_swap_member(a);
++#endif
+     return (unsigned char)BitArray_GetField(gPartyMembers + a * 260 + 0x28, v->hi, v->lo);
  }
 diff --git a/src/engine/SubOam_SetupBitmapGrid.c b/src/engine/SubOam_SetupBitmapGrid.c
 index a3c4a6d9c..d9e5f63a0 100644
@@ -11186,7 +11228,7 @@ index 210058603..4b0cff105 100644
      struct ActorNode *pNode;         /* 0x20 */
      u8 pad24[0x40];
 diff --git a/src/overlays/field/ov022_battle/Ov022_ActorUpdate.c b/src/overlays/field/ov022_battle/Ov022_ActorUpdate.c
-index 40b32872e..00582d68a 100644
+index 40b32872e..fd44c3b32 100644
 --- a/src/overlays/field/ov022_battle/Ov022_ActorUpdate.c
 +++ b/src/overlays/field/ov022_battle/Ov022_ActorUpdate.c
 @@ -1,3 +1,4 @@
@@ -11212,6 +11254,25 @@ index 40b32872e..00582d68a 100644
      u8 pad46c[0xe];
      char nField47a;              /* 0x47a */
      char nField47b;              /* 0x47b */
+@@ -276,8 +277,18 @@ void Ov022_ActorUpdate(struct Actor *pActor)
+             pActor->nFlags2 |= (1ULL << 33);
+         }
+         if (pActor->nSlotIndex >= 0 && pActor->nHp != 0) {
++#ifdef PLATFORM_VITA
++            {
++                /* config partner_swap: the partner player 1 plays picks everything up, as
++                 * Roxas (a partner's id takes only HP orbs: 0.7.4) */
++                extern int kh_swap_credit(int id);
++                Ov002_CollectNearbySpots(Ov002_GetSlotTableByte(pActor->nSlotIndex), pActor->pSub,
++                                         kh_swap_credit(pActor->nId));
++            }
++#else
+             Ov002_CollectNearbySpots(Ov002_GetSlotTableByte(pActor->nSlotIndex), pActor->pSub,
+                                      pActor->nId);
++#endif
+         }
+     }
+     if ((pActor->nFlags & (1ULL << 42)) != 0) {
 diff --git a/src/overlays/field/ov022_battle/Ov022_ApplyExternalPush.c b/src/overlays/field/ov022_battle/Ov022_ApplyExternalPush.c
 index 300201871..7dbfbb49e 100644
 --- a/src/overlays/field/ov022_battle/Ov022_ApplyExternalPush.c
@@ -11230,6 +11291,77 @@ index 300201871..7dbfbb49e 100644
      u8 pad008[0x1c];
      u32 nInputMask;              /* 0x024 */
      u8 pad028[0x470];
+diff --git a/src/overlays/field/ov022_battle/Ov022_ApplyItemEffect.c b/src/overlays/field/ov022_battle/Ov022_ApplyItemEffect.c
+index 35983c278..51c15d069 100644
+--- a/src/overlays/field/ov022_battle/Ov022_ApplyItemEffect.c
++++ b/src/overlays/field/ov022_battle/Ov022_ApplyItemEffect.c
+@@ -63,6 +63,12 @@ extern void Ov022_SetHeldItem(struct Actor *pActor, int nHalf, int bSet);
+ extern void Ov002_RequestMode(int nMode);
+ extern void Ov002_NoteSeatAnswer(int nWho, int nParam, u32 nKind, int nLevel);
+ 
++#ifdef PLATFORM_VITA
++extern int kh_swap_credit(int id); /* config partner_swap: the partner's pickups are Roxas's */
++#define KH_CREDIT_ID kh_swap_credit(pActor->nId)
++#else
++#define KH_CREDIT_ID pActor->nId
++#endif
+ void Ov022_ApplyItemEffect(struct Actor *pActor, int nParam, u32 nKind, int nLevel)
+ {
+     int nValue;
+@@ -100,7 +106,7 @@ void Ov022_ApplyItemEffect(struct Actor *pActor, int nParam, u32 nKind, int nLev
+             }
+             pActor->nFlags3 |= FLAG3_BIT42;
+             if (Session_GetLocalPlayerIndex() == 0) {
+-                Ov002_AddMissionTally(pActor->nId, nKind == 0 ? TALLY_KIND0 : TALLY_KIND1, nValue);
++                Ov002_AddMissionTally(KH_CREDIT_ID, nKind == 0 ? TALLY_KIND0 : TALLY_KIND1, nValue);
+             }
+         }
+         break;
+@@ -169,7 +175,7 @@ void Ov022_ApplyItemEffect(struct Actor *pActor, int nParam, u32 nKind, int nLev
+                 break;
+             }
+             if (pActor->nHp != 0) {
+-                Ov002_AddMissionTally(pActor->nId, TALLY_KIND3, nCount);
++                Ov002_AddMissionTally(KH_CREDIT_ID, TALLY_KIND3, nCount);
+             }
+         }
+         break;
+@@ -183,7 +189,7 @@ void Ov022_ApplyItemEffect(struct Actor *pActor, int nParam, u32 nKind, int nLev
+         if (pActor->nOwner == Session_GetLocalPlayerIndex()) {
+             Ov002_AnnounceWithSound(nLevel, 1);
+         }
+-        if (Slot_AllEntriesFilled(pActor->nId) == 0 && Session_GetLocalPlayerIndex() != 0) {
++        if (Slot_AllEntriesFilled(KH_CREDIT_ID) == 0 && Session_GetLocalPlayerIndex() != 0) {
+             Ov022_DriveOwnedSound(pActor, nParam, nLevel, 1);
+         }
+         break;
+@@ -205,5 +211,5 @@ void Ov022_ApplyItemEffect(struct Actor *pActor, int nParam, u32 nKind, int nLev
+     if (nKind < 6) {
+         return;
+     }
+-    Ov002_NoteSeatAnswer(pActor->nId, nParam, nKind, nLevel);
++    Ov002_NoteSeatAnswer(KH_CREDIT_ID, nParam, nKind, nLevel);
+ }
+diff --git a/src/overlays/field/ov022_battle/Ov022_ApplyScaledDamage.c b/src/overlays/field/ov022_battle/Ov022_ApplyScaledDamage.c
+index 2a1adafd6..c75a223d5 100644
+--- a/src/overlays/field/ov022_battle/Ov022_ApplyScaledDamage.c
++++ b/src/overlays/field/ov022_battle/Ov022_ApplyScaledDamage.c
+@@ -11,7 +11,15 @@ struct Row02093860 { char pad0[0xe]; unsigned short rate; char pad10[0x104 - 0x1
+ void Ov022_ApplyScaledDamage(int arg0, int arg1, int arg2) {
+     int q, prod;
+     if (Session_GetLocalPlayerIndex() != 0) return;
++#ifdef PLATFORM_VITA
++    {
++        extern int kh_swap_member(int id); /* config partner_swap: the panels swapped */
++        q = (((struct Row02093860 *)&gPartyMembers)[kh_swap_member(*(unsigned char *)(arg0 + 9))].rate
++             << 0xc) / 100;
++    }
++#else
+     q = (((struct Row02093860 *)&gPartyMembers)[*(unsigned char *)(arg0 + 9)].rate << 0xc) / 100;
++#endif
+     if (arg2 > 0) arg1 = arg2 * 10 + arg1;
+     prod = q * arg1;
+     if (*(unsigned short *)(arg0 + 0x12) == 0) return;
 diff --git a/src/overlays/field/ov022_battle/Ov022_ApplySurfaceReactions.c b/src/overlays/field/ov022_battle/Ov022_ApplySurfaceReactions.c
 index 87cd7b711..e7ff3014f 100644
 --- a/src/overlays/field/ov022_battle/Ov022_ApplySurfaceReactions.c
@@ -11327,7 +11459,7 @@ index 12a5ecebd..4d29162fa 100644
      unsigned char kind009;
      unsigned char pad00a[8];
 diff --git a/src/overlays/field/ov022_battle/Ov022_ComputeDamageTaken.c b/src/overlays/field/ov022_battle/Ov022_ComputeDamageTaken.c
-index 22c8a41b8..1302cfb56 100644
+index 22c8a41b8..5e4fdecd5 100644
 --- a/src/overlays/field/ov022_battle/Ov022_ComputeDamageTaken.c
 +++ b/src/overlays/field/ov022_battle/Ov022_ComputeDamageTaken.c
 @@ -129,6 +129,12 @@ extern int GameState_GetField(int nField, int nWidth);
@@ -11343,7 +11475,7 @@ index 22c8a41b8..1302cfb56 100644
  static inline int FxMul(int nValue, int nScale)
  {
      return (int)(((s64)nValue * nScale + 0x800) >> 12);
-@@ -151,6 +157,11 @@ int Ov022_ComputeDamageTaken(struct Actor *pActor, struct HitRequest *pReq)
+@@ -151,9 +157,21 @@ int Ov022_ComputeDamageTaken(struct Actor *pActor, struct HitRequest *pReq)
      int nCap;
      int nRule;
  
@@ -11354,8 +11486,18 @@ index 22c8a41b8..1302cfb56 100644
 +#endif
      nFlags = pReq->nFlags;
      nResult = 0;
++#ifdef PLATFORM_VITA
++    {
++        extern int kh_swap_member(int id); /* config partner_swap: the panels swapped */
++        pRec = &gPartyMembers[kh_swap_member(pActor->nId)];
++    }
++#else
      pRec = &gPartyMembers[pActor->nId];
-@@ -166,6 +177,11 @@ int Ov022_ComputeDamageTaken(struct Actor *pActor, struct HitRequest *pReq)
++#endif
+     bDrain = 0;
+     pStats = &pActor->stats;
+     if ((nFlags & REQ_RAW) != 0) {
+@@ -166,6 +184,11 @@ int Ov022_ComputeDamageTaken(struct Actor *pActor, struct HitRequest *pReq)
          if ((data_0204c240 & MODE_FLAG_BIT2) != 0 && data_0204c248.nKind != 0) {
              bDrain = 1;
          }
@@ -11367,7 +11509,7 @@ index 22c8a41b8..1302cfb56 100644
      }
      if ((nFlags & REQ_PERCENT) == 0 || (nFlags & REQ_HALF) != 0) {
          nRule = Slot_EvalPackedParam(pActor->nId, RULE_SHIELD_DEFENSE);
-@@ -232,12 +248,20 @@ int Ov022_ComputeDamageTaken(struct Actor *pActor, struct HitRequest *pReq)
+@@ -232,12 +255,20 @@ int Ov022_ComputeDamageTaken(struct Actor *pActor, struct HitRequest *pReq)
      if (Slot_EvalPackedParam(pActor->nId, RULE_SHIELD_HALF) != 0 && func_ov022_020ad7b0(pActor)) {
          nResult /= 2;
      }
@@ -11388,7 +11530,7 @@ index 22c8a41b8..1302cfb56 100644
          case 0:
              nResult = FxMul(nResult, EASY_SCALE);
              break;
-@@ -251,14 +275,22 @@ int Ov022_ComputeDamageTaken(struct Actor *pActor, struct HitRequest *pReq)
+@@ -251,14 +282,22 @@ int Ov022_ComputeDamageTaken(struct Actor *pActor, struct HitRequest *pReq)
      if (Ov022_IsState9Or6WithFlag200(pActor->run) != 0) {
          nResult /= 2;
      }
@@ -11493,6 +11635,25 @@ index 65ada4864..7cfc42953 100644
      if (count > 0 && count > 0) {
          int *inputCursor = input;
          unsigned char *stateCursor = (unsigned char *)root;
+diff --git a/src/overlays/field/ov022_battle/Ov022_GetActorValue.c b/src/overlays/field/ov022_battle/Ov022_GetActorValue.c
+index f559d9e8f..4ef986734 100644
+--- a/src/overlays/field/ov022_battle/Ov022_GetActorValue.c
++++ b/src/overlays/field/ov022_battle/Ov022_GetActorValue.c
+@@ -45,7 +45,14 @@ int Ov022_GetActorValue(struct Actor *pActor, int nScale, int nActionLevel)
+     struct Record *pRec;
+     int nValue;
+ 
++#ifdef PLATFORM_VITA
++    {
++        extern int kh_swap_member(int id); /* config partner_swap: the panels swapped */
++        pRec = &gPartyMembers[kh_swap_member(pActor->nId)];
++    }
++#else
+     pRec = &gPartyMembers[pActor->nId];
++#endif
+     nValue = 0;
+     nValue += pRec->nBaseValue << 12;
+     nValue += pActor->nBonusValue << 12;
 diff --git a/src/overlays/field/ov022_battle/Ov022_GetStreamTimestamp.c b/src/overlays/field/ov022_battle/Ov022_GetStreamTimestamp.c
 index 084acdd90..5b1a2e8ce 100644
 --- a/src/overlays/field/ov022_battle/Ov022_GetStreamTimestamp.c
@@ -11687,7 +11848,7 @@ index e43f5318f..60c3f4296 100644
      } else if (Ov002_IsObjectFlag2000Set(object) == 0) {
          if ((pressed & 0x100) != 0) {
 diff --git a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
-index f3055d4ba..db961d4f2 100644
+index f3055d4ba..81b518dcf 100644
 --- a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 +++ b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 @@ -1,3 +1,4 @@
@@ -11704,7 +11865,7 @@ index f3055d4ba..db961d4f2 100644
  } Ov022FlagsView;
  
  typedef struct Ov022NodeOwner {
-@@ -90,6 +91,120 @@ extern void func_ov022_0208a1a4(void);
+@@ -90,6 +91,147 @@ extern void func_ov022_0208a1a4(void);
  extern unsigned short gPadPressed;
  extern unsigned short gPadHeld;
  
@@ -11718,6 +11879,7 @@ index f3055d4ba..db961d4f2 100644
 + * another touch, and whenever a scene needs him: a dialogue or movie (the port's
 + * kh_partner_swap_hold), input locked by the game, either of them down or gone, the option off. */
 +extern volatile int kh_partner_swap_index, kh_partner_swap_slot, kh_partner_swap_hold;
++extern volatile int kh_partner_swap_member;
 +extern volatile unsigned int kh_partner_swap_requests;
 +extern int kh_partner_swap_enabled(void);
 +extern int Ov022_IsInputAllowedForActiveSlot(void);
@@ -11756,9 +11918,35 @@ index f3055d4ba..db961d4f2 100644
 +    }
 +}
 +
++/* The two actors' HP maxima traded (the panels' HP goes with them), each one's HP kept in
++ * proportion */
++static void swap_hp(Ov022Node *a, Ov022Node *b)
++{
++    unsigned short *ha = (unsigned short *)a, *hb = (unsigned short *)b;
++    const unsigned int ma = ha[0xb], mb = hb[0xb]; /* 0x16: HP max; 0x12: HP */
++    if (!ma || !mb)
++        return;
++    if (ha[9])
++        ha[9] = (unsigned short)(ha[9] * mb / ma ? ha[9] * mb / ma : 1);
++    if (hb[9])
++        hb[9] = (unsigned short)(hb[9] * ma / mb ? hb[9] * ma / mb : 1);
++    ha[0xb] = (unsigned short)mb;
++    hb[0xb] = (unsigned short)ma;
++}
++
 +static void swap_apply(Ov022Root *root, int from, int to)
 +{
 +    Ov022Node *roxas = swap_node(root, 0);
++    /* the panels: the partner's HP max and member are Roxas's while it is played */
++    if (to > 0) {
++        swap_hp(roxas, swap_node(root, to));
++        kh_partner_swap_member = ((unsigned char *)swap_node(root, to))[9];
++    } else if (from > 0 && from < root->count) {
++        swap_hp(roxas, swap_node(root, from));
++        kh_partner_swap_member = 0;
++    } else {
++        kh_partner_swap_member = 0;
++    }
 +    if (to > 0)
 +        swap_reset_slot(((unsigned char *)swap_node(root, to))[9] - 1);
 +    else if (kh_partner_swap_index > 0)
@@ -11825,7 +12013,7 @@ index f3055d4ba..db961d4f2 100644
  void Ov022_RefreshSlotRows(int unused)
  {
      Ov022Root *root = NNSi_FndGetCurrentRootHeap();
-@@ -119,6 +234,9 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -119,6 +261,9 @@ void Ov022_RefreshSlotRows(int unused)
          gPadHeld |= root->savedMask1;
          func_ov022_02087a70();
      }
@@ -11835,7 +12023,7 @@ index f3055d4ba..db961d4f2 100644
      primaryNode = root->firstOwner->node;
      primaryField66 = primaryNode->field066;
      resourceBase = Ov022_GetGlobalPlus14();
-@@ -143,7 +261,16 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -143,7 +288,16 @@ void Ov022_RefreshSlotRows(int unused)
              if ((int)(*(long long *)node & 0x10000LL) == 0) {
                  Ov022_LoadNodeFromResource(node, cursor->rowIndex);
              } else {
