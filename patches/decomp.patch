@@ -9068,10 +9068,10 @@ index 7241b50d8..8a8872ba7 100644
      packed |= Ov105_GetStatusLow();
      Heap_SetCurrent(0);
 diff --git a/src/engine/GetPlayerSlotTableEntry.c b/src/engine/GetPlayerSlotTableEntry.c
-index 4b7ab6feb..b240cb1b5 100644
+index 4b7ab6feb..f41bb0884 100644
 --- a/src/engine/GetPlayerSlotTableEntry.c
 +++ b/src/engine/GetPlayerSlotTableEntry.c
-@@ -2,7 +2,45 @@
+@@ -2,7 +2,56 @@
   * outside [0,2). */
  
  extern char data_0204c500[];
@@ -9081,19 +9081,30 @@ index 4b7ab6feb..b240cb1b5 100644
 + * does not run then). The engine's own calls ask with member - 1 = -1 for Roxas: unchanged. */
 +extern volatile int kh_partner_swap_index, kh_partner_swap_slot;
 +
-+/* The party member a stat or panel query reads (gPartyMembers): while player 1 plays the
-+ * partner, the panels are swapped -- the partner reads Roxas's member (level, abilities,
-+ * attack, defence) and Roxas the partner's. kh_partner_swap_member: the partner's id then. */
++/* The panels swapped (0.7.15): the two party members' records (gPartyMembers, 0x104 bytes:
++ * level, weapon panel, stats, resistances, abilities, the deck's shortcuts and counts, the
++ * items) traded in place, all but each one's identity (bytes 0, 1 and 3: member id, kind).
++ * Remapped query by query (0.7.5 to 0.7.14), some reads went to the wrong one -- a magic or
++ * an item used by the partner was not spent. kh_swap_member is the identity now: every read
++ * by a member id finds the swapped record. Called again to trade them back. */
 +extern volatile int kh_partner_swap_member;
++extern unsigned char gPartyMembers[];
++void kh_swap_records(int p)
++{
++    unsigned char *a = gPartyMembers, *b = gPartyMembers + p * 0x104;
++    int k;
++    for (k = 0; k < 0x104; k++) {
++        unsigned char t;
++        if (k == 0 || k == 1 || k == 3)
++            continue;
++        t = a[k];
++        a[k] = b[k];
++        b[k] = t;
++    }
++}
++
 +int kh_swap_member(int id)
 +{
-+    const int p = kh_partner_swap_member;
-+    if (p > 0) {
-+        if (id == 0)
-+            return p;
-+        if (id == p)
-+            return 0;
-+    }
 +    return id;
 +}
 +
@@ -11289,7 +11300,7 @@ index 210058603..4b0cff105 100644
      struct ActorNode *pNode;         /* 0x20 */
      u8 pad24[0x40];
 diff --git a/src/overlays/field/ov022_battle/Ov022_ActorUpdate.c b/src/overlays/field/ov022_battle/Ov022_ActorUpdate.c
-index 40b32872e..6a6d48902 100644
+index 40b32872e..b6b3f17a2 100644
 --- a/src/overlays/field/ov022_battle/Ov022_ActorUpdate.c
 +++ b/src/overlays/field/ov022_battle/Ov022_ActorUpdate.c
 @@ -1,3 +1,4 @@
@@ -11333,7 +11344,7 @@ index 40b32872e..6a6d48902 100644
 +                    kh_swap_pickup_owner = 0;
 +                Ov002_CollectNearbySpots(
 +                    Ov002_GetSlotTableByte(kh_swap_spot_slot(pActor->nSlotIndex, pActor->nId)),
-+                    pActor->pSub, kh_swap_credit(pActor->nId));
++                    pActor->pSub, pActor->nId);
 +            }
 +#else
              Ov002_CollectNearbySpots(Ov002_GetSlotTableByte(pActor->nSlotIndex), pActor->pSub,
@@ -11361,7 +11372,7 @@ index 300201871..7dbfbb49e 100644
      u32 nInputMask;              /* 0x024 */
      u8 pad028[0x470];
 diff --git a/src/overlays/field/ov022_battle/Ov022_ApplyItemEffect.c b/src/overlays/field/ov022_battle/Ov022_ApplyItemEffect.c
-index 35983c278..51c15d069 100644
+index 35983c278..99b108423 100644
 --- a/src/overlays/field/ov022_battle/Ov022_ApplyItemEffect.c
 +++ b/src/overlays/field/ov022_battle/Ov022_ApplyItemEffect.c
 @@ -63,6 +63,12 @@ extern void Ov022_SetHeldItem(struct Actor *pActor, int nHalf, int bSet);
@@ -11395,22 +11406,6 @@ index 35983c278..51c15d069 100644
              }
          }
          break;
-@@ -183,7 +189,7 @@ void Ov022_ApplyItemEffect(struct Actor *pActor, int nParam, u32 nKind, int nLev
-         if (pActor->nOwner == Session_GetLocalPlayerIndex()) {
-             Ov002_AnnounceWithSound(nLevel, 1);
-         }
--        if (Slot_AllEntriesFilled(pActor->nId) == 0 && Session_GetLocalPlayerIndex() != 0) {
-+        if (Slot_AllEntriesFilled(KH_CREDIT_ID) == 0 && Session_GetLocalPlayerIndex() != 0) {
-             Ov022_DriveOwnedSound(pActor, nParam, nLevel, 1);
-         }
-         break;
-@@ -205,5 +211,5 @@ void Ov022_ApplyItemEffect(struct Actor *pActor, int nParam, u32 nKind, int nLev
-     if (nKind < 6) {
-         return;
-     }
--    Ov002_NoteSeatAnswer(pActor->nId, nParam, nKind, nLevel);
-+    Ov002_NoteSeatAnswer(KH_CREDIT_ID, nParam, nKind, nLevel);
- }
 diff --git a/src/overlays/field/ov022_battle/Ov022_ApplyScaledDamage.c b/src/overlays/field/ov022_battle/Ov022_ApplyScaledDamage.c
 index 2a1adafd6..c75a223d5 100644
 --- a/src/overlays/field/ov022_battle/Ov022_ApplyScaledDamage.c
@@ -12092,7 +12087,7 @@ index e43f5318f..60c3f4296 100644
      } else if (Ov002_IsObjectFlag2000Set(object) == 0) {
          if ((pressed & 0x100) != 0) {
 diff --git a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
-index f3055d4ba..35652d7e1 100644
+index f3055d4ba..89141feca 100644
 --- a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 +++ b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 @@ -1,3 +1,4 @@
@@ -12109,7 +12104,7 @@ index f3055d4ba..35652d7e1 100644
  } Ov022FlagsView;
  
  typedef struct Ov022NodeOwner {
-@@ -90,6 +91,197 @@ extern void func_ov022_0208a1a4(void);
+@@ -90,6 +91,208 @@ extern void func_ov022_0208a1a4(void);
  extern unsigned short gPadPressed;
  extern unsigned short gPadHeld;
  
@@ -12196,6 +12191,10 @@ index f3055d4ba..35652d7e1 100644
 +}
 +
 +extern void kh_swap_set_weapon(void *actor, int nWeapon, int nOwn);
++extern void kh_swap_records(int p);
++/* the weapons of the swap under way: Roxas's panel one, the partner's own (read before the
++ * records are traded) */
++static int s_swap_weapons[2];
 +extern int kh_swap_member_weapon(int nId);
 +
 +static void swap_apply(Ov022Root *root, int from, int to)
@@ -12206,11 +12205,15 @@ index f3055d4ba..35652d7e1 100644
 +        swap_log_hp("before", roxas, swap_node(root, to));
 +        swap_hp(roxas, swap_node(root, to));
 +        swap_log_hp("after", roxas, swap_node(root, to));
-+        kh_partner_swap_member = ((unsigned char *)swap_node(root, to))[9];
 +        {
 +            /* the weapon equipped in Roxas's panels, the partner's character's own for it */
 +            const int id = ((unsigned char *)swap_node(root, to))[9];
 +            const int w = kh_swap_member_weapon(0), own = kh_swap_member_weapon(id);
++            s_swap_weapons[0] = w;
++            s_swap_weapons[1] = own;
++            /* the panels: the two records traded (engine/GetPlayerSlotTableEntry.c) */
++            kh_swap_records(id);
++            kh_partner_swap_member = id;
 +            KH_TRACE_ALWAYS("swap: partner's weapon %d -> Roxas's panel weapon %d; Roxas's -> "
 +                            "the base weapon 0", own, w);
 +            kh_swap_set_weapon(swap_node(root, to), w, own);
@@ -12221,15 +12224,18 @@ index f3055d4ba..35652d7e1 100644
 +    } else if (from > 0 && from < root->count) {
 +        swap_hp(roxas, swap_node(root, from));
 +        swap_log_hp("back", roxas, swap_node(root, from));
++        if (kh_partner_swap_member > 0)
++            kh_swap_records(kh_partner_swap_member);
 +        kh_partner_swap_member = 0;
 +        {
 +            /* the partner's own weapon again */
-+            const int id = ((unsigned char *)swap_node(root, from))[9];
-+            const int w = kh_swap_member_weapon(0), own = kh_swap_member_weapon(id);
++            const int w = s_swap_weapons[0], own = s_swap_weapons[1];
 +            kh_swap_set_weapon(swap_node(root, from), own, own);
 +            kh_swap_set_weapon(roxas, w, w);
 +        }
 +    } else {
++        if (kh_partner_swap_member > 0)
++            kh_swap_records(kh_partner_swap_member);
 +        kh_partner_swap_member = 0;
 +    }
 +    if (to > 0)
@@ -12307,7 +12313,7 @@ index f3055d4ba..35652d7e1 100644
  void Ov022_RefreshSlotRows(int unused)
  {
      Ov022Root *root = NNSi_FndGetCurrentRootHeap();
-@@ -119,6 +311,9 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -119,6 +322,9 @@ void Ov022_RefreshSlotRows(int unused)
          gPadHeld |= root->savedMask1;
          func_ov022_02087a70();
      }
@@ -12317,7 +12323,7 @@ index f3055d4ba..35652d7e1 100644
      primaryNode = root->firstOwner->node;
      primaryField66 = primaryNode->field066;
      resourceBase = Ov022_GetGlobalPlus14();
-@@ -143,7 +338,16 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -143,7 +349,16 @@ void Ov022_RefreshSlotRows(int unused)
              if ((int)(*(long long *)node & 0x10000LL) == 0) {
                  Ov022_LoadNodeFromResource(node, cursor->rowIndex);
              } else {
@@ -16619,7 +16625,7 @@ index a7a3aab9b..c8a556432 100644
      data_ov002_0207f614 = 0;
  }
 diff --git a/src/overlays/scenes/ov002_field/Ov002_CollectNearbySpots.c b/src/overlays/scenes/ov002_field/Ov002_CollectNearbySpots.c
-index b0ac8c306..d9deebc7a 100644
+index b0ac8c306..ad655446f 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_CollectNearbySpots.c
 +++ b/src/overlays/scenes/ov002_field/Ov002_CollectNearbySpots.c
 @@ -1,3 +1,4 @@
@@ -16627,10 +16633,19 @@ index b0ac8c306..d9deebc7a 100644
  /* Collect nearby spots for one actor and context. Placed spots dispatch a
   * replicated command; free spots begin homing toward their action owner.
   * Keep the declaration order: it preserves the target's register reuse. */
-@@ -90,10 +91,55 @@ void Ov002_CollectNearbySpots(int nCtxIndex, Ov002SpotActionOwner *pOwner, u32 n
+@@ -90,10 +91,64 @@ void Ov002_CollectNearbySpots(int nCtxIndex, Ov002SpotActionOwner *pOwner, u32 n
      if (Ov002_RunShutdownHook() != 0) return;
      nSlot = Ov002_GetCtxTableByte(nCtxIndex);
      bLocalPlayer = nPlayerIndex == (u16)Session_GetLocalPlayerIndex();
++#ifdef PLATFORM_VITA
++    {
++        /* config partner_swap: the played partner picks up as the local player, into its own
++         * record (which holds Roxas's then) */
++        extern void *volatile kh_swap_pickup_owner;
++        if ((void *)pOwner == kh_swap_pickup_owner)
++            bLocalPlayer = 1;
++    }
++#endif
 +#ifdef PLATFORM_VITA
 +    {
 +        /* config partner_swap: the played partner takes everything a player does (its pickup

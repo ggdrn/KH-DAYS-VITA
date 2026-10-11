@@ -674,6 +674,11 @@ static void present(void)
         kh_partner_swap_hold = s_dialog_open || movie;
         if (!kh_overlay_loaded(22)) {
             extern volatile int kh_partner_swap_slot;
+            extern void kh_swap_records(int p);
+            /* out of the field still swapped: the two party records traded back before
+             * anything (the results, a save) reads them */
+            if (kh_partner_swap_member > 0)
+                kh_swap_records(kh_partner_swap_member);
             kh_partner_swap_index = kh_partner_swap_member = 0;
             kh_partner_swap_slot = -1;
             kh_partner_swap_fresh = 1;
