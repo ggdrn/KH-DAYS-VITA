@@ -11228,7 +11228,7 @@ index 210058603..4b0cff105 100644
      struct ActorNode *pNode;         /* 0x20 */
      u8 pad24[0x40];
 diff --git a/src/overlays/field/ov022_battle/Ov022_ActorUpdate.c b/src/overlays/field/ov022_battle/Ov022_ActorUpdate.c
-index 40b32872e..8432aecc3 100644
+index 40b32872e..6a6d48902 100644
 --- a/src/overlays/field/ov022_battle/Ov022_ActorUpdate.c
 +++ b/src/overlays/field/ov022_battle/Ov022_ActorUpdate.c
 @@ -1,3 +1,4 @@
@@ -11254,7 +11254,7 @@ index 40b32872e..8432aecc3 100644
      u8 pad46c[0xe];
      char nField47a;              /* 0x47a */
      char nField47b;              /* 0x47b */
-@@ -276,8 +277,20 @@ void Ov022_ActorUpdate(struct Actor *pActor)
+@@ -276,8 +277,26 @@ void Ov022_ActorUpdate(struct Actor *pActor)
              pActor->nFlags2 |= (1ULL << 33);
          }
          if (pActor->nSlotIndex >= 0 && pActor->nHp != 0) {
@@ -11264,6 +11264,12 @@ index 40b32872e..8432aecc3 100644
 +                 * Roxas (a partner's id takes only HP orbs: 0.7.4) */
 +                extern int kh_swap_credit(int id);
 +                extern int kh_swap_spot_slot(int nSlotIndex, int nId);
++                extern void *volatile kh_swap_pickup_owner;
++                extern volatile int kh_partner_swap_member;
++                if (kh_partner_swap_member > 0 && pActor->nId == kh_partner_swap_member)
++                    kh_swap_pickup_owner = pActor->pSub;
++                else if (kh_partner_swap_member <= 0)
++                    kh_swap_pickup_owner = 0;
 +                Ov002_CollectNearbySpots(
 +                    Ov002_GetSlotTableByte(kh_swap_spot_slot(pActor->nSlotIndex, pActor->nId)),
 +                    pActor->pSub, kh_swap_credit(pActor->nId));
@@ -16355,6 +16361,57 @@ index a7a3aab9b..c8a556432 100644
      *pDispCnt &= 0xffff1fff;
      data_ov002_0207f614 = 0;
  }
+diff --git a/src/overlays/scenes/ov002_field/Ov002_CollectNearbySpots.c b/src/overlays/scenes/ov002_field/Ov002_CollectNearbySpots.c
+index b0ac8c306..5f7ee4717 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_CollectNearbySpots.c
++++ b/src/overlays/scenes/ov002_field/Ov002_CollectNearbySpots.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"
+ /* Collect nearby spots for one actor and context. Placed spots dispatch a
+  * replicated command; free spots begin homing toward their action owner.
+  * Keep the declaration order: it preserves the target's register reuse. */
+@@ -94,6 +95,41 @@ void Ov002_CollectNearbySpots(int nCtxIndex, Ov002SpotActionOwner *pOwner, u32 n
+     if (nSlot < 0) return;
+     nOwnerRadius = pOwner->nPickupRadius;
+     pRow = data_ov002_0207fa28.pStage->aCtx[nCtxIndex].pHead;
++#ifdef PLATFORM_VITA
++    {
++        /* config partner_swap: what the played partner's pickup finds (the log, every 2 s) */
++        extern void *volatile kh_swap_pickup_owner;
++        static unsigned int calls, rows, owned, delayed, kinds, placed, far_, near_;
++        static int best = 0x7fffffff;
++        if ((void *)pOwner == kh_swap_pickup_owner) {
++            Ov002Spawned *r;
++            calls++;
++            for (r = pRow; r != 0; r = r->pNext) {
++                VecFx32 v = pOwner->vAttractPosition;
++                int d, rad = r->nRadius + nOwnerRadius;
++                rows++;
++                if (r->pActionOwner != 0) { owned++; continue; }
++                if (r->nPickupDelay > 0 || r->bActivationPending) { delayed++; continue; }
++                if (nPlayerFlags != 0 && r->nKind != 2 && r->nKind != 5) { kinds++; continue; }
++                if (r->bPlaced && !bLocalPlayer) { placed++; continue; }
++                v.y += pOwner->nAttractHeight;
++                if (r->nKind >= 6 || r->nKind == 0) rad /= 2;
++                d = VEC_Distance(&r->vPos, &v) - rad;
++                if (d < best) best = d;
++                if (d > 0) far_++; else near_++;
++            }
++            if (calls >= 120) {
++                KH_TRACE_ALWAYS("swap pickup: ctx %d slot %d player %u flags %x radius %d: %u drops "
++                                "seen, %u homing on another, %u delayed, %u of a kind it may not "
++                                "take, %u placed, %u out of reach (nearest %d over), %u in reach",
++                                nCtxIndex, nSlot, (unsigned)nPlayerIndex, (unsigned)nPlayerFlags,
++                                nOwnerRadius, rows, owned, delayed, kinds, placed, far_, best, near_);
++                calls = rows = owned = delayed = kinds = placed = far_ = near_ = 0;
++                best = 0x7fffffff;
++            }
++        }
++    }
++#endif
+     for (; pRow != 0; pRow = pRow->pNext) {
+         if (pRow->pActionOwner != 0 || pRow->nPickupDelay > 0 || pRow->bActivationPending) continue;
+         if (nPlayerFlags != 0 && pRow->nKind != 2 && pRow->nKind != 5) continue;
 diff --git a/src/overlays/scenes/ov002_field/Ov002_CommitDisplayState.c b/src/overlays/scenes/ov002_field/Ov002_CommitDisplayState.c
 index 14e7654ec..9f1d64f56 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_CommitDisplayState.c

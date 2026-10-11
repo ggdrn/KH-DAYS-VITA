@@ -19,7 +19,8 @@ volatile int kh_lockon_active;
  * Roxas (game.c), and the touches on the partner's HUD */
 volatile int kh_partner_swap_index, kh_partner_swap_slot, kh_partner_swap_hold;
 volatile int kh_partner_swap_member; /* the partner's member id while swapped (the panels) */
-volatile unsigned int kh_partner_swap_seen; /* the touches the game has answered */
+volatile unsigned int kh_partner_swap_seen;
+void *volatile kh_swap_pickup_owner; /* the played partner's pickup (the log's drop summary) */ /* the touches the game has answered */
 volatile int kh_partner_swap_fresh = 1; /* set out of the field: earlier touches are no requests */
 volatile unsigned int kh_partner_swap_requests;
 
