@@ -12,7 +12,7 @@
 
 static const KhConfig s_defaults = {
     .render_scale = 3, .layout = 0, .inset_width = 224, .aspect = KH_ASPECT_WIDE,
-    .frame_interpolation = 0, .texture_filter = 1, .filter_2d = 2, .hud = 0, .screen_effect = 0,
+    .frame_interpolation = 0, .dynamic_res = 1, .partner_swap = 0, .texture_filter = 1, .filter_2d = 2, .hud = 0, .screen_effect = 0,
     .inset_corner = 0, .inset_opacity = 100, .rear_touch = 0, .stick_deadzone = 2, .r_toggle = 0,
     .fast_forward = 2, .camera_stick = 1, .camera_speed = 2,
     .camera_invert_x = 0, .camera_invert_y = 0, .dpad_deck = 1, .show_fps = 0, .volume = 100,
@@ -95,6 +95,13 @@ void config_save(void)
     fprintf(f, "# 3D frame rate: 30 (the game's own) or 60, experimental: frames mixed in\n"
                "# between, the scenery can shake when the camera turns and effects glitch.\n"
                "fps = %d\n\n", kh_config.frame_interpolation ? 60 : 30);
+    fprintf(f, "# 60 fps: the 3D drawn at a lower resolution (down to 2x) while the GPU cannot\n"
+               "# keep up, back at render_scale when it can. 0 off (always render_scale), 1 on.\n"
+               "dynamic_res = %d\n\n", kh_config.dynamic_res);
+    fprintf(f, "# Experimental: in a story mission with a partner, touch the partner's HUD to\n"
+               "# play as the partner (Roxas's panels; the AI plays Roxas); touch it again, or\n"
+               "# any scene that needs Roxas, to get him back. 0 off, 1 on.\n"
+               "partner_swap = %d\n\n", kh_config.partner_swap);
     fprintf(f, "# How the large screen fills the display: wide (the 3D drawn for 16:9 in the\n"
                "# field, true proportions), stretch (the DS picture stretched), 4:3 (as on the\n"
                "# DS, with borders).\n"
@@ -265,6 +272,10 @@ static void set(const char *k, const char *v, int version)
         kh_config.hud_size = clampi(atoi(v), 60, 100);
     else if (!strcmp(k, "language"))
         kh_config.language = clampi(atoi(v), 1, 5);
+    else if (!strcmp(k, "dynamic_res"))
+        kh_config.dynamic_res = atoi(v) != 0;
+    else if (!strcmp(k, "partner_swap"))
+        kh_config.partner_swap = atoi(v) != 0;
     else if (!strcmp(k, "single_screen"))
         kh_config.single_screen = atoi(v) != 0;
     else if (!strcmp(k, "panel_opacity"))

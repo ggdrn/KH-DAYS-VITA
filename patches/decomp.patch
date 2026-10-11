@@ -9067,6 +9067,28 @@ index 7241b50d8..8a8872ba7 100644
      packed = Ov105_GetState() << 16;
      packed |= Ov105_GetStatusLow();
      Heap_SetCurrent(0);
+diff --git a/src/engine/GetPlayerSlotTableEntry.c b/src/engine/GetPlayerSlotTableEntry.c
+index 4b7ab6feb..8832330b1 100644
+--- a/src/engine/GetPlayerSlotTableEntry.c
++++ b/src/engine/GetPlayerSlotTableEntry.c
+@@ -2,7 +2,17 @@
+  * outside [0,2). */
+ 
+ extern char data_0204c500[];
++#ifdef PLATFORM_VITA
++/* config partner_swap (Ov022_RefreshSlotRows): while player 1 plays the partner, the partner AI
++ * drives Roxas, asking for his slot as (u8)(0 - 1) = 255; he takes the partner's (whose AI
++ * does not run then). The engine's own calls ask with member - 1 = -1 for Roxas: unchanged. */
++extern volatile int kh_partner_swap_index, kh_partner_swap_slot;
++#endif
+ int GetPlayerSlotTableEntry(int idx) {
++#ifdef PLATFORM_VITA
++    if (idx == 255 && kh_partner_swap_index > 0)
++        idx = kh_partner_swap_slot;
++#endif
+     if (idx < 0 || idx >= 2) {
+         return 0;
+     }
 diff --git a/src/engine/Gfx_Reset2DEngines.c b/src/engine/Gfx_Reset2DEngines.c
 index 6222f6b42..94eebf924 100644
 --- a/src/engine/Gfx_Reset2DEngines.c
@@ -9600,6 +9622,33 @@ index 27416750d..97715651a 100644
  
  static inline void G2_SetBG2Control(int screenSize, int colorMode, int screenBase, int charBase, int bgExtPltt)
  {
+diff --git a/src/engine/QueryActiveStateOrDelegate.c b/src/engine/QueryActiveStateOrDelegate.c
+index e474fa26c..44ff068e8 100644
+--- a/src/engine/QueryActiveStateOrDelegate.c
++++ b/src/engine/QueryActiveStateOrDelegate.c
+@@ -4,6 +4,10 @@
+ #include "game/engine.h"
+ 
+ extern int data_ov022_020b2e78[];
++#ifdef PLATFORM_VITA
++/* config partner_swap (Ov022_RefreshSlotRows): the party entry player 1 plays, 0 for Roxas */
++extern volatile int kh_partner_swap_index;
++#endif
+ extern unsigned char data_0204be04;
+ int QueryActiveStateOrDelegate(void)
+ {
+@@ -13,6 +17,11 @@ int QueryActiveStateOrDelegate(void)
+     if ((*p & 2) == 0) {
+         if (data_0204be04 != 0 && p[4] != 0)
+             return 1;
++#ifdef PLATFORM_VITA
++        /* the partner played: its input, camera, HUD and commands are player 1's */
++        if (kh_partner_swap_index > 0)
++            return kh_partner_swap_index;
++#endif
+         return 0;
+     }
+     return Session_GetLocalPlayerIndex();
 diff --git a/src/engine/RandNext.c b/src/engine/RandNext.c
 index 56d615636..9b0e2407f 100644
 --- a/src/engine/RandNext.c
@@ -11620,7 +11669,7 @@ index e43f5318f..60c3f4296 100644
      } else if (Ov002_IsObjectFlag2000Set(object) == 0) {
          if ((pressed & 0x100) != 0) {
 diff --git a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
-index f3055d4ba..138ba3470 100644
+index f3055d4ba..9c99ec836 100644
 --- a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 +++ b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 @@ -1,3 +1,4 @@
@@ -11637,6 +11686,136 @@ index f3055d4ba..138ba3470 100644
  } Ov022FlagsView;
  
  typedef struct Ov022NodeOwner {
+@@ -90,6 +91,102 @@ extern void func_ov022_0208a1a4(void);
+ extern unsigned short gPadPressed;
+ extern unsigned short gPadHeld;
+ 
++#ifdef PLATFORM_VITA
++/* Partner swap (config partner_swap, experimental). A touch on the partner's HUD (port,
++ * platform/core/input.c) gives player 1 the partner of a story mission: the partner's entry
++ * loses the AI mark (flag bit 16) and reads player 1's input, Roxas gets it and is driven by
++ * the partner AI (Ov022_StepPartnerSlot, the partner as his leader, the partner's AI slot:
++ * engine/GetPlayerSlotTableEntry.c), and the local player's index (QueryActiveStateOrDelegate:
++ * camera, HUD, commands) is the partner's. Roxas's panels stay the party's. Back to Roxas on
++ * another touch, and whenever a scene needs him: a dialogue or movie (the port's
++ * kh_partner_swap_hold), input locked by the game, either of them down or gone, the option off. */
++extern volatile int kh_partner_swap_index, kh_partner_swap_slot, kh_partner_swap_hold;
++extern volatile unsigned int kh_partner_swap_requests;
++extern int kh_partner_swap_enabled(void);
++extern int Ov022_IsInputAllowedForActiveSlot(void);
++
++#define SWAP_AI_BIT 0x10000u
++
++static Ov022Node *swap_node(Ov022Root *root, int i)
++{
++    return (*(Ov022NodeOwner **)((char *)root + i * 0xc + 4))->node;
++}
++
++static int swap_find_partner(Ov022Root *root)
++{
++    int i;
++    for (i = 1; i < root->count; i++) {
++        Ov022Node *n = swap_node(root, i);
++        const int id = ((unsigned char *)n)[9];
++        if ((n->flagsLow & SWAP_AI_BIT) && n->field066 != -1 && n->field012 != 0 && id >= 1 &&
++            id <= 2)
++            return i;
++    }
++    return 0;
++}
++
++static void swap_apply(Ov022Root *root, int from, int to)
++{
++    Ov022Node *roxas = swap_node(root, 0);
++    if (to > 0) {
++        Ov022Node *partner = swap_node(root, to);
++        kh_partner_swap_slot = ((unsigned char *)partner)[9] - 1;
++        partner->flagsLow &= ~SWAP_AI_BIT;
++        roxas->flagsLow |= SWAP_AI_BIT;
++        kh_partner_swap_index = to;
++        KH_TRACE_ALWAYS("swap: player 1 plays party entry %d (id %d, row %d), Roxas on the AI slot %d",
++                 to, ((unsigned char *)partner)[9],
++                 ((unsigned char *)root)[to * 0xc + 0xe], kh_partner_swap_slot);
++    } else {
++        if (from > 0 && from < root->count)
++            swap_node(root, from)->flagsLow |= SWAP_AI_BIT;
++        roxas->flagsLow &= ~SWAP_AI_BIT;
++        kh_partner_swap_index = 0;
++        KH_TRACE_ALWAYS("swap: player 1 plays Roxas again");
++    }
++}
++
++static void swap_tick(Ov022Root *root)
++{
++    static unsigned int seen;
++    static int locked;
++    const int cur = kh_partner_swap_index;
++    int want = cur;
++    const unsigned int req = kh_partner_swap_requests;
++    if (req != seen) {
++        seen = req;
++        want = cur ? 0 : (kh_partner_swap_enabled() ? swap_find_partner(root) : 0);
++        if (!cur && !want)
++            KH_TRACE_ALWAYS("swap: no partner to play (%d entries)", root->count);
++    }
++    if (cur) {
++        Ov022Node *roxas = swap_node(root, 0);
++        Ov022Node *partner = cur < root->count ? swap_node(root, cur) : 0;
++        const char *why = !kh_partner_swap_enabled() ? "option off"
++                          : kh_partner_swap_hold ? "a scene (dialogue, movie)"
++                          : !partner || partner->field066 == -1 ? "the partner gone"
++                          : partner->field012 == 0 ? "the partner down"
++                          : roxas->field012 == 0 ? "Roxas down"
++                          : (root->flags & 4) ? "the field stopped" : NULL;
++        /* the game holding the player (an event): back to Roxas after a third of a second */
++        if (Ov022_IsInputAllowedForActiveSlot() != 0) {
++            if (++locked > 20 && !why)
++                why = "input held by the game";
++        } else {
++            locked = 0;
++        }
++        if (why) {
++            want = 0;
++            KH_TRACE_ALWAYS("swap: back to Roxas: %s", why);
++        }
++    } else {
++        locked = 0;
++    }
++    if (want != cur)
++        swap_apply(root, cur, want);
++}
++#endif
++
+ void Ov022_RefreshSlotRows(int unused)
+ {
+     Ov022Root *root = NNSi_FndGetCurrentRootHeap();
+@@ -119,6 +216,9 @@ void Ov022_RefreshSlotRows(int unused)
+         gPadHeld |= root->savedMask1;
+         func_ov022_02087a70();
+     }
++#ifdef PLATFORM_VITA
++    swap_tick(root);
++#endif
+     primaryNode = root->firstOwner->node;
+     primaryField66 = primaryNode->field066;
+     resourceBase = Ov022_GetGlobalPlus14();
+@@ -143,7 +243,16 @@ void Ov022_RefreshSlotRows(int unused)
+             if ((int)(*(long long *)node & 0x10000LL) == 0) {
+                 Ov022_LoadNodeFromResource(node, cursor->rowIndex);
+             } else {
++#ifdef PLATFORM_VITA
++                /* swapped: the AI follows the partner player 1 plays */
++                Ov022_StepPartnerSlot(node,
++                                      kh_partner_swap_index > 0
++                                          ? swap_node(root, kh_partner_swap_index)
++                                          : primaryNode,
++                                      flags);
++#else
+                 Ov022_StepPartnerSlot(node, primaryNode, flags);
++#endif
+             }
+             if ((root->flags & 4) == 0) {
+                 func_ov022_020ad474(node);
 diff --git a/src/overlays/field/ov022_battle/Ov022_ResetCameraState.c b/src/overlays/field/ov022_battle/Ov022_ResetCameraState.c
 index d18086d57..dfe59829f 100644
 --- a/src/overlays/field/ov022_battle/Ov022_ResetCameraState.c

@@ -34,6 +34,9 @@ typedef struct {
     int inset_width;    /* width in pixels of the small screen (4:3), 128-480 */
     int aspect;         /* KH_ASPECT_*: widescreen 3D, the DS picture stretched, or 4:3 */
     int frame_interpolation; /* 3D at 60 fps with frames mixed in between: 0 off, 1 on */
+    int dynamic_res;    /* 60 fps: the 3D drawn smaller (to 2x) while the GPU falls behind: 0/1 */
+    int partner_swap;   /* experimental: touching the partner's HUD in a story mission with a
+                         * partner gives player 1 the partner, Roxas played by the AI: 0/1 */
     int texture_filter; /* 3D textures: 0 sharp as on the DS, 1 smoothed (bilinear) */
     int filter_2d;      /* the 2D (sprites, text, menus) scaled up: 0 pixels as they are,
                          * 1 sharp (square pixels, smoothed edges), 2 smooth (bilinear,

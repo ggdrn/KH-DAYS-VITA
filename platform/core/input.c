@@ -13,6 +13,17 @@
 
 /* kept by the game's lock-on code (Ov022_SetSelectionEnabled, Ov022_ReadSelectionInput) */
 volatile int kh_lockon_active;
+
+/* Partner swap (config partner_swap, experimental; the game's side in Ov022_RefreshSlotRows):
+ * the party entry player 1 plays (0 Roxas), the AI slot Roxas borrows, a scene that needs
+ * Roxas (game.c), and the touches on the partner's HUD */
+volatile int kh_partner_swap_index, kh_partner_swap_slot, kh_partner_swap_hold;
+volatile unsigned int kh_partner_swap_requests;
+
+int kh_partner_swap_enabled(void)
+{
+    return kh_config.partner_swap && kh_overlay_loaded(22);
+}
 /* config r_toggle in the field: R does not turn the camera (Ov002_Camera_UpdateFollow) */
 volatile int kh_r_one_click;
 
@@ -343,6 +354,25 @@ void input_poll(InputState *out)
             s_front_swap = video_on_inset(px, py);
             if (s_front_swap)
                 out->swap_screens = 1;
+            else if (kh_partner_swap_enabled()) {
+                /* the party's HUD (the partner's gauge above the player's portrait), the
+                 * bottom right of the top screen: swaps the character player 1 plays (the
+                 * touch is not the DS's then) */
+                int tx, ty;
+                const int top = video_map_top(px, py, &tx, &ty);
+                static int logged;
+                if (top && logged < 40) {
+                    logged++;
+                    LOG("input: touch on the top screen at %d,%d (DS pixels)", tx, ty);
+                }
+                int px2, py2;
+                /* not a single screen's panel (a touch on the DS's screen) */
+                if (top && tx >= 160 && ty >= 64 &&
+                    !(video_single_screen() && video_map_touch(px, py, &px2, &py2))) {
+                    kh_partner_swap_requests++;
+                    s_front_swap = 1;
+                }
+            }
         }
         if (!s_front_swap && video_map_touch(px, py, &x, &y)) {
             out->touching = 1;

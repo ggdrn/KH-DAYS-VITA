@@ -875,6 +875,23 @@ void video_set_inset_blank(int blank)
     s_inset_blank = blank != 0;
 }
 
+int video_map_top(int px, int py, int *x, int *y)
+{
+    const ScreenRect *r = &s_rect[0];
+    float u;
+    if (!r->w || !r->h || px < r->x || px >= r->x + r->w || py < r->y || py >= r->y + r->h)
+        return 0;
+    if (s_inset == 0 && video_on_inset(px, py))
+        return 0;
+    /* the 2D kept 4:3 in the middle of a wide 3D (config hud) */
+    u = ((float)(px - r->x) / (float)r->w - 0.5f) / s_hud_scale + 0.5f;
+    if (u < 0.0f || u >= 1.0f)
+        return 0;
+    *x = (int)(u * DS_SCREEN_W);
+    *y = (py - r->y) * DS_SCREEN_H / r->h;
+    return 1;
+}
+
 int video_on_inset(int px, int py)
 {
     const ScreenRect *r;

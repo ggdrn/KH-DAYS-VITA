@@ -124,4 +124,8 @@ void video_run_capture(const uint32_t *top, const uint32_t *bottom);
 /* config debug = 3 (game.c): 1 the 2D drawn without smoothing, 2 the screens as plain quads */
 extern volatile int video_gpu_test;
 
+/* A Vita touch (display pixels) on the top screen's picture, in DS pixels of its 2D (config
+ * hud's 4:3 middle taken into account); 0 when it is not on the top screen. */
+int video_map_top(int px, int py, int *x, int *y);
+
 #endif

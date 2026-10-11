@@ -666,6 +666,14 @@ static void present(void)
     const int hud_wanted = (!dual || dual_top_only) && a_on_top && kh_overlay_loaded(22) &&
                            PauseMenu_GetMode() == 0 && kh_config.hud_size < 100;
     const int hud_on = hud_wanted && !s_dialog_open;
+    {
+        /* config partner_swap: a dialogue or a movie needs Roxas (Ov022_RefreshSlotRows); out
+         * of the field the swap is over (a new mission starts with Roxas) */
+        extern volatile int kh_partner_swap_index, kh_partner_swap_hold;
+        kh_partner_swap_hold = s_dialog_open || movie;
+        if (!kh_overlay_loaded(22))
+            kh_partner_swap_index = 0;
+    }
     static int hud_was;
     /* the last 2D picture had its HUD taken out (or not): redrawn when that changes */
     const int hud_changed = hud_on != hud_was;
@@ -1077,6 +1085,13 @@ static void dynamic_resolution(int late)
     static uint32_t swaps, lates, calm, hold_until;
     const int top = kh_config.render_scale * 4, floor_q = top < 8 ? top : 8;
     const int q = kh_gpu3d_scale_quarters();
+    if (!kh_config.dynamic_res) {
+        /* config dynamic_res off: the configured size, always */
+        if (q != top)
+            kh_gpu3d_set_scale_quarters(top);
+        swaps = lates = calm = 0;
+        return;
+    }
     swaps++;
     lates += (uint32_t)late;
     if (swaps < 120)

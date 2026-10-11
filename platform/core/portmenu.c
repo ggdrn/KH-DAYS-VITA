@@ -32,7 +32,7 @@ static int s_repeat_dir;
 static char s_note[64]; /* feedback after an action ("Defaults restored.") */
 
 enum {
-    IT_PRESET, IT_SCALE, IT_FPS, IT_TEXFILTER, IT_FILTER2D, IT_EFFECT, IT_SHOWFPS,
+    IT_PRESET, IT_SCALE, IT_FPS, IT_DYNRES, IT_SWAP, IT_TEXFILTER, IT_FILTER2D, IT_EFFECT, IT_SHOWFPS,
     IT_ASPECT, IT_HUD, IT_LAYOUT, IT_INSET, IT_CORNER, IT_OPACITY, IT_SINGLE, IT_PANELOP, IT_HUDSIZE,
     IT_CAMERA, IT_CAMSPEED, IT_INVX, IT_INVY, IT_DEADZONE, IT_DPAD, IT_RMODE, IT_REAR,
     IT_BUTTON, /* + the DS button index */
@@ -49,6 +49,7 @@ static const Item s_video[] = {
     { IT_PRESET, 0, "Quality preset", "Sets resolution, frame rate and filter at once." },
     { IT_SCALE, 0, "3D resolution", "Internal 3D resolution. 4x smooths edges (more GPU)." },
     { IT_FPS, 0, "3D frame rate", "30: original. 60 (experimental): may shake and glitch." },
+    { IT_DYNRES, 0, "Dynamic resolution", "60 fps: lower 3D resolution while the GPU lags." },
     { IT_TEXFILTER, 0, "Texture filter", "Smooth: bilinear filtering. Sharp: as on the DS." },
     { IT_FILTER2D, 0, "2D filter", "Sprites and text. Sharp: square pixels, smooth edges." },
     { IT_EFFECT, 0, "Screen effect", "Scanlines or an LCD grid over the DS's pixels." },
@@ -88,6 +89,7 @@ static const Item s_system[] = {
     { IT_ICONS, 0, "Button icons", "A B X Y in the text, or the Vita's symbols. Restart." },
     { IT_CONFIRM, 0, "Confirm button", "Cross: A on Cross, B on Circle. HUD: next area." },
     { IT_MISSION, 0, "Mission balance", "Story: enemy HP and damage taken as in the story." },
+    { IT_SWAP, 0, "Partner swap (experimental)", "Touch the partner's HUD to play as the partner." },
     { IT_DEFAULTS, 0, "Restore defaults", "Press Cross to set every option to its default." },
     { IT_CLOSE, 0, "Save and return", "Press Cross (or L+R+Select) to save and go back." },
 };
@@ -174,6 +176,8 @@ static void value(const Item *it, char *out, size_t n)
     }
     case IT_EFFECT: snprintf(out, n, "%s", effects[kh_config.screen_effect % 3]); break;
     case IT_SHOWFPS: snprintf(out, n, "%s", kh_config.show_fps ? "On" : "Off"); break;
+    case IT_DYNRES: snprintf(out, n, "%s", kh_config.dynamic_res ? "On" : "Off"); break;
+    case IT_SWAP: snprintf(out, n, "%s", kh_config.partner_swap ? "On" : "Off"); break;
     case IT_ASPECT: snprintf(out, n, "%s", aspects[kh_config.aspect % 3]); break;
     case IT_HUD: snprintf(out, n, "%s", kh_config.hud ? "Centered 4:3" : "Stretched"); break;
     case IT_LAYOUT: snprintf(out, n, "%s", layouts[kh_config.layout % 3]); break;
@@ -240,6 +244,8 @@ static void change(const Item *it, int d)
     case IT_FILTER2D: kh_config.filter_2d = wrap(kh_config.filter_2d, 0, 2, d); break;
     case IT_EFFECT: kh_config.screen_effect = wrap(kh_config.screen_effect, 0, 2, d); break;
     case IT_SHOWFPS: kh_config.show_fps ^= 1; break;
+    case IT_DYNRES: kh_config.dynamic_res ^= 1; break;
+    case IT_SWAP: kh_config.partner_swap ^= 1; break;
     case IT_ASPECT:
         kh_config.aspect = wrap(kh_config.aspect, 0, 2, d);
         video_relayout();
