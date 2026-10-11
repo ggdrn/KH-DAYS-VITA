@@ -11432,6 +11432,24 @@ index 881558c5f..4bda00b43 100644
  /* Ov022_DrawStateMarker -- draw an actor's shown state marker over a world
   * point and age it.
   *
+diff --git a/src/overlays/field/ov022_battle/Ov022_DrivePartnerTarget.c b/src/overlays/field/ov022_battle/Ov022_DrivePartnerTarget.c
+index c59fe9c98..94304f8cd 100644
+--- a/src/overlays/field/ov022_battle/Ov022_DrivePartnerTarget.c
++++ b/src/overlays/field/ov022_battle/Ov022_DrivePartnerTarget.c
+@@ -320,6 +320,13 @@ void Ov022_DrivePartnerTarget(struct Actor *pActor, struct Actor *pLeader, VecFx
+                         bInRange = func_ov022_020afd38(pActor, pActor->pRefItem->pPlace->vecPos.y);
+                     }
+                     pEnt = pActor->pRefEntity;
++#ifdef PLATFORM_VITA
++                    /* config partner_swap: an engaged slot without a target entity (the slot
++                     * handed between Roxas and the partner): 0.7.3 faulted here */
++                    if (pEnt == 0) {
++                        pSlot->nState = SLOT_IDLE;
++                    } else
++#endif
+                     if ((pEnt->nFlags1ac & ENTITY_STALLED) == 0) {
+                         if ((pEnt->nOpen & NODE_OPEN_LIVE) != 0 && pEnt->nState != NODE_STATE_GONE
+                             && (pSlot->pDesc->nRangeNear > nDist || pSlot->pDesc->nMode34 != 0) && bInRange) {
 diff --git a/src/overlays/field/ov022_battle/Ov022_EndKeySharingSession.c b/src/overlays/field/ov022_battle/Ov022_EndKeySharingSession.c
 index 489f7c75e..0d011b961 100644
 --- a/src/overlays/field/ov022_battle/Ov022_EndKeySharingSession.c
@@ -11669,7 +11687,7 @@ index e43f5318f..60c3f4296 100644
      } else if (Ov002_IsObjectFlag2000Set(object) == 0) {
          if ((pressed & 0x100) != 0) {
 diff --git a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
-index f3055d4ba..9c99ec836 100644
+index f3055d4ba..db961d4f2 100644
 --- a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 +++ b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 @@ -1,3 +1,4 @@
@@ -11686,7 +11704,7 @@ index f3055d4ba..9c99ec836 100644
  } Ov022FlagsView;
  
  typedef struct Ov022NodeOwner {
-@@ -90,6 +91,102 @@ extern void func_ov022_0208a1a4(void);
+@@ -90,6 +91,120 @@ extern void func_ov022_0208a1a4(void);
  extern unsigned short gPadPressed;
  extern unsigned short gPadHeld;
  
@@ -11724,9 +11742,27 @@ index f3055d4ba..9c99ec836 100644
 +    return 0;
 +}
 +
++extern int GetPlayerSlotTableEntry(int idx);
++
++/* the AI slot back to following, nothing engaged (each swap hands it to another actor) */
++static void swap_reset_slot(int slot)
++{
++    int *s = (int *)GetPlayerSlotTableEntry(slot);
++    if (s) {
++        s[0] = 1;  /* nState: following */
++        s[2] = 0;  /* nStall */
++        s[3] = 0;  /* nCooldown */
++        s[6] = 0;  /* nWait */
++    }
++}
++
 +static void swap_apply(Ov022Root *root, int from, int to)
 +{
 +    Ov022Node *roxas = swap_node(root, 0);
++    if (to > 0)
++        swap_reset_slot(((unsigned char *)swap_node(root, to))[9] - 1);
++    else if (kh_partner_swap_index > 0)
++        swap_reset_slot(kh_partner_swap_slot);
 +    if (to > 0) {
 +        Ov022Node *partner = swap_node(root, to);
 +        kh_partner_swap_slot = ((unsigned char *)partner)[9] - 1;
@@ -11789,7 +11825,7 @@ index f3055d4ba..9c99ec836 100644
  void Ov022_RefreshSlotRows(int unused)
  {
      Ov022Root *root = NNSi_FndGetCurrentRootHeap();
-@@ -119,6 +216,9 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -119,6 +234,9 @@ void Ov022_RefreshSlotRows(int unused)
          gPadHeld |= root->savedMask1;
          func_ov022_02087a70();
      }
@@ -11799,7 +11835,7 @@ index f3055d4ba..9c99ec836 100644
      primaryNode = root->firstOwner->node;
      primaryField66 = primaryNode->field066;
      resourceBase = Ov022_GetGlobalPlus14();
-@@ -143,7 +243,16 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -143,7 +261,16 @@ void Ov022_RefreshSlotRows(int unused)
              if ((int)(*(long long *)node & 0x10000LL) == 0) {
                  Ov022_LoadNodeFromResource(node, cursor->rowIndex);
              } else {
@@ -11904,7 +11940,7 @@ index 89534721b..f71d06708 100644
      int nField14;                    /* 0x14 */
      u16 nField18;                    /* 0x18 */
 diff --git a/src/overlays/field/ov022_battle/Ov022_SendControlPacket.c b/src/overlays/field/ov022_battle/Ov022_SendControlPacket.c
-index 6300c90c6..8d651f8c1 100644
+index 6300c90c6..839e2df17 100644
 --- a/src/overlays/field/ov022_battle/Ov022_SendControlPacket.c
 +++ b/src/overlays/field/ov022_battle/Ov022_SendControlPacket.c
 @@ -1,3 +1,5 @@
@@ -11913,6 +11949,23 @@ index 6300c90c6..8d651f8c1 100644
  
  #include "nitro/types.h"
  
+@@ -103,7 +105,16 @@ void Ov022_SendControlPacket(void)
+     }
+     MI_CpuFill8(&packet, 0, sizeof(packet));
+     pActor = GetEntryField20ByIndex(QueryActiveStateOrDelegate());
++#ifdef PLATFORM_VITA
++    {
++        /* config partner_swap: the partner played reads input row 0 (its own row index),
++         * not the row of its party index (0.7.3 sent to row 1: no control) */
++        extern volatile int kh_partner_swap_index;
++        packet.nSlot = kh_partner_swap_index > 0 ? 0 : QueryActiveStateOrDelegate();
++    }
++#else
+     packet.nSlot = QueryActiveStateOrDelegate();
++#endif
+     packet.bSupported = 0;
+     if (Ov022_IsInputAllowedForActiveSlot() == 0) {
+         bTrimA = 0;
 diff --git a/src/overlays/field/ov022_battle/Ov022_SetAnimState.c b/src/overlays/field/ov022_battle/Ov022_SetAnimState.c
 index ba741de52..fa923f071 100644
 --- a/src/overlays/field/ov022_battle/Ov022_SetAnimState.c
