@@ -78,7 +78,9 @@ def main():
 
     version = (ROOT / "VERSION").read_text().strip()
     major, minor, patch = (version.split(".") + ["0", "0"])[:3]
-    app_ver = f"{int(major):02d}.{int(minor) * 10 + int(patch):02d}"
+    # APP_VER is XX.YY: minor * 10 + patch, the patch held at 9 so that 0.7.10 and on (the
+    # internal test numbers) stay 00.79, below 0.8.0's 00.80
+    app_ver = f"{int(major):02d}.{int(minor) * 10 + min(int(patch), 9):02d}"
 
     # abi_check.c needs the decomp's headers: built with the game's flags below
     port_srcs = sorted(p for p in (ROOT / "platform").rglob("*.c") if p.name != "abi_check.c")

@@ -11583,10 +11583,19 @@ index 881558c5f..4bda00b43 100644
   * point and age it.
   *
 diff --git a/src/overlays/field/ov022_battle/Ov022_DrivePartnerTarget.c b/src/overlays/field/ov022_battle/Ov022_DrivePartnerTarget.c
-index c59fe9c98..94304f8cd 100644
+index c59fe9c98..532ab3b01 100644
 --- a/src/overlays/field/ov022_battle/Ov022_DrivePartnerTarget.c
 +++ b/src/overlays/field/ov022_battle/Ov022_DrivePartnerTarget.c
-@@ -320,6 +320,13 @@ void Ov022_DrivePartnerTarget(struct Actor *pActor, struct Actor *pLeader, VecFx
+@@ -316,10 +316,21 @@ void Ov022_DrivePartnerTarget(struct Actor *pActor, struct Actor *pLeader, VecFx
+                 if (pSlot->nState == SLOT_ENGAGED && (pSlot->pDesc->nMode30 != 0 || pSlot->pDesc->nMode34 != 0)) {
+                     nDist = VEC_Distance(pPoint, &pActor->vecAim);
+                     bInRange = 1;
+-                    if (pActor->pRefItem != 0) {
++                    if (pActor->pRefItem != 0
++#ifdef PLATFORM_VITA
++                        && pActor->pRefItem->pPlace != 0
++#endif
++                        ) {
                          bInRange = func_ov022_020afd38(pActor, pActor->pRefItem->pPlace->vecPos.y);
                      }
                      pEnt = pActor->pRefEntity;
@@ -11600,6 +11609,51 @@ index c59fe9c98..94304f8cd 100644
                      if ((pEnt->nFlags1ac & ENTITY_STALLED) == 0) {
                          if ((pEnt->nOpen & NODE_OPEN_LIVE) != 0 && pEnt->nState != NODE_STATE_GONE
                              && (pSlot->pDesc->nRangeNear > nDist || pSlot->pDesc->nMode34 != 0) && bInRange) {
+@@ -337,6 +348,15 @@ void Ov022_DrivePartnerTarget(struct Actor *pActor, struct Actor *pLeader, VecFx
+                     pActor->pick.nId = pick.nId;
+                     pActor->pick.nIndex = pick.nIndex;
+                     Ov022_ResolveTargetPick(pActor);
++#ifdef PLATFORM_VITA
++                    /* config partner_swap: Roxas on the partner AI can be left without the target
++                     * item or entity a partner has (0.7.8 faulted here) */
++                    if (pActor->pRefItem == 0 || pActor->pRefItem->pPlace == 0 ||
++                        pActor->pRefEntity == 0) {
++                        pSlot->nState = SLOT_IDLE;
++                        return;
++                    }
++#endif
+                     nInv = func_ov022_020afd78(pActor);
+                     nDist = VEC_Distance(&pActor->pRefItem->pPlace->vecPos, pPoint);
+                     if (nInv + (pSlot->pDesc->nReachOuter + pSlot->nReachBonus) > nDist && pActor->pRefEntity->nState != NODE_STATE_GONE
+@@ -345,6 +365,15 @@ void Ov022_DrivePartnerTarget(struct Actor *pActor, struct Actor *pLeader, VecFx
+                     }
+                 }
+             }
++#ifdef PLATFORM_VITA
++            /* config partner_swap: engaged with no target item, place or entity (Roxas on the
++             * partner AI): back to idle rather than reading through a null */
++            if (nState == SLOT_ENGAGED &&
++                (pActor->pRefItem == 0 || pActor->pRefItem->pPlace == 0 || pActor->pRefEntity == 0)) {
++                pSlot->nState = SLOT_IDLE;
++                return;
++            }
++#endif
+             if (nState == SLOT_ENGAGED) {
+                 nActive = QueryActiveStateOrDelegate();
+                 nSlotIdx = Ov022_GetEntryField66(nActive);
+@@ -406,7 +435,11 @@ void Ov022_DrivePartnerTarget(struct Actor *pActor, struct Actor *pLeader, VecFx
+                 }
+                 pActor->nFlags &= ~FLAG_BIT44;
+                 if (pActor->nModelId == MODEL_PARTNER) {
+-                    if (Ov022_IsState9Or6WithFlag200(pActor->run) != 0 && pActor->pRefItem != 0) {
++                    if (Ov022_IsState9Or6WithFlag200(pActor->run) != 0 && pActor->pRefItem != 0
++#ifdef PLATFORM_VITA
++                        && pActor->pRefItem->pPlace != 0
++#endif
++                        ) {
+                         VEC_Subtract(&pActor->pRefItem->pPlace->vecPos, &pActor->vecAim, &vecFace);
+                         vecFace.y = 0;
+                         if (VEC_Normalize(&vecFace, &vecFace) != 0) {
 diff --git a/src/overlays/field/ov022_battle/Ov022_EndKeySharingSession.c b/src/overlays/field/ov022_battle/Ov022_EndKeySharingSession.c
 index 489f7c75e..0d011b961 100644
 --- a/src/overlays/field/ov022_battle/Ov022_EndKeySharingSession.c
@@ -16362,7 +16416,7 @@ index a7a3aab9b..c8a556432 100644
      data_ov002_0207f614 = 0;
  }
 diff --git a/src/overlays/scenes/ov002_field/Ov002_CollectNearbySpots.c b/src/overlays/scenes/ov002_field/Ov002_CollectNearbySpots.c
-index b0ac8c306..5f7ee4717 100644
+index b0ac8c306..d9deebc7a 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_CollectNearbySpots.c
 +++ b/src/overlays/scenes/ov002_field/Ov002_CollectNearbySpots.c
 @@ -1,3 +1,4 @@
@@ -16370,7 +16424,21 @@ index b0ac8c306..5f7ee4717 100644
  /* Collect nearby spots for one actor and context. Placed spots dispatch a
   * replicated command; free spots begin homing toward their action owner.
   * Keep the declaration order: it preserves the target's register reuse. */
-@@ -94,6 +95,41 @@ void Ov002_CollectNearbySpots(int nCtxIndex, Ov002SpotActionOwner *pOwner, u32 n
+@@ -90,10 +91,55 @@ void Ov002_CollectNearbySpots(int nCtxIndex, Ov002SpotActionOwner *pOwner, u32 n
+     if (Ov002_RunShutdownHook() != 0) return;
+     nSlot = Ov002_GetCtxTableByte(nCtxIndex);
+     bLocalPlayer = nPlayerIndex == (u16)Session_GetLocalPlayerIndex();
++#ifdef PLATFORM_VITA
++    {
++        /* config partner_swap: the played partner takes everything a player does (its pickup
++         * runs as Roxas, player 0, whose entry carries the AI mark then: 0.7.8 let it take HP
++         * orbs only) */
++        extern void *volatile kh_swap_pickup_owner;
++        nPlayerFlags = (void *)pOwner == kh_swap_pickup_owner ? 0 : func_ov022_020886f8(nPlayerIndex);
++    }
++#else
+     nPlayerFlags = func_ov022_020886f8(nPlayerIndex);
++#endif
      if (nSlot < 0) return;
      nOwnerRadius = pOwner->nPickupRadius;
      pRow = data_ov002_0207fa28.pStage->aCtx[nCtxIndex].pHead;

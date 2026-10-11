@@ -484,6 +484,7 @@ typedef struct WaveCache {
     uint32_t done;           /* samples decoded */
     int pred, index;         /* the decoder after them */
     uint32_t used;           /* the last note on it (s_wave_clock) */
+    uint32_t sum;            /* a checksum of the source's bytes (wave_sum) */
 } WaveCache;
 
 #define WAVE_CACHE_MAX 384
@@ -522,6 +523,23 @@ static int wave_in_use(const WaveCache *w)
     return 0;
 }
 
+/* A checksum of a wave's source: its header, the first 64 bytes of nibbles and 64 from the
+ * middle and the end. The cache knew a wave by its address alone: a scene that loads another
+ * wave archive where the last one was (the camp menu) got the old wave's samples, or the new
+ * nibbles decoded on from the old decoder's state, a burst of noise (0.7.x). */
+static uint32_t wave_sum(const uint8_t *src, uint32_t end)
+{
+    uint32_t h = 2166136261u, i;
+    const uint32_t mid = end / 2, last = end > 68 ? end - 64 : 4;
+    for (i = 0; i < 68 && i < end; i++)
+        h = (h ^ src[i]) * 16777619u;
+    for (i = 0; i < 64 && mid + i < end; i++)
+        h = (h ^ src[mid + i]) * 16777619u;
+    for (i = 0; i < 64 && last + i < end; i++)
+        h = (h ^ src[last + i]) * 16777619u;
+    return h;
+}
+
 /* The decoded wave for an ADPCM wave of end bytes (loop start ls_bytes), NULL when there is
  * no room (the channel then decodes as it plays) */
 static WaveCache *wave_cache_get(const uint8_t *src, uint32_t end, uint32_t ls_bytes)
@@ -530,9 +548,19 @@ static WaveCache *wave_cache_get(const uint8_t *src, uint32_t end, uint32_t ls_b
     const size_t bytes = ((size_t)n + 1) * sizeof(int16_t);
     WaveCache *w = NULL;
     int i;
+    const uint32_t sum = wave_sum(src, end);
     s_wave_clock++;
     for (i = 0; i < s_nwave; i++)
         if (s_wave[i].src == src && s_wave[i].n == n && s_wave[i].ls == ls) {
+            if (s_wave[i].sum != sum && !wave_in_use(&s_wave[i])) {
+                /* other bytes at the same place now: decoded again from the start */
+                s_wave[i].sum = sum;
+                s_wave[i].done = 0;
+                s_wave[i].pred = (int16_t)(src[0] | src[1] << 8);
+                s_wave[i].index = src[2] > 88 ? 88 : src[2];
+            } else if (s_wave[i].sum != sum) {
+                continue; /* still playing the old one: a new entry for this one */
+            }
             s_wave[i].used = s_wave_clock;
             return &s_wave[i];
         }
@@ -564,6 +592,7 @@ static WaveCache *wave_cache_get(const uint8_t *src, uint32_t end, uint32_t ls_b
     s_nwave++;
     s_wave_bytes += bytes;
     w->src = src, w->n = n, w->ls = ls;
+    w->sum = sum;
     w->done = 0;
     w->pred = (int16_t)(src[0] | src[1] << 8);
     w->index = src[2] > 88 ? 88 : src[2];
