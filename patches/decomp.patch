@@ -9360,6 +9360,44 @@ index 057226b0d..602725d43 100644
      }
  
      return data_0204c214[0];
+diff --git a/src/engine/Load2DArrayU8.c b/src/engine/Load2DArrayU8.c
+index b737b4127..c2a07e654 100644
+--- a/src/engine/Load2DArrayU8.c
++++ b/src/engine/Load2DArrayU8.c
+@@ -2,6 +2,14 @@
+ 
+ extern int data_0204c714;
+ 
++#ifdef PLATFORM_VITA
++/* config partner_swap: the panels swapped -- the deck (each shortcut's magic or item and its
++ * count) read and spent crosswise too (engine/GetPlayerSlotTableEntry.c) */
++extern int kh_swap_member(int id);
++#endif
+ int Load2DArrayU8(int arg0, int arg1) {
++#ifdef PLATFORM_VITA
++    arg0 = kh_swap_member(arg0);
++#endif
+     return *(unsigned char *)((char *)&data_0204c714 + arg0 * 0x104 + arg1 * 2);
+ }
+diff --git a/src/engine/Load2DArrayU8_2.c b/src/engine/Load2DArrayU8_2.c
+index 53db01eeb..15a728958 100644
+--- a/src/engine/Load2DArrayU8_2.c
++++ b/src/engine/Load2DArrayU8_2.c
+@@ -2,6 +2,14 @@
+ 
+ extern int data_0204c690;
+ 
++#ifdef PLATFORM_VITA
++/* config partner_swap: the panels swapped -- the deck (each shortcut's magic or item and its
++ * count) read and spent crosswise too (engine/GetPlayerSlotTableEntry.c) */
++extern int kh_swap_member(int id);
++#endif
+ int Load2DArrayU8_2(int arg0, int arg1) {
++#ifdef PLATFORM_VITA
++    arg0 = kh_swap_member(arg0);
++#endif
+     return *(unsigned char *)((char *)&data_0204c690 + arg0 * 0x104 + arg1);
+ }
 diff --git a/src/engine/LoadActorOverlay.c b/src/engine/LoadActorOverlay.c
 index ed25e0ad7..1250af5d1 100644
 --- a/src/engine/LoadActorOverlay.c
@@ -9927,6 +9965,25 @@ index 89376fcd5..37e2b73e6 100644
 +    a = kh_swap_member(a);
 +#endif
      return (unsigned char)BitArray_GetField(gPartyMembers + a * 260 + 0x28, v->hi, v->lo);
+ }
+diff --git a/src/engine/Store2DArrayU8.c b/src/engine/Store2DArrayU8.c
+index 6916b1df4..77c3336db 100644
+--- a/src/engine/Store2DArrayU8.c
++++ b/src/engine/Store2DArrayU8.c
+@@ -2,6 +2,14 @@
+ 
+ extern int data_0204c690;
+ 
++#ifdef PLATFORM_VITA
++/* config partner_swap: the panels swapped -- the deck (each shortcut's magic or item and its
++ * count) read and spent crosswise too (engine/GetPlayerSlotTableEntry.c) */
++extern int kh_swap_member(int id);
++#endif
+ void Store2DArrayU8(int arg0, int arg1, char arg2) {
++#ifdef PLATFORM_VITA
++    arg0 = kh_swap_member(arg0);
++#endif
+     *(unsigned char *)((char *)&data_0204c690 + arg0 * 0x104 + arg1) = arg2;
  }
 diff --git a/src/engine/SubOam_SetupBitmapGrid.c b/src/engine/SubOam_SetupBitmapGrid.c
 index a3c4a6d9c..d9e5f63a0 100644
@@ -11438,10 +11495,10 @@ index c77ecd174..24eb1d7e8 100644
      u16 nHp;                     /* 0x12 */
  };
 diff --git a/src/overlays/field/ov022_battle/Ov022_BuildActorSlot.c b/src/overlays/field/ov022_battle/Ov022_BuildActorSlot.c
-index eb0c2fd62..ae35c3631 100644
+index eb0c2fd62..49906c59b 100644
 --- a/src/overlays/field/ov022_battle/Ov022_BuildActorSlot.c
 +++ b/src/overlays/field/ov022_battle/Ov022_BuildActorSlot.c
-@@ -98,3 +98,27 @@ void Ov022_BuildActorSlot(struct Actor *pActor)
+@@ -98,3 +98,42 @@ void Ov022_BuildActorSlot(struct Actor *pActor)
      Ov022_AllocateSlotWithClass(pActor->aSlots, pActor->nId, 0, &params);
      ZeroHalfThenFree(pActor->pContainer);
  }
@@ -11452,10 +11509,25 @@ index eb0c2fd62..ae35c3631 100644
 + * character's weapon table (moves, reach) and its setup hook (the animation tables). The
 + * played partner takes the weapon equipped in Roxas's panels -- its own character's weapon
 + * for that panel, as in the multiplayer mode -- and gets its own back after. */
++extern void Ov022_TearDownActionTable(void *pTable);
++extern void Ov002_ReleaseSlotObject(void *pBlock);
++
 +void kh_swap_rebuild_weapon(void *actor, int nWeapon)
 +{
 +    struct Actor *pActor = actor;
 +    char szName[0x80];
++    int nBlock;
++    /* the last build's tables given back first, as the field's teardown does
++     * (Ov022_CommitPanes): built again and again they filled the heap, and a swap
++     * back faulted in an archive load with no memory left (0.7.11) */
++    /* of the two animation blocks only the second (+0xf0c), which every partner's setup hook
++     * loads again; some load the first (+0xda8) elsewhere, once */
++    for (nBlock = 1; nBlock < BLOCK_COUNT; nBlock++) {
++        if (((signed char *)&pActor->aBlocks[nBlock])[1] != 0)
++            Ov002_ReleaseSlotObject(&pActor->aBlocks[nBlock]);
++        Ov002_ClearBytes01AndWord160(&pActor->aBlocks[nBlock]);
++    }
++    Ov022_TearDownActionTable(&pActor->blkActions);
 +    OS_SPrintf(szName, gOv022BaChWPathFmt, data_02042a70[pActor->nKind]);
 +    pActor->pContainer = Msg_OpenContainerAndReadHeader(szName, CONTAINER_HEAP);
 +    Ov022_BuildActionTable(&pActor->blkActions, pActor, pActor->nKind, nWeapon);
