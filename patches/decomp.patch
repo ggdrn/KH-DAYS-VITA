@@ -11490,7 +11490,7 @@ index c77ecd174..24eb1d7e8 100644
      u16 nHp;                     /* 0x12 */
  };
 diff --git a/src/overlays/field/ov022_battle/Ov022_BuildActorSlot.c b/src/overlays/field/ov022_battle/Ov022_BuildActorSlot.c
-index eb0c2fd62..e249a30ae 100644
+index eb0c2fd62..7687efd1f 100644
 --- a/src/overlays/field/ov022_battle/Ov022_BuildActorSlot.c
 +++ b/src/overlays/field/ov022_battle/Ov022_BuildActorSlot.c
 @@ -9,6 +9,9 @@
@@ -11503,7 +11503,7 @@ index eb0c2fd62..e249a30ae 100644
  
  #define CONTAINER_HEAP 6
  #define BLOCK_COUNT 2
-@@ -98,3 +101,106 @@ void Ov022_BuildActorSlot(struct Actor *pActor)
+@@ -98,3 +101,117 @@ void Ov022_BuildActorSlot(struct Actor *pActor)
      Ov022_AllocateSlotWithClass(pActor->aSlots, pActor->nId, 0, &params);
      ZeroHalfThenFree(pActor->pContainer);
  }
@@ -11523,11 +11523,19 @@ index eb0c2fd62..e249a30ae 100644
 +#define SWAP_TABLE_SIZE 0x47c
 +#define SWAP_BLOCK_OFFSET 0xf0c
 +#define SWAP_BLOCK_SIZE 0x164
++/* the animation state the setup hook's tables go with (Ov002_LoadAnimTables: the ids, the
++ * loaded blocks, the tables; its first 8 bytes, the mode playing and its change flag, stay as
++ * they are): kept apart from the block, a swap back paired the own block with the other
++ * weapon's tables and a mode change bound through a bad pointer (0.7.15) */
++#define SWAP_STATE_OFFSET 0x2c54
++#define SWAP_STATE_SIZE 0x54
++#define SWAP_STATE_LIVE 8
 +
 +struct SwapWeapon {
 +    int nWeapon; /* -1: none kept */
 +    u8 aTable[SWAP_TABLE_SIZE];
 +    u8 aBlock[SWAP_BLOCK_SIZE];
++    u8 aState[SWAP_STATE_SIZE];
 +};
 +static struct SwapWeaponCache {
 +    void *pActor;
@@ -11541,6 +11549,7 @@ index eb0c2fd62..e249a30ae 100644
 +    w->nWeapon = nWeapon;
 +    memcpy(w->aTable, a + SWAP_TABLE_OFFSET, SWAP_TABLE_SIZE);
 +    memcpy(w->aBlock, a + SWAP_BLOCK_OFFSET, SWAP_BLOCK_SIZE);
++    memcpy(w->aState, a + SWAP_STATE_OFFSET, SWAP_STATE_SIZE);
 +}
 +
 +/* the combo under way lives in the table too (its lock, +0x470: Ov022_StepComboState): kept
@@ -11556,6 +11565,8 @@ index eb0c2fd62..e249a30ae 100644
 +    memcpy(a + SWAP_TABLE_OFFSET, w->aTable, SWAP_TABLE_SIZE);
 +    memcpy(a + SWAP_TABLE_OFFSET + SWAP_LIVE_OFFSET, live, SWAP_LIVE_SIZE);
 +    memcpy(a + SWAP_BLOCK_OFFSET, w->aBlock, SWAP_BLOCK_SIZE);
++    memcpy(a + SWAP_STATE_OFFSET + SWAP_STATE_LIVE, w->aState + SWAP_STATE_LIVE,
++           SWAP_STATE_SIZE - SWAP_STATE_LIVE);
 +}
 +
 +void kh_swap_set_weapon(void *actor, int nWeapon, int nOwn)
