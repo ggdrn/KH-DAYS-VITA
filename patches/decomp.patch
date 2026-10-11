@@ -11437,6 +11437,38 @@ index c77ecd174..24eb1d7e8 100644
      u8 pad0008[0xa];
      u16 nHp;                     /* 0x12 */
  };
+diff --git a/src/overlays/field/ov022_battle/Ov022_BuildActorSlot.c b/src/overlays/field/ov022_battle/Ov022_BuildActorSlot.c
+index eb0c2fd62..ae35c3631 100644
+--- a/src/overlays/field/ov022_battle/Ov022_BuildActorSlot.c
++++ b/src/overlays/field/ov022_battle/Ov022_BuildActorSlot.c
+@@ -98,3 +98,27 @@ void Ov022_BuildActorSlot(struct Actor *pActor)
+     Ov022_AllocateSlotWithClass(pActor->aSlots, pActor->nId, 0, &params);
+     ZeroHalfThenFree(pActor->pContainer);
+ }
++
++#ifdef PLATFORM_VITA
++/* config partner_swap: the actor's weapon rebuilt for weapon (panel) index nWeapon, as the
++ * mission's set-up above builds it, with no new slot: its action table from that row of its
++ * character's weapon table (moves, reach) and its setup hook (the animation tables). The
++ * played partner takes the weapon equipped in Roxas's panels -- its own character's weapon
++ * for that panel, as in the multiplayer mode -- and gets its own back after. */
++void kh_swap_rebuild_weapon(void *actor, int nWeapon)
++{
++    struct Actor *pActor = actor;
++    char szName[0x80];
++    OS_SPrintf(szName, gOv022BaChWPathFmt, data_02042a70[pActor->nKind]);
++    pActor->pContainer = Msg_OpenContainerAndReadHeader(szName, CONTAINER_HEAP);
++    Ov022_BuildActionTable(&pActor->blkActions, pActor, pActor->nKind, nWeapon);
++    pActor->pfnSetup(pActor, (u8)nWeapon);
++    ZeroHalfThenFree(pActor->pContainer);
++}
++
++/* the weapon index of party member nId's record (its weapon panel) */
++int kh_swap_member_weapon(int nId)
++{
++    return gPartyMembers[nId].nSlotKind;
++}
++#endif
 diff --git a/src/overlays/field/ov022_battle/Ov022_CanTriggerFinisher.c b/src/overlays/field/ov022_battle/Ov022_CanTriggerFinisher.c
 index 81c579bea..da196af79 100644
 --- a/src/overlays/field/ov022_battle/Ov022_CanTriggerFinisher.c
@@ -11914,7 +11946,7 @@ index e43f5318f..60c3f4296 100644
      } else if (Ov002_IsObjectFlag2000Set(object) == 0) {
          if ((pressed & 0x100) != 0) {
 diff --git a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
-index f3055d4ba..03f479c92 100644
+index f3055d4ba..0e30749a7 100644
 --- a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 +++ b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 @@ -1,3 +1,4 @@
@@ -11931,7 +11963,7 @@ index f3055d4ba..03f479c92 100644
  } Ov022FlagsView;
  
  typedef struct Ov022NodeOwner {
-@@ -90,6 +91,176 @@ extern void func_ov022_0208a1a4(void);
+@@ -90,6 +91,194 @@ extern void func_ov022_0208a1a4(void);
  extern unsigned short gPadPressed;
  extern unsigned short gPadHeld;
  
@@ -12017,6 +12049,9 @@ index f3055d4ba..03f479c92 100644
 +    KH_TRACE_ALWAYS("swap: %s: Roxas HP %u/%u, partner HP %u/%u", when, r[9], r[0xb], p[9], p[0xb]);
 +}
 +
++extern void kh_swap_rebuild_weapon(void *actor, int nWeapon);
++extern int kh_swap_member_weapon(int nId);
++
 +static void swap_apply(Ov022Root *root, int from, int to)
 +{
 +    Ov022Node *roxas = swap_node(root, 0);
@@ -12026,10 +12061,25 @@ index f3055d4ba..03f479c92 100644
 +        swap_hp(roxas, swap_node(root, to));
 +        swap_log_hp("after", roxas, swap_node(root, to));
 +        kh_partner_swap_member = ((unsigned char *)swap_node(root, to))[9];
++        {
++            /* the weapon equipped in Roxas's panels, the partner's character's own for it */
++            const int id = ((unsigned char *)swap_node(root, to))[9];
++            const int w = kh_swap_member_weapon(0), own = kh_swap_member_weapon(id);
++            KH_TRACE_ALWAYS("swap: partner's weapon %d -> Roxas's panel weapon %d", own, w);
++            if (w != own)
++                kh_swap_rebuild_weapon(swap_node(root, to), w);
++        }
 +    } else if (from > 0 && from < root->count) {
 +        swap_hp(roxas, swap_node(root, from));
 +        swap_log_hp("back", roxas, swap_node(root, from));
 +        kh_partner_swap_member = 0;
++        {
++            /* the partner's own weapon again */
++            const int id = ((unsigned char *)swap_node(root, from))[9];
++            const int w = kh_swap_member_weapon(0), own = kh_swap_member_weapon(id);
++            if (w != own)
++                kh_swap_rebuild_weapon(swap_node(root, from), own);
++        }
 +    } else {
 +        kh_partner_swap_member = 0;
 +    }
@@ -12108,7 +12158,7 @@ index f3055d4ba..03f479c92 100644
  void Ov022_RefreshSlotRows(int unused)
  {
      Ov022Root *root = NNSi_FndGetCurrentRootHeap();
-@@ -119,6 +290,9 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -119,6 +308,9 @@ void Ov022_RefreshSlotRows(int unused)
          gPadHeld |= root->savedMask1;
          func_ov022_02087a70();
      }
@@ -12118,7 +12168,7 @@ index f3055d4ba..03f479c92 100644
      primaryNode = root->firstOwner->node;
      primaryField66 = primaryNode->field066;
      resourceBase = Ov022_GetGlobalPlus14();
-@@ -143,7 +317,16 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -143,7 +335,16 @@ void Ov022_RefreshSlotRows(int unused)
              if ((int)(*(long long *)node & 0x10000LL) == 0) {
                  Ov022_LoadNodeFromResource(node, cursor->rowIndex);
              } else {
