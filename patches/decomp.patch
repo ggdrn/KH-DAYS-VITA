@@ -11228,7 +11228,7 @@ index 210058603..4b0cff105 100644
      struct ActorNode *pNode;         /* 0x20 */
      u8 pad24[0x40];
 diff --git a/src/overlays/field/ov022_battle/Ov022_ActorUpdate.c b/src/overlays/field/ov022_battle/Ov022_ActorUpdate.c
-index 40b32872e..fd44c3b32 100644
+index 40b32872e..8432aecc3 100644
 --- a/src/overlays/field/ov022_battle/Ov022_ActorUpdate.c
 +++ b/src/overlays/field/ov022_battle/Ov022_ActorUpdate.c
 @@ -1,3 +1,4 @@
@@ -11254,7 +11254,7 @@ index 40b32872e..fd44c3b32 100644
      u8 pad46c[0xe];
      char nField47a;              /* 0x47a */
      char nField47b;              /* 0x47b */
-@@ -276,8 +277,18 @@ void Ov022_ActorUpdate(struct Actor *pActor)
+@@ -276,8 +277,20 @@ void Ov022_ActorUpdate(struct Actor *pActor)
              pActor->nFlags2 |= (1ULL << 33);
          }
          if (pActor->nSlotIndex >= 0 && pActor->nHp != 0) {
@@ -11263,8 +11263,10 @@ index 40b32872e..fd44c3b32 100644
 +                /* config partner_swap: the partner player 1 plays picks everything up, as
 +                 * Roxas (a partner's id takes only HP orbs: 0.7.4) */
 +                extern int kh_swap_credit(int id);
-+                Ov002_CollectNearbySpots(Ov002_GetSlotTableByte(pActor->nSlotIndex), pActor->pSub,
-+                                         kh_swap_credit(pActor->nId));
++                extern int kh_swap_spot_slot(int nSlotIndex, int nId);
++                Ov002_CollectNearbySpots(
++                    Ov002_GetSlotTableByte(kh_swap_spot_slot(pActor->nSlotIndex, pActor->nId)),
++                    pActor->pSub, kh_swap_credit(pActor->nId));
 +            }
 +#else
              Ov002_CollectNearbySpots(Ov002_GetSlotTableByte(pActor->nSlotIndex), pActor->pSub,
@@ -11848,7 +11850,7 @@ index e43f5318f..60c3f4296 100644
      } else if (Ov002_IsObjectFlag2000Set(object) == 0) {
          if ((pressed & 0x100) != 0) {
 diff --git a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
-index f3055d4ba..81b518dcf 100644
+index f3055d4ba..043108090 100644
 --- a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 +++ b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 @@ -1,3 +1,4 @@
@@ -11865,7 +11867,7 @@ index f3055d4ba..81b518dcf 100644
  } Ov022FlagsView;
  
  typedef struct Ov022NodeOwner {
-@@ -90,6 +91,147 @@ extern void func_ov022_0208a1a4(void);
+@@ -90,6 +91,174 @@ extern void func_ov022_0208a1a4(void);
  extern unsigned short gPadPressed;
  extern unsigned short gPadHeld;
  
@@ -11934,15 +11936,35 @@ index f3055d4ba..81b518dcf 100644
 +    hb[0xb] = (unsigned short)ma;
 +}
 +
++/* Ov022_ActorUpdate: the spot (drop) context a pickup looks in -- the played partner looks in
++ * Roxas's, where the drops are (0.7.5 looked in its own: nothing) */
++int kh_swap_spot_slot(int nSlotIndex, int nId)
++{
++    Ov022Root *root;
++    if (kh_partner_swap_member <= 0 || nId != kh_partner_swap_member)
++        return nSlotIndex;
++    root = NNSi_FndGetCurrentRootHeap();
++    return root && root->count > 0 ? swap_node(root, 0)->field066 : nSlotIndex;
++}
++
++static void swap_log_hp(const char *when, Ov022Node *roxas, Ov022Node *partner)
++{
++    const unsigned short *r = (const unsigned short *)roxas, *p = (const unsigned short *)partner;
++    KH_TRACE_ALWAYS("swap: %s: Roxas HP %u/%u, partner HP %u/%u", when, r[9], r[0xb], p[9], p[0xb]);
++}
++
 +static void swap_apply(Ov022Root *root, int from, int to)
 +{
 +    Ov022Node *roxas = swap_node(root, 0);
 +    /* the panels: the partner's HP max and member are Roxas's while it is played */
 +    if (to > 0) {
++        swap_log_hp("before", roxas, swap_node(root, to));
 +        swap_hp(roxas, swap_node(root, to));
++        swap_log_hp("after", roxas, swap_node(root, to));
 +        kh_partner_swap_member = ((unsigned char *)swap_node(root, to))[9];
 +    } else if (from > 0 && from < root->count) {
 +        swap_hp(roxas, swap_node(root, from));
++        swap_log_hp("back", roxas, swap_node(root, from));
 +        kh_partner_swap_member = 0;
 +    } else {
 +        kh_partner_swap_member = 0;
@@ -11976,6 +11998,13 @@ index f3055d4ba..81b518dcf 100644
 +    const int cur = kh_partner_swap_index;
 +    int want = cur;
 +    const unsigned int req = kh_partner_swap_requests;
++    extern volatile int kh_partner_swap_fresh; /* the port: out of the field since */
++    if (kh_partner_swap_fresh) {
++        /* a new field: touches made before it are not requests (0.7.5 swapped at a mission's
++         * start on one left over from the last) */
++        kh_partner_swap_fresh = 0;
++        seen = req;
++    }
 +    if (req != seen) {
 +        seen = req;
 +        want = cur ? 0 : (kh_partner_swap_enabled() ? swap_find_partner(root) : 0);
@@ -12013,7 +12042,7 @@ index f3055d4ba..81b518dcf 100644
  void Ov022_RefreshSlotRows(int unused)
  {
      Ov022Root *root = NNSi_FndGetCurrentRootHeap();
-@@ -119,6 +261,9 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -119,6 +288,9 @@ void Ov022_RefreshSlotRows(int unused)
          gPadHeld |= root->savedMask1;
          func_ov022_02087a70();
      }
@@ -12023,7 +12052,7 @@ index f3055d4ba..81b518dcf 100644
      primaryNode = root->firstOwner->node;
      primaryField66 = primaryNode->field066;
      resourceBase = Ov022_GetGlobalPlus14();
-@@ -143,7 +288,16 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -143,7 +315,16 @@ void Ov022_RefreshSlotRows(int unused)
              if ((int)(*(long long *)node & 0x10000LL) == 0) {
                  Ov022_LoadNodeFromResource(node, cursor->rowIndex);
              } else {

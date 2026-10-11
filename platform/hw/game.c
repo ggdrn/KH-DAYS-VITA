@@ -669,10 +669,13 @@ static void present(void)
     {
         /* config partner_swap: a dialogue or a movie needs Roxas (Ov022_RefreshSlotRows); out
          * of the field the swap is over (a new mission starts with Roxas) */
-        extern volatile int kh_partner_swap_index, kh_partner_swap_hold, kh_partner_swap_member;
+        extern volatile int kh_partner_swap_index, kh_partner_swap_hold, kh_partner_swap_member,
+            kh_partner_swap_fresh;
         kh_partner_swap_hold = s_dialog_open || movie;
-        if (!kh_overlay_loaded(22))
+        if (!kh_overlay_loaded(22)) {
             kh_partner_swap_index = kh_partner_swap_member = 0;
+            kh_partner_swap_fresh = 1;
+        }
     }
     static int hud_was;
     /* the last 2D picture had its HUD taken out (or not): redrawn when that changes */
