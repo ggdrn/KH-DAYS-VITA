@@ -226,6 +226,7 @@ static uint32_t s_locked;
  * with over 14 ms of the display thread's own work (the rest: the GPU, or the thread waiting) */
 static uint32_t s_swaps60, s_late60, s_late60_cpu;
 static uint32_t s_help_wall;
+static volatile uint32_t s_portmenu_vblanks; /* VBlanks held back while the port menu was open */
 static uint32_t s_test_swaps, s_test_late; /* config debug = 3: the GPU test's current mode */ /* the last display frame's 2D help after its swap (wall time) */   /* display frames swapped two VBlanks apart (the screen at 30 fps) */
 static uint32_t s_t3d_max, s_join_max, s_present_max, s_prep_max; /* the worst frame's */
 
@@ -1203,8 +1204,10 @@ static int vblank_thread(SceSize args, void *argp)
         s_vblanks++;
         sample_input();
         /* the port menu holds the game: no VBlank reaches it, so nothing advances */
-        if (portmenu_is_open())
+        if (portmenu_is_open()) {
+            s_portmenu_vblanks++;
             continue;
+        }
         /* dual 3D: the VBlank brings the next frame's VRAM and sprites (the game's transfers
          * run in its handler), so it waits for the display to have drawn the 2D of the last
          * toggle (25 ms at most); before, a screen was now and then drawn with half of the
@@ -1336,18 +1339,20 @@ static void swap_wait(void)
          * (the game's 30 fps is 33 ms), with the cartridge reads made meanwhile (the reads
          * are the game thread's own: the memory card takes ~6.6 ms a 64 KiB block) */
         static uint64_t prev;
-        static uint32_t io0, calls0, wait0, logged;
+        static uint32_t io0, calls0, wait0, logged, menu0;
         const uint64_t now = sceKernelGetProcessTimeWide();
         uint32_t io, calls, wait;
         rom_totals(&io, &calls, &wait);
-        if (prev && now - prev > 50000 && kh_overlay_loaded(22) && logged < 300) {
+        /* not a frame the port menu held back (0.7.2's log: 5.4 s "hitches") */
+        const uint32_t menu = s_portmenu_vblanks;
+        if (prev && now - prev > 50000 && kh_overlay_loaded(22) && menu == menu0 && logged < 300) {
             logged++;
             LOG("hitch: game frame of %u ms: card %u ms in %u file reads, %u ms waiting for "
                 "the read-ahead", (unsigned)((now - prev) / 1000), (unsigned)((io - io0) / 1000),
                 (unsigned)(calls - calls0), (unsigned)((wait - wait0) / 1000));
         }
         prev = now;
-        io0 = io, calls0 = calls, wait0 = wait;
+        io0 = io, calls0 = calls, wait0 = wait, menu0 = menu;
     }
 }
 

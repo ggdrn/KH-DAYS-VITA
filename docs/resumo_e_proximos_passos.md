@@ -1,6 +1,6 @@
 # khdays-vita: resumo do trabalho e próximos passos
 
-Versão atual: **0.6.9** (testes). Último release: **v0.5.0** (tag `v0.5.0`, notas em `docs/releases/v0.5.0.md`).
+Versão atual: **0.7.0** (release, tag `v0.7.0`, notas em `docs/releases/v0.7.0.md`). Release anterior: **v0.5.0**.
 
 ## O que foi feito
 
@@ -79,30 +79,39 @@ O jogo alterna o 3D entre as telas a cada VBlank (cada tela a 30 Hz).
 - **0.6.0, resolução dinâmica do 3D a 60 fps:** desce de 3x até 2x em passos de 0,5x enquanto há atrasos e volta a subir depois.
 - **0.6.1, composição:** coordenadas vindas do vertex shader (sem leituras dependentes) e compilador de shaders em O3 com matemática rápida.
 - **0.6.2, vídeos:** a 30 fps também no modo 60.
-- **0.6.3–0.6.9, vídeos em wide sem as faixas pretas:**
+- **0.6.3–0.6.9, vídeos em wide sem as faixas pretas** (removido na 0.7.1, a pedido):
   - corte medido por vídeo (16+16 linhas, mais 4 de folga);
   - legendas desenhadas sobre a imagem, 28 px acima da borda;
   - a tela de baixo preta fica oculta.
 
 **Testado: ok.**
 
+### Áudio e release (0.7.0–0.7.2, release 0.7.0)
+- **0.7.0/0.7.1:**
+  - laços de mixagem sem testes de fim longe do fim da onda;
+  - limitador em inteiros abaixo do joelho;
+  - saída em blocos maiores.
+- **0.7.2:** mixagem a 32 kHz (a do DS) na porta BGM, com o sistema convertendo para 48 kHz. Áudio de 13% (0.6.9) para ~8% de um núcleo; validado nas 37 músicas no Mac.
+- **Release 0.7.0:** inclui tudo acima e o detector de engasgo sem o tempo do port menu.
+
 ### Outros
 - **Tela única:** os painéis passam a seguir o zoom da câmera, a visão aproximada do Select (0.1.24).
 - **Release v0.4.0:** publicado com tag no GitHub e changelog em `docs/releases/v0.4.0.md`.
 - **Release v0.5.0:** notas em `docs/releases/v0.5.0.md`; versão VitaDB em `docs/releases/vitadb_v0.5.0.md`.
 
-## Pendências e plano de ação (depois da 0.6.9)
+## Pendências e plano de ação (depois da 0.7.0)
 
-Estado na 0.6.9:
-- entrada em área sem engasgo visível (o pico de texturas cai com a tela ainda preta);
-- 60 fps com 3–6% de quadros atrasados nas lutas mais cheias;
-- vídeos a 30 fps, sem faixas pretas em wide.
+Estado na 0.7.0:
+- sessão de 19 min sem erro;
+- entrada em área sem engasgo visível;
+- 30 fps exatos;
+- 60 fps com 2–11% de quadros atrasados nas lutas mais cheias;
+- vídeos a 30 fps;
+- áudio a ~8% de um núcleo.
 
 | Prioridade | Item | Ação |
 |---|---|---|
-| 1 | Release (no fim) | Notas de 0.5.1–0.6.9 (dual 3D, ROM, pausa, 60 fps, vídeos), tag e VitaDB. A próxima versão de teste vira 0.7.0 (APP_VER não aceita patch ≥ 10) |
-| 2 | Ícones do DS restantes | Varrer telas ainda não vistas (loja, tutoriais `UI/btlttr`, resultados de missão, manual `UI/mnl`) com dumps; acrescentar ao gerador |
-| 3 | Outras cenas com 3D nas duas telas | Conferir chefes e cutscenes dual 3D fora de Olympus |
-| 4 | 60 fps: custo restante | Envio do 3D duas vezes por quadro do jogo e ~4 ms de CPU no swap do vitaGL; interpolar a rolagem dos fundos 2D |
-| 5 | Áudio, mais um passo (opcional) | PCM direto em 16 bits e soma com NEON |
-| 6 | Distribuição | Auditoria que falhe o build se bytes da ROM entrarem no ELF; atualizar o `ROADMAP.md` |
+| 1 | Missões mais pesadas | Núcleo do jogo a 80–87% (ov277): engasgos de 50–80 ms. Levar o processamento dos comandos 3D (gx3d, na thread do jogo) para NEON ou para outra thread |
+| 2 | Outras cenas com 3D nas duas telas | Conferir chefes e cutscenes dual 3D fora de Olympus |
+| 3 | 60 fps: custo restante | Envio do 3D duas vezes por quadro do jogo e ~4 ms de CPU no swap do vitaGL; interpolar a rolagem dos fundos 2D |
+| 4 | Distribuição | Auditoria que falhe o build se bytes da ROM entrarem no ELF; atualizar o `ROADMAP.md` |
