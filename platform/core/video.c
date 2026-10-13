@@ -828,6 +828,17 @@ static void compute_layout(void)
         s_rect[0] = inset_rect();
         s_inset = 0;
         break;
+    case LAYOUT_LEFT_TOP:
+    case LAYOUT_LEFT_BOTTOM: {
+        /* one screen 4:3 on the left, the display's height (725x544); the other in the strip
+         * beside it (235 wide), as wide as it fits, in its middle */
+        const int big = s_layout == LAYOUT_LEFT_TOP ? 0 : 1, sw = DISPLAY_W - 725 - 8;
+        const int sh = sw * 3 / 4;
+        s_rect[big] = (ScreenRect){ 0, 0, 725, 544 };
+        s_rect[!big] = (ScreenRect){ 725 + 4, (DISPLAY_H - sh) / 2, sw, sh };
+        s_inset = !big;
+        break;
+    }
     default:
         s_rect[0] = (ScreenRect){ 0, 92, 480, 360 };
         s_rect[1] = (ScreenRect){ 480, 92, 480, 360 };
@@ -876,7 +887,11 @@ int video_inset_screen(void)
 
 void video_swap_screens(void)
 {
-    video_set_layout(video_layout() == LAYOUT_TOP_MAIN ? LAYOUT_BOTTOM_MAIN : LAYOUT_TOP_MAIN);
+    const ScreenLayout l = video_layout();
+    video_set_layout(l == LAYOUT_LEFT_TOP      ? LAYOUT_LEFT_BOTTOM
+                     : l == LAYOUT_LEFT_BOTTOM ? LAYOUT_LEFT_TOP
+                     : l == LAYOUT_TOP_MAIN    ? LAYOUT_BOTTOM_MAIN
+                                               : LAYOUT_TOP_MAIN);
 }
 
 void video_set_inset_blank(int blank)

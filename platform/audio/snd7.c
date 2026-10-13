@@ -144,6 +144,8 @@ typedef struct {
     int adpcm_next;          /* sample adpcm_next_at + 1, decoded ahead */
     uint32_t adpcm_next_at;
     struct WaveCache *wc;    /* a bank's ADPCM wave decoded (wave_cache_get), NULL none */
+    int ring;                /* the ARM9's own looping PCM (a stream's ring): its passes checked */
+    uint32_t ring_sum;       /* the ring's checksum at its last wrap */
     float gain_l, gain_r;    /* linear, from volume, shift and pan */
     int16_t hold;            /* the last sample, for format PSG/noise steps */
     /* SETUP_CHANNEL_* registers, kept for CHANNEL_* commands */
@@ -696,6 +698,17 @@ static void mix_channel(Channel *c, int32_t *al, int32_t *ar, int count, uint64_
                     while (POS_INT(pos) >= n)
                         pos -= (uint64_t)(n - ls) << 32;
                     i = POS_INT(pos);
+                    if (c->ring) {
+                        /* diagnostics: a ring the ARM9 did not write again since its last
+                         * pass is played twice (a stream starved: a loud buzz) */
+                        uint32_t h = 2166136261u, b;
+                        for (b = 0; b < c->end; b += 4)
+                            h = (h ^ *(const uint32_t *)(d + b)) * 16777619u;
+                        s_stats.ring_passes++;
+                        if (h == c->ring_sum)
+                            s_stats.ring_stale++;
+                        c->ring_sum = h;
+                    }
                 } else {
                     c->pos = pos;
                     c->hw_on = 0;
@@ -1297,6 +1310,7 @@ static void note_on(int ti, int key, int velocity, int32_t length)
         /* PSG and noise: the key's frequency, 8 steps a period for PSG */
         c->base_rate = 440.0 * pow(2.0, (inst.original_key - 69) / 12.0) * (type == CH_PSG ? 8.0 : 64.0);
     }
+    c->ring = 0;
     c->start = 1;
     if (s_stats.voices_max < (uint32_t)(c - s_ch) + 1)
         s_stats.voices_max = (uint32_t)(c - s_ch) + 1;
@@ -1562,6 +1576,8 @@ static void setup_pcm(const DsCommand *c)
     hw_stop(ch);
     ch->type = CH_PCM;
     ch->wc = NULL; /* the ARM9's own wave (a stream's ring, perhaps): decoded as it plays */
+    ch->ring = ((c->arg[3] >> 26) & 3) == 1 && (((c->arg[3] >> 24) & 3) <= 1);
+    ch->ring_sum = 0;
     ch->format = (c->arg[3] >> 24) & 3;
     ch->repeat = (c->arg[3] >> 26) & 3;
     ch->data = P(c->arg[1]);
@@ -1718,6 +1734,7 @@ static void process_command(const DsCommand *c)
             ex_free(ch);
         ch->type = c->id == CMD_SETUP_CHANNEL_PSG ? CH_PSG : CH_NOISE;
         ch->wc = NULL;
+        ch->ring = 0;
         ch->format = FMT_PSG;
         ch->duty = (int)c->arg[1] & 7;
         ch->reg_volume = (int)(c->arg[2] & 0x7f);

@@ -53,7 +53,7 @@ static const struct {
 };
 static const char *const s_ds_buttons[KH_BTN_COUNT] = { "button_a", "button_b", "button_x",
     "button_y", "button_l", "button_r", "button_start", "button_select" };
-static const char *const s_layouts[] = { "top", "bottom", "side" };
+static const char *const s_layouts[] = { "top", "bottom", "side", "left", "left_bottom" };
 static const char *const s_aspects[] = { "wide", "stretch", "4:3" };
 
 const char *config_vita_button_name(int i) { return s_vita_buttons[i].name; }
@@ -108,9 +108,10 @@ void config_save(void)
                "# DS, with borders).\n"
                "aspect = %s\n\n", s_aspects[clampi(kh_config.aspect, 0, 2)]);
     fprintf(f, "# Screen layout: top (top screen large, touch screen small in the top-right\n"
-               "# corner), bottom (the reverse), side (both side by side). Touching the small\n"
-               "# screen swaps them.\n"
-               "layout = %s\n\n", s_layouts[kh_config.layout % 3]);
+               "# corner), bottom (the reverse), side (both side by side), left (top screen 4:3\n"
+               "# on the left over the whole height, touch screen small beside it),\n"
+               "# left_bottom (the reverse). Touching the small screen swaps them.\n"
+               "layout = %s\n\n", s_layouts[kh_config.layout % 5]);
     fprintf(f, "# Width in pixels of the small screen (it keeps the DS's 4:3), 128 to 480.\n"
                "inset_width = %d\n\n", kh_config.inset_width);
     fprintf(f, "# 3D textures: 0 sharp as on the DS, 1 smoothed (bilinear filtering).\n"
@@ -219,7 +220,8 @@ static void set(const char *k, const char *v, int version)
     if (!strcmp(k, "render_scale"))
         kh_config.render_scale = clampi(atoi(v), 1, 4);
     else if (!strcmp(k, "layout"))
-        kh_config.layout = !strcmp(v, "bottom") ? 1 : !strcmp(v, "side") ? 2 : 0;
+        kh_config.layout = !strcmp(v, "bottom") ? 1 : !strcmp(v, "side") ? 2
+                           : !strcmp(v, "left") ? 3 : !strcmp(v, "left_bottom") ? 4 : 0;
     else if (!strcmp(k, "inset_width"))
         kh_config.inset_width = clampi(atoi(v), 128, 480);
     else if (!strcmp(k, "aspect"))

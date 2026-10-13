@@ -13,6 +13,9 @@ typedef enum {
     LAYOUT_TOP_MAIN = 0,  /* top screen over the whole display (16:9), touch screen small */
     LAYOUT_BOTTOM_MAIN,   /* touch screen large (4:3), top screen small */
     LAYOUT_SIDE_BY_SIDE,  /* both screens, 480x360 each */
+    LAYOUT_LEFT_TOP,      /* top screen 4:3 on the left over the display's height, the touch
+                           * screen small in the middle of the strip beside it */
+    LAYOUT_LEFT_BOTTOM,   /* the same with the touch screen large */
     LAYOUT_COUNT
 } ScreenLayout;
 

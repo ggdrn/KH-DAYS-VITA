@@ -1727,6 +1727,10 @@ void kh_game_run(void)
                         "%u alarms, %u unknown commands, %u unknown sequence ops", (unsigned)ss.lists,
                         (unsigned)ss.commands, (unsigned)ss.seq_starts, (unsigned)ss.notes,
                         (unsigned)ss.alarms, (unsigned)ss.unknown_cmd, (unsigned)ss.unknown_seq);
+                if (ss.ring_passes)
+                    LOG("snd: 10 s: stream rings played %u times, %u of them unchanged since "
+                        "the last pass (not refilled in time)", (unsigned)ss.ring_passes,
+                        (unsigned)ss.ring_stale);
                 if (ss.wave_redecodes)
                     LOG("snd: 10 s: %u looping waves decoded again (their bytes changed as they "
                         "played)", (unsigned)ss.wave_redecodes);

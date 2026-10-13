@@ -153,7 +153,8 @@ static void value(const Item *it, char *out, size_t n)
 {
     static const char *const aspects[] = { "Widescreen 3D", "Stretched", "4:3 original" };
     static const char *const layouts[] = { "Top screen large", "Bottom screen large",
-                                           "Side by side" };
+                                           "Side by side", "Top 4:3 left, small right",
+                                           "Bottom 4:3 left, small right" };
     static const char *const speeds[] = { "", "Slow", "Normal", "Fast" };
     static const char *const effects[] = { "None", "Scanlines", "LCD grid" };
     static const char *const corners[] = { "Top right", "Top left", "Bottom right",
@@ -185,7 +186,7 @@ static void value(const Item *it, char *out, size_t n)
         snprintf(out, n, "%s", huds[kh_config.hud % 3]);
         break;
     }
-    case IT_LAYOUT: snprintf(out, n, "%s", layouts[kh_config.layout % 3]); break;
+    case IT_LAYOUT: snprintf(out, n, "%s", layouts[kh_config.layout % LAYOUT_COUNT]); break;
     case IT_INSET: snprintf(out, n, "%d", kh_config.inset_width); break;
     case IT_CORNER: snprintf(out, n, "%s", corners[kh_config.inset_corner & 3]); break;
     case IT_OPACITY: snprintf(out, n, "%d%%", kh_config.inset_opacity); break;
@@ -258,7 +259,7 @@ static void change(const Item *it, int d)
         break;
     case IT_HUD: kh_config.hud = wrap(kh_config.hud, 0, 2, d); break;
     case IT_LAYOUT:
-        kh_config.layout = wrap(kh_config.layout, 0, 2, d);
+        kh_config.layout = wrap(kh_config.layout, 0, LAYOUT_COUNT - 1, d);
         video_set_layout((ScreenLayout)kh_config.layout);
         break;
     case IT_INSET:
