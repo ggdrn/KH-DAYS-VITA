@@ -9068,10 +9068,10 @@ index 7241b50d8..8a8872ba7 100644
      packed |= Ov105_GetStatusLow();
      Heap_SetCurrent(0);
 diff --git a/src/engine/GetPlayerSlotTableEntry.c b/src/engine/GetPlayerSlotTableEntry.c
-index 4b7ab6feb..c14626e6f 100644
+index 4b7ab6feb..68e4a6bde 100644
 --- a/src/engine/GetPlayerSlotTableEntry.c
 +++ b/src/engine/GetPlayerSlotTableEntry.c
-@@ -2,7 +2,60 @@
+@@ -2,7 +2,71 @@
   * outside [0,2). */
  
  extern char data_0204c500[];
@@ -9110,6 +9110,17 @@ index 4b7ab6feb..c14626e6f 100644
 +int kh_swap_member(int id)
 +{
 +    return id;
++}
++
++/* The deck (each shortcut's magic or item, and its count): the HUD reads and spends it as the
++ * session's local player, member 0, whose record is the partner's while the two are traded.
++ * Member 0 is the one holding Roxas's record then, so that the deck shown, the one the partner
++ * played uses and the one spent are all Roxas's (0.7.15 to 0.7.28: the HUD's read the
++ * partner's record). */
++int kh_swap_deck_member(int id)
++{
++    const int p = kh_partner_swap_member;
++    return p > 0 && id == 0 ? p : id;
 +}
 +
 +/* Who a pickup (munny, mission tally, inventory) is credited to: the partner's are Roxas's */
@@ -9376,7 +9387,7 @@ index 057226b0d..602725d43 100644
  
      return data_0204c214[0];
 diff --git a/src/engine/Load2DArrayU8.c b/src/engine/Load2DArrayU8.c
-index b737b4127..c2a07e654 100644
+index b737b4127..0b862c09c 100644
 --- a/src/engine/Load2DArrayU8.c
 +++ b/src/engine/Load2DArrayU8.c
 @@ -2,6 +2,14 @@
@@ -9385,17 +9396,17 @@ index b737b4127..c2a07e654 100644
  
 +#ifdef PLATFORM_VITA
 +/* config partner_swap: the panels swapped -- the deck (each shortcut's magic or item and its
-+ * count) read and spent crosswise too (engine/GetPlayerSlotTableEntry.c) */
-+extern int kh_swap_member(int id);
++ * count) as Roxas's while the partner is played (engine/GetPlayerSlotTableEntry.c) */
++extern int kh_swap_deck_member(int id);
 +#endif
  int Load2DArrayU8(int arg0, int arg1) {
 +#ifdef PLATFORM_VITA
-+    arg0 = kh_swap_member(arg0);
++    arg0 = kh_swap_deck_member(arg0);
 +#endif
      return *(unsigned char *)((char *)&data_0204c714 + arg0 * 0x104 + arg1 * 2);
  }
 diff --git a/src/engine/Load2DArrayU8_2.c b/src/engine/Load2DArrayU8_2.c
-index 53db01eeb..15a728958 100644
+index 53db01eeb..c7c393f11 100644
 --- a/src/engine/Load2DArrayU8_2.c
 +++ b/src/engine/Load2DArrayU8_2.c
 @@ -2,6 +2,14 @@
@@ -9404,12 +9415,12 @@ index 53db01eeb..15a728958 100644
  
 +#ifdef PLATFORM_VITA
 +/* config partner_swap: the panels swapped -- the deck (each shortcut's magic or item and its
-+ * count) read and spent crosswise too (engine/GetPlayerSlotTableEntry.c) */
-+extern int kh_swap_member(int id);
++ * count) as Roxas's while the partner is played (engine/GetPlayerSlotTableEntry.c) */
++extern int kh_swap_deck_member(int id);
 +#endif
  int Load2DArrayU8_2(int arg0, int arg1) {
 +#ifdef PLATFORM_VITA
-+    arg0 = kh_swap_member(arg0);
++    arg0 = kh_swap_deck_member(arg0);
 +#endif
      return *(unsigned char *)((char *)&data_0204c690 + arg0 * 0x104 + arg1);
  }
@@ -9963,8 +9974,66 @@ index 056098149..b2f6bc834 100644
 -        G2x_SetBlendAlpha_(0x04000050, 0, alpha, 0x10, 0);
 +        G2x_SetBlendAlpha_(KH_HW(0x04000050), 0, alpha, 0x10, 0);
  }
+diff --git a/src/engine/Slot_AllEntriesFilled.c b/src/engine/Slot_AllEntriesFilled.c
+index 7a7c5686a..5c09b0e58 100644
+--- a/src/engine/Slot_AllEntriesFilled.c
++++ b/src/engine/Slot_AllEntriesFilled.c
+@@ -2,6 +2,12 @@
+ 
+ extern unsigned char gPartyMembers[];
+ 
++#ifdef PLATFORM_VITA
++/* config partner_swap: member 0 (the HUD's deck) as Roxas's record while the partner is played
++ * (engine/GetPlayerSlotTableEntry.c, kh_swap_deck_member) */
++extern int kh_swap_deck_member(int id);
++#define Slot_AllEntriesFilled Slot_AllEntriesFilled_ds
++#endif
+ int Slot_AllEntriesFilled(int a) {
+     int ok = 1;
+     int n = Slot_CalcRangeCap18(a);
+@@ -20,3 +26,11 @@ int Slot_AllEntriesFilled(int a) {
+     }
+     return ok;
+ }
++
++#ifdef PLATFORM_VITA
++#undef Slot_AllEntriesFilled
++int Slot_AllEntriesFilled(int a)
++{
++    return Slot_AllEntriesFilled_ds(kh_swap_deck_member(a));
++}
++#endif
+diff --git a/src/engine/Slot_ClearMatchingEntry.c b/src/engine/Slot_ClearMatchingEntry.c
+index f0ec5e085..210b1cda2 100644
+--- a/src/engine/Slot_ClearMatchingEntry.c
++++ b/src/engine/Slot_ClearMatchingEntry.c
+@@ -5,6 +5,12 @@
+ 
+ extern unsigned char gPartyMembers[];
+ 
++#ifdef PLATFORM_VITA
++/* config partner_swap: member 0 (the HUD's deck) as Roxas's record while the partner is played
++ * (engine/GetPlayerSlotTableEntry.c, kh_swap_deck_member) */
++extern int kh_swap_deck_member(int id);
++#define Slot_ClearMatchingEntry Slot_ClearMatchingEntry_ds
++#endif
+ void Slot_ClearMatchingEntry(int a, short *key) {
+     int n = Slot_CalcRangeCap18(a);
+     int i = 0;
+@@ -21,3 +27,11 @@ void Slot_ClearMatchingEntry(int a, short *key) {
+         } while (i < n);
+     }
+ }
++
++#ifdef PLATFORM_VITA
++#undef Slot_ClearMatchingEntry
++void Slot_ClearMatchingEntry(int a, short *key)
++{
++    Slot_ClearMatchingEntry_ds(kh_swap_deck_member(a), key);
++}
++#endif
 diff --git a/src/engine/Slot_EvalPackedParam.c b/src/engine/Slot_EvalPackedParam.c
-index 89376fcd5..37e2b73e6 100644
+index 89376fcd5..5b964138b 100644
 --- a/src/engine/Slot_EvalPackedParam.c
 +++ b/src/engine/Slot_EvalPackedParam.c
 @@ -14,7 +14,13 @@ extern struct Params data_0204c590[];
@@ -9972,17 +10041,101 @@ index 89376fcd5..37e2b73e6 100644
  extern int BitArray_GetField(unsigned char *p, int hi, int lo);
  
 +#ifdef PLATFORM_VITA
-+extern int kh_swap_member(int id); /* config partner_swap: the panels swapped */
++extern int kh_swap_deck_member(int id); /* config partner_swap: the deck as Roxas's */
 +#endif
  int Slot_EvalPackedParam(int a, int b) {
      struct Params *v = &data_0204c590[b - 1];
 +#ifdef PLATFORM_VITA
-+    a = kh_swap_member(a);
++    a = kh_swap_deck_member(a);
 +#endif
      return (unsigned char)BitArray_GetField(gPartyMembers + a * 260 + 0x28, v->hi, v->lo);
  }
+diff --git a/src/engine/Slot_EvalPackedParamWith.c b/src/engine/Slot_EvalPackedParamWith.c
+index 9502f5a44..d404b86f3 100644
+--- a/src/engine/Slot_EvalPackedParamWith.c
++++ b/src/engine/Slot_EvalPackedParamWith.c
+@@ -11,7 +11,21 @@ extern struct Params data_0204c590[];
+ extern unsigned char gPartyMembers[];
+ extern int BitArray_SetField(unsigned char *p, int hi, int lo, int d);
+ 
++#ifdef PLATFORM_VITA
++/* config partner_swap: member 0 (the HUD's deck) as Roxas's record while the partner is played
++ * (engine/GetPlayerSlotTableEntry.c, kh_swap_deck_member) */
++extern int kh_swap_deck_member(int id);
++#define Slot_EvalPackedParamWith Slot_EvalPackedParamWith_ds
++#endif
+ int Slot_EvalPackedParamWith(int a, int b, int c) {
+     struct Params *v = &data_0204c590[b - 1];
+     return BitArray_SetField(gPartyMembers + a * 260 + 0x28, v->hi, v->lo, (unsigned short)c);
+ }
++
++#ifdef PLATFORM_VITA
++#undef Slot_EvalPackedParamWith
++int Slot_EvalPackedParamWith(int a, int b, int c)
++{
++    return Slot_EvalPackedParamWith_ds(kh_swap_deck_member(a), b, c);
++}
++#endif
+diff --git a/src/engine/Slot_GetEntryIfBothSet.c b/src/engine/Slot_GetEntryIfBothSet.c
+index 4cd421466..8b253565e 100644
+--- a/src/engine/Slot_GetEntryIfBothSet.c
++++ b/src/engine/Slot_GetEntryIfBothSet.c
+@@ -7,6 +7,12 @@
+  * keeps the base+index addressing form. */
+ extern unsigned char gPartyMembers[];
+ 
++#ifdef PLATFORM_VITA
++/* config partner_swap: member 0 (the HUD's deck) as Roxas's record while the partner is played
++ * (engine/GetPlayerSlotTableEntry.c, kh_swap_deck_member) */
++extern int kh_swap_deck_member(int id);
++#define Slot_GetEntryIfBothSet Slot_GetEntryIfBothSet_ds
++#endif
+ short *Slot_GetEntryIfBothSet(int a, int b) {
+     unsigned char *rec = gPartyMembers + a * 260 + 0x3c;
+     short *r = 0;
+@@ -16,3 +22,11 @@ short *Slot_GetEntryIfBothSet(int a, int b) {
+     }
+     return r;
+ }
++
++#ifdef PLATFORM_VITA
++#undef Slot_GetEntryIfBothSet
++short *Slot_GetEntryIfBothSet(int a, int b)
++{
++    return Slot_GetEntryIfBothSet_ds(kh_swap_deck_member(a), b);
++}
++#endif
+diff --git a/src/engine/Slot_GetEntryIfCounted.c b/src/engine/Slot_GetEntryIfCounted.c
+index 450cba552..a693cca2d 100644
+--- a/src/engine/Slot_GetEntryIfCounted.c
++++ b/src/engine/Slot_GetEntryIfCounted.c
+@@ -6,6 +6,12 @@ extern int Slot_CalcRangeCap18(int a);
+ extern unsigned char data_0204c732[];
+ extern unsigned char gPartyMembers[];
+ 
++#ifdef PLATFORM_VITA
++/* config partner_swap: member 0 (the HUD's deck) as Roxas's record while the partner is played
++ * (engine/GetPlayerSlotTableEntry.c, kh_swap_deck_member) */
++extern int kh_swap_deck_member(int id);
++#define Slot_GetEntryIfCounted Slot_GetEntryIfCounted_ds
++#endif
+ unsigned short *Slot_GetEntryIfCounted(int a, int i) {
+     unsigned short *r = 0;
+     int n = Slot_CalcRangeCap18(a);
+@@ -15,3 +21,11 @@ unsigned short *Slot_GetEntryIfCounted(int a, int i) {
+     }
+     return r;
+ }
++
++#ifdef PLATFORM_VITA
++#undef Slot_GetEntryIfCounted
++unsigned short *Slot_GetEntryIfCounted(int a, int i)
++{
++    return Slot_GetEntryIfCounted_ds(kh_swap_deck_member(a), i);
++}
++#endif
 diff --git a/src/engine/Store2DArrayU8.c b/src/engine/Store2DArrayU8.c
-index 6916b1df4..77c3336db 100644
+index 6916b1df4..e51f7a0e1 100644
 --- a/src/engine/Store2DArrayU8.c
 +++ b/src/engine/Store2DArrayU8.c
 @@ -2,6 +2,14 @@
@@ -9991,12 +10144,12 @@ index 6916b1df4..77c3336db 100644
  
 +#ifdef PLATFORM_VITA
 +/* config partner_swap: the panels swapped -- the deck (each shortcut's magic or item and its
-+ * count) read and spent crosswise too (engine/GetPlayerSlotTableEntry.c) */
-+extern int kh_swap_member(int id);
++ * count) as Roxas's while the partner is played (engine/GetPlayerSlotTableEntry.c) */
++extern int kh_swap_deck_member(int id);
 +#endif
  void Store2DArrayU8(int arg0, int arg1, char arg2) {
 +#ifdef PLATFORM_VITA
-+    arg0 = kh_swap_member(arg0);
++    arg0 = kh_swap_deck_member(arg0);
 +#endif
      *(unsigned char *)((char *)&data_0204c690 + arg0 * 0x104 + arg1) = arg2;
  }
