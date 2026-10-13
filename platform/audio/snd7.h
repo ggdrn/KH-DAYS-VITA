@@ -44,6 +44,10 @@ extern void (*snd7_send_to_arm9)(uint32_t word);
 /* A microsecond clock for the render's own timing (the log), NULL for none (tools/snd_test). */
 extern uint64_t (*snd7_clock_us)(void);
 
+/* A line for the log, NULL for none: the channels the ARM9 sets up itself (a stream's ring),
+ * the camp menu's loud noise (0.7.21-0.7.27) not found yet. */
+extern void (*snd7_log)(const char *line);
+
 typedef struct {
     uint32_t lists, commands, notes, seq_starts, alarms, voices_max;
     uint32_t unknown_cmd, unknown_seq;

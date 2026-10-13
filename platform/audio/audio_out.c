@@ -21,6 +21,11 @@ static void to_arm9(uint32_t word)
     kh_arm7_reply(7, word, 0); /* an alarm: the ARM9's PxiFifoCallback hands it to its handler */
 }
 
+static void log_line(const char *line)
+{
+    LOG("%s", line);
+}
+
 static uint64_t clock_us(void)
 {
     return sceKernelGetProcessTimeWide();
@@ -61,6 +66,7 @@ void audio_out_init(void)
     SceUID th;
     snd7_send_to_arm9 = to_arm9;
     snd7_clock_us = clock_us;
+    snd7_log = log_line;
     /* the DS's rate on the BGM port (the system resamples it), else 48 kHz on the main one */
     s_port = sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_BGM, GRAIN_32K, 32000,
                                  SCE_AUDIO_OUT_MODE_STEREO);

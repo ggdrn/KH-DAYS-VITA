@@ -11970,7 +11970,7 @@ index e43f5318f..60c3f4296 100644
      } else if (Ov002_IsObjectFlag2000Set(object) == 0) {
          if ((pressed & 0x100) != 0) {
 diff --git a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
-index f3055d4ba..48b87a09f 100644
+index f3055d4ba..3e3159cd2 100644
 --- a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 +++ b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 @@ -1,3 +1,4 @@
@@ -11987,7 +11987,7 @@ index f3055d4ba..48b87a09f 100644
  } Ov022FlagsView;
  
  typedef struct Ov022NodeOwner {
-@@ -90,6 +91,194 @@ extern void func_ov022_0208a1a4(void);
+@@ -90,6 +91,201 @@ extern void func_ov022_0208a1a4(void);
  extern unsigned short gPadPressed;
  extern unsigned short gPadHeld;
  
@@ -12158,17 +12158,24 @@ index f3055d4ba..48b87a09f 100644
 +    if (cur) {
 +        Ov022Node *roxas = swap_node(root, 0);
 +        Ov022Node *partner = cur < root->count ? swap_node(root, cur) : 0;
-+        const char *why = !kh_partner_swap_enabled() ? "option off"
++        /* field066 is the actor's zone in the area: -1 for a moment while the one played
++         * crosses into the next zone (the zone's data loading), which 0.7.21 to 0.7.27 took for
++         * the partner gone: Roxas was given back in the middle of the zone change, and the
++         * game played it again and again (Roxas taken to the area's start) or hung. Gone only
++         * when it stays out of any zone for some 5 s. */
++        static int out_of_zone;
++        const char *why;
++        out_of_zone = partner && partner->field066 == -1 ? out_of_zone + 1 : 0;
++        why = !kh_partner_swap_enabled() ? "option off"
 +                          : kh_partner_swap_hold ? "a scene (dialogue, movie)"
-+                          : !partner || partner->field066 == -1 ? "the partner gone"
++                          : !partner || out_of_zone > 150 ? "the partner gone"
 +                          : partner->field012 == 0 ? "the partner down"
 +                          : roxas->field012 == 0 ? "Roxas down"
 +                          : (root->flags & 4) ? "the field stopped" : NULL;
-+        /* The game holding the player (an exit's walk, a fall's respawn at the area's start)
-+         * is not a reason: the one played goes through it, and a field change ends the swap
-+         * (above). 0.7.19 to 0.7.24 gave Roxas back there and put him where the partner was:
-+         * after a fall, that was out of the map again, and the respawn played over and over
-+         * with Roxas taken to the area's start. */
++        /* The game holding the player (a zone change, an exit's walk) is not a reason either:
++         * the one played goes through it, and a field change ends the swap (above). 0.7.19 to
++         * 0.7.24 gave Roxas back there and put him where the partner was, in the middle of the
++         * zone change. */
 +        if (why) {
 +            want = 0;
 +            KH_TRACE_ALWAYS("swap: back to Roxas: %s", why);
@@ -12182,7 +12189,7 @@ index f3055d4ba..48b87a09f 100644
  void Ov022_RefreshSlotRows(int unused)
  {
      Ov022Root *root = NNSi_FndGetCurrentRootHeap();
-@@ -119,6 +308,9 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -119,6 +315,9 @@ void Ov022_RefreshSlotRows(int unused)
          gPadHeld |= root->savedMask1;
          func_ov022_02087a70();
      }
@@ -12192,7 +12199,7 @@ index f3055d4ba..48b87a09f 100644
      primaryNode = root->firstOwner->node;
      primaryField66 = primaryNode->field066;
      resourceBase = Ov022_GetGlobalPlus14();
-@@ -143,7 +335,16 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -143,7 +342,16 @@ void Ov022_RefreshSlotRows(int unused)
              if ((int)(*(long long *)node & 0x10000LL) == 0) {
                  Ov022_LoadNodeFromResource(node, cursor->rowIndex);
              } else {

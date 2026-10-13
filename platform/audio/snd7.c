@@ -11,11 +11,13 @@
 
 #include <math.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 void (*snd7_send_to_arm9)(uint32_t word);
 uint64_t (*snd7_clock_us)(void);
+void (*snd7_log)(const char *line);
 uintptr_t snd7_ptr_base;
 
 /* a 32-bit DS-side pointer (command arguments, the links inside banks): the address itself on
@@ -1571,6 +1573,24 @@ static void setup_pcm(const DsCommand *c)
     ch->reg_timer = c->arg[0] >> 16;
     ch->rate = timer_rate(ch->reg_timer);
     hw_reg_gain(ch);
+    {
+        /* diagnostics: the first ones of a run, and the first after any change of set-up */
+        static uint32_t logged, last_key;
+        const uint32_t key = (uint32_t)ch->format | (uint32_t)ch->repeat << 2 |
+                             (uint32_t)ch->reg_timer << 4 | (c->arg[0] & 15) << 20;
+        if (snd7_log && logged < 200 && key != last_key) {
+            static const char *const fmts[4] = { "PCM8", "PCM16", "ADPCM", "PSG" };
+            char line[200];
+            logged++;
+            last_key = key;
+            snprintf(line, sizeof(line), "snd: ARM9 channel %d: %s, repeat %d, loop start %u, "
+                     "end %u bytes, timer %04x (%.0f Hz), volume %d shift %d pan %d, data "
+                     "%08x", (int)(c->arg[0] & 15), fmts[ch->format & 3], ch->repeat,
+                     (unsigned)ch->loop_start, (unsigned)ch->end, (unsigned)ch->reg_timer,
+                     ch->rate, ch->reg_volume, ch->reg_shift, ch->reg_pan, (unsigned)c->arg[1]);
+            snd7_log(line);
+        }
+    }
 }
 
 static void process_command(const DsCommand *c)
