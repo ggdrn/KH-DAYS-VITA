@@ -517,13 +517,19 @@ static volatile int s_defeats;
  * whole screen is left out (gpu3d kh_gpu3d_drop_veil): the Possessor's dying veil, seen as a
  * white flash (0.7.22's trace: from 7 VBlanks after the defeat, for about 45) */
 #define BURST_VB 180
-static volatile uint32_t s_burst_vb;
-static volatile int s_burst_seen;
+static volatile uint32_t s_burst_vb, s_possessor_vb;
+static volatile int s_burst_seen, s_possessor_seen;
 
 void kh_vita_enemy_defeated(const void *enemy)
 {
     s_burst_vb = s_vblanks;
     s_burst_seen = 1;
+    /* a Possessor's (or a Massive Possessor's) overlay loaded: its burst is left out too */
+    if (kh_overlay_loaded(117) || kh_overlay_loaded(118) || kh_overlay_loaded(185) ||
+        kh_overlay_loaded(186) || kh_overlay_loaded(187)) {
+        s_possessor_vb = s_vblanks;
+        s_possessor_seen = 1;
+    }
     if (s_defeats >= DEFEAT_TRACES)
         return;
     s_defeat_vb = s_vblanks;
@@ -536,8 +542,8 @@ void kh_vita_enemy_defeated(const void *enemy)
 
 static void defeat_trace(const KhGxFrame *f)
 {
-    static char last[512];
-    char line[512];
+    static char last[1024];
+    char line[1024];
     int k;
     const uint32_t since = s_vblanks - s_defeat_vb;
     if (!s_defeats || since > DEFEAT_TRACE_VB)
@@ -857,6 +863,9 @@ static void present(void)
             defeat_trace(frame3d);
             kh_gpu3d_drop_veil = kh_config.burst_soften && s_burst_seen &&
                                  s_vblanks - s_burst_vb < BURST_VB;
+            kh_gpu3d_burst_update(dual ? NULL : frame3d,
+                                  kh_config.burst_soften && s_possessor_seen &&
+                                      s_vblanks - s_possessor_vb < BURST_VB);
             kh_gpu3d_prepare(frame3d);
             s_cur.prep = (uint32_t)(sceKernelGetProcessTimeWide() - t);
             stage_max(&s_prep_max, s_cur.prep);

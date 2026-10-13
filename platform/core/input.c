@@ -153,6 +153,27 @@ void kh_vita_camera_auto_turn(int source, int blocked)
     }
 }
 
+/* diagnostics: Ov002_Camera_UpdateFollow's state once a second while left or right is held
+ * (the camera turning by itself behind a walk): the yaw and its target, its flags (+0x38,
+ * +0x3c), this tick's turn bits, the hold counter (+0xdc), the stream's bits. At most 120
+ * lines a run. */
+void kh_vita_camera_probe(unsigned int pad, int yaw, int target, unsigned int flags38,
+                          unsigned int flags3c, unsigned int bits, int hold, unsigned int stream)
+{
+    static uint64_t last;
+    static uint32_t logged;
+    const uint64_t now = sceKernelGetProcessTimeWide();
+    if (!(pad & 0x30) || logged >= 120 || now - last < 1000000u)
+        return;
+    last = now;
+    logged++;
+    LOG("camera: walking %s: yaw %04x target %04x, flags %08x/%08x, bits %x, hold %x, "
+        "stream %08x; right stick %d (%d,%d), camera_follow %d%s", (pad & 0x20) ? "left" : "right",
+        yaw & 0xffff, target & 0xffff, flags38, flags3c, bits, hold, stream,
+        kh_config.camera_stick, s_rx, s_ry, kh_config.camera_follow,
+        kh_lockon_active ? ", locked on" : "");
+}
+
 /* request bits for this camera tick: each axis pulsed in proportion to its deflection */
 unsigned int kh_vita_camera_bits(void)
 {

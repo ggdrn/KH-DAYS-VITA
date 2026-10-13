@@ -16705,7 +16705,7 @@ index 09328f6ad..b5d206002 100644
      int nOwner;                         /* +0x30 */
  } Ov002PoolEntry;
 diff --git a/src/overlays/scenes/ov002_field/Ov002_Camera_UpdateFollow.c b/src/overlays/scenes/ov002_field/Ov002_Camera_UpdateFollow.c
-index a34a3af7b..b1500b624 100644
+index a34a3af7b..a1df29f39 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_Camera_UpdateFollow.c
 +++ b/src/overlays/scenes/ov002_field/Ov002_Camera_UpdateFollow.c
 @@ -1,3 +1,13 @@
@@ -16731,7 +16731,7 @@ index a34a3af7b..b1500b624 100644
    unsigned char unknown08[4];
    int kind;
    unsigned char unknown10[0x10];
-@@ -97,6 +107,12 @@ extern void Ov002_TickScriptedCamera(void);
+@@ -97,6 +107,15 @@ extern void Ov002_TickScriptedCamera(void);
  extern void Ov002_ResetCamera(void);
  extern unsigned char data_0204be04;
  extern unsigned short gPadHeld;
@@ -16740,11 +16740,14 @@ index a34a3af7b..b1500b624 100644
 +extern void kh_vita_camera_state(int manual, unsigned int bits);
 +extern int kh_vita_camera_follow(void);
 +extern void kh_vita_camera_auto_turn(int source, int blocked);
++extern void kh_vita_camera_probe(unsigned int pad, int yaw, int target, unsigned int flags38,
++                                 unsigned int flags3c, unsigned int bits, int hold,
++                                 unsigned int stream);
 +#endif
  extern unsigned short gPadPressed;
  extern unsigned char data_0204c240;
  extern const short data_0203d210[];
-@@ -232,6 +248,10 @@ Ov002NextFn Ov002_Camera_UpdateFollow(void)
+@@ -232,6 +251,10 @@ Ov002NextFn Ov002_Camera_UpdateFollow(void)
    if (bVar22) {
      Ov002_Camera_LeaveLookView();
    }
@@ -16755,7 +16758,7 @@ index a34a3af7b..b1500b624 100644
    if ((piVar7[0xe] & 0x2000U) == 0)
      goto request_input;
    uVar4 = gPadHeld;
-@@ -493,6 +513,11 @@ LAB_arm9_ov002__0204d9ac:
+@@ -493,6 +516,11 @@ LAB_arm9_ov002__0204d9ac:
        if (((iVar11 != 2) || (sVar5 = Session_GetLocalPlayerIndex(), sVar5 != 0)) &&
           (((gPadPressed & 0x100) != 0 && ((gPadPressed & 0x200) == 0))))
        {
@@ -16767,7 +16770,7 @@ index a34a3af7b..b1500b624 100644
          piVar7[0xe] = piVar7[0xe] | 8;
        }
        if ((piVar7[0xe] & 0x4000U) != 0) {
-@@ -561,9 +586,17 @@ LAB_arm9_ov002__0204d9ac:
+@@ -561,9 +589,17 @@ LAB_arm9_ov002__0204d9ac:
        piVar7[0xe] = (uVar16 | 0x18) & 0xfffffdff;
      }
      uVar20 = 0;
@@ -16785,7 +16788,7 @@ index a34a3af7b..b1500b624 100644
    }
    iVar11 = func_ov022_020886d0(idx);
    if (iVar11 != 0) {
-@@ -606,7 +639,14 @@ LAB_arm9_ov002__0204d9ac:
+@@ -606,7 +642,14 @@ LAB_arm9_ov002__0204d9ac:
      *piVar7 = data_0203d210[((int)(uint)*(ushort *)(piVar7 + 0x28) >> 4) * 2];
      piVar7[1] = data_0203d210[((int)(uint)*(ushort *)((int)piVar7 + 0xa2) >> 4) * 2 + 1];
    }
@@ -16800,7 +16803,7 @@ index a34a3af7b..b1500b624 100644
      if ((piVar7[0xe] & 2U) != 0) {
        iVar11 = Ov022_GetGlobalPlusE0();
        if (((((uVar20 & 4) != 0) && ((piVar7[0xf] & 0x10U) == 0)) ||
-@@ -676,7 +716,18 @@ LAB_arm9_ov002__0204d9ac:
+@@ -676,7 +719,18 @@ LAB_arm9_ov002__0204d9ac:
          piVar7[0x1f] = iVar11;
          uVar18 = Ov002_ComputeModeScaledFixedPoint();
          piVar7[0x2a] = uVar18;
@@ -16819,7 +16822,7 @@ index a34a3af7b..b1500b624 100644
             (((gPadHeld & 0x20) != 0 || ((gPadHeld & 0x10) != 0))))
          {
            GetFrameRateMode();
-@@ -688,6 +739,9 @@ LAB_arm9_ov002__0204d9ac:
+@@ -688,6 +742,9 @@ LAB_arm9_ov002__0204d9ac:
            }
            piVar7[0x37] = iVar11;
            if (iVar11 > 0x333) {
@@ -16829,6 +16832,18 @@ index a34a3af7b..b1500b624 100644
              iVar12 = piVar7[0x16];
              if ((gPadHeld & 0x20) != 0) {
                piVar7[0x20] = iVar12 + 0x300U & 0xffff;
+@@ -761,6 +818,11 @@ handler_bool_done:
+       piVar7[0xe] = piVar7[0xe] & 0xfffffbff;
+     }
+   }
++#ifdef PLATFORM_VITA
++  /* diagnostics: the camera while walking sideways (platform/core/input.c) */
++  kh_vita_camera_probe(gPadHeld, piVar7[0x16], piVar7[0x20], piVar7[0xe], piVar7[0xf], uVar20,
++                       piVar7[0x37], (unsigned int)Ov022_GetStreamTimestamp(idx));
++#endif
+   iVar11 = Ov002_UpdateCameraDistance(piVar7[0x11]);
+   piVar19 = piVar7 + 0x1f;
+   Ov002_PlaceCameraForFrame
 diff --git a/src/overlays/scenes/ov002_field/Ov002_CancelQueuedLoads.c b/src/overlays/scenes/ov002_field/Ov002_CancelQueuedLoads.c
 index 88834eb06..594e376f1 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_CancelQueuedLoads.c
