@@ -11970,7 +11970,7 @@ index e43f5318f..60c3f4296 100644
      } else if (Ov002_IsObjectFlag2000Set(object) == 0) {
          if ((pressed & 0x100) != 0) {
 diff --git a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
-index f3055d4ba..24aac3dd2 100644
+index f3055d4ba..48b87a09f 100644
 --- a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 +++ b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 @@ -1,3 +1,4 @@
@@ -11987,7 +11987,7 @@ index f3055d4ba..24aac3dd2 100644
  } Ov022FlagsView;
  
  typedef struct Ov022NodeOwner {
-@@ -90,6 +91,212 @@ extern void func_ov022_0208a1a4(void);
+@@ -90,6 +91,194 @@ extern void func_ov022_0208a1a4(void);
  extern unsigned short gPadPressed;
  extern unsigned short gPadHeld;
  
@@ -12041,23 +12041,6 @@ index f3055d4ba..24aac3dd2 100644
 +    }
 +}
 +
-+/* The two actors' HP maxima traded (the panels' HP goes with them), each one's HP kept in
-+ * proportion */
-+static void swap_hp(Ov022Node *a, Ov022Node *b)
-+{
-+    unsigned short *ha = (unsigned short *)a, *hb = (unsigned short *)b;
-+    /* 0x12: HP, 0x16: HP max -- traded as they are: the one player 1 plays has Roxas's HP,
-+     * what it takes is Roxas's own when he comes back (0.7.5 to 0.7.19 kept each one's HP in
-+     * proportion to the other's maximum) */
-+    const unsigned short h = ha[9], m = ha[0xb];
-+    if (!ha[0xb] || !hb[0xb])
-+        return;
-+    ha[9] = hb[9];
-+    ha[0xb] = hb[0xb];
-+    hb[9] = h;
-+    hb[0xb] = m;
-+}
-+
 +/* Ov022_ActorUpdate: the spot (drop) context a pickup looks in -- the played partner looks in
 + * Roxas's, where the drops are (0.7.5 looked in its own: nothing) */
 +int kh_swap_spot_slot(int nSlotIndex, int nId)
@@ -12082,9 +12065,9 @@ index f3055d4ba..24aac3dd2 100644
 +    Ov022Node *roxas = swap_node(root, 0);
 +    /* the panels: the partner's HP max and member are Roxas's while it is played */
 +    if (to > 0) {
-+        swap_log_hp("before", roxas, swap_node(root, to));
-+        swap_hp(roxas, swap_node(root, to));
-+        swap_log_hp("after", roxas, swap_node(root, to));
++        /* each one keeps its own HP: the partner played down, Roxas comes back as he was
++         * (0.7.5 to 0.7.25 traded the HP, and Roxas came back at 0 when the partner fell) */
++        swap_log_hp("to the partner", roxas, swap_node(root, to));
 +        {
 +            /* the panels: the two records traded (engine/GetPlayerSlotTableEntry.c); each
 +             * actor keeps the weapon the field's set-up built for it */
@@ -12093,7 +12076,6 @@ index f3055d4ba..24aac3dd2 100644
 +            kh_partner_swap_member = id;
 +        }
 +    } else if (from > 0 && from < root->count) {
-+        swap_hp(roxas, swap_node(root, from));
 +        swap_log_hp("back", roxas, swap_node(root, from));
 +        if (kh_partner_swap_member > 0)
 +            kh_swap_records(kh_partner_swap_member);
@@ -12200,7 +12182,7 @@ index f3055d4ba..24aac3dd2 100644
  void Ov022_RefreshSlotRows(int unused)
  {
      Ov022Root *root = NNSi_FndGetCurrentRootHeap();
-@@ -119,6 +326,9 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -119,6 +308,9 @@ void Ov022_RefreshSlotRows(int unused)
          gPadHeld |= root->savedMask1;
          func_ov022_02087a70();
      }
@@ -12210,7 +12192,7 @@ index f3055d4ba..24aac3dd2 100644
      primaryNode = root->firstOwner->node;
      primaryField66 = primaryNode->field066;
      resourceBase = Ov022_GetGlobalPlus14();
-@@ -143,7 +353,16 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -143,7 +335,16 @@ void Ov022_RefreshSlotRows(int unused)
              if ((int)(*(long long *)node & 0x10000LL) == 0) {
                  Ov022_LoadNodeFromResource(node, cursor->rowIndex);
              } else {

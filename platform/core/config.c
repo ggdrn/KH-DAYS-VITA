@@ -99,8 +99,9 @@ void config_save(void)
                "# keep up, back at render_scale when it can. 0 off (always render_scale), 1 on.\n"
                "dynamic_res = %d\n\n", kh_config.dynamic_res);
     fprintf(f, "# Experimental: in a story mission with a partner, touch the partner's HUD to\n"
-               "# play as the partner (Roxas's panels; the AI plays Roxas); touch it again, or\n"
-               "# any scene that needs Roxas, to get him back. 0 off, 1 on.\n"
+               "# play as the partner (Roxas's panels, its own HP and weapon; the AI plays\n"
+               "# Roxas); touch it again, a scene that needs Roxas or the partner falling gives\n"
+               "# him back. 0 off, 1 on.\n"
                "partner_swap = %d\n\n", kh_config.partner_swap);
     fprintf(f, "# How the large screen fills the display: wide (the 3D drawn for 16:9 in the\n"
                "# field, true proportions), stretch (the DS picture stretched), 4:3 (as on the\n"
