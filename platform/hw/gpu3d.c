@@ -622,7 +622,7 @@ static float screen_share(const KhGxFrame *f, const KhGxPolygon *p)
     return x1 > x0 && y1 > y0 ? (x1 - x0) * (y1 - y0) / 4.0f : 0.0f;
 }
 
-/* config burst_soften, the burst some enemies (the Possessor) give off as they die: about a
+/* The burst some enemies (the Possessor) give off as they die: about a
  * hundred more translucent polygons for some 20 VBlanks, which came out as a white flash
  * (0.7.23's trace: translucent polygons from ~140 to ~270), under the veil above. Its polygons
  * are told apart by their polygon IDs: an ID no translucent polygon had 1 to 2 s before the
@@ -1125,7 +1125,7 @@ static unsigned draw_frame(const KhGxFrame *f, const KhGxVertex *vtx)
                 s_pkey[i] = 0xffffffffu;
                 continue;
             }
-            /* config burst_soften: the veil some enemies (the Possessor) lay over the whole
+            /* the veil some enemies (the Possessor) lay over the whole
              * screen as they die, translucent and fading out over some 45 VBlanks (0.7.22's
              * log: one polygon, 100% of the screen, alpha 29 down to 1), came out as a white
              * flash: left out for a moment after each defeat (game.c) */

@@ -513,9 +513,10 @@ static void hud_after_2d(void)
 #define DEFEAT_TRACE_VB 120
 static volatile uint32_t s_defeat_vb;
 static volatile int s_defeats;
-/* config burst_soften: for BURST_VB VBlanks after any defeat, a translucent polygon over the
- * whole screen is left out (gpu3d kh_gpu3d_drop_veil): the Possessor's dying veil, seen as a
- * white flash (0.7.22's trace: from 7 VBlanks after the defeat, for about 45) */
+/* For BURST_VB VBlanks after any defeat, a translucent polygon over the whole screen is left
+ * out (gpu3d kh_gpu3d_drop_veil): the Possessor's dying veil, seen as a white flash (0.7.22's
+ * trace: from 7 VBlanks after the defeat, for about 45); after a Possessor's, its burst too
+ * (kh_gpu3d_burst_update) */
 #define BURST_VB 180
 static volatile uint32_t s_burst_vb, s_possessor_vb;
 static volatile int s_burst_seen, s_possessor_seen;
@@ -861,10 +862,10 @@ static void present(void)
             if (dual && frame3d && frame3d->built_a_top == a_on_top)
                 s_dual_misbuilt++;
             defeat_trace(frame3d);
-            kh_gpu3d_drop_veil = kh_config.burst_soften && s_burst_seen &&
+            kh_gpu3d_drop_veil = s_burst_seen &&
                                  s_vblanks - s_burst_vb < BURST_VB;
             kh_gpu3d_burst_update(dual ? NULL : frame3d,
-                                  kh_config.burst_soften && s_possessor_seen &&
+                                  s_possessor_seen &&
                                       s_vblanks - s_possessor_vb < BURST_VB);
             kh_gpu3d_prepare(frame3d);
             s_cur.prep = (uint32_t)(sceKernelGetProcessTimeWide() - t);
@@ -1726,6 +1727,9 @@ void kh_game_run(void)
                         "%u alarms, %u unknown commands, %u unknown sequence ops", (unsigned)ss.lists,
                         (unsigned)ss.commands, (unsigned)ss.seq_starts, (unsigned)ss.notes,
                         (unsigned)ss.alarms, (unsigned)ss.unknown_cmd, (unsigned)ss.unknown_seq);
+                if (ss.wave_redecodes)
+                    LOG("snd: 10 s: %u looping waves decoded again (their bytes changed as they "
+                        "played)", (unsigned)ss.wave_redecodes);
             }
             if (gs.commands)
                 LOGV("gx3d: 10 s: %u swaps, %u cmds, %u polys (%u culled), %u verts, %u unknown, "

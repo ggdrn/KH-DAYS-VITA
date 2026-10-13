@@ -22,7 +22,6 @@ volatile int kh_partner_swap_member; /* the partner's member id while swapped (t
 volatile unsigned int kh_partner_swap_seen; /* the touches the game has answered */
 void *volatile kh_swap_pickup_owner; /* the played partner's pickup (the log's drop summary) */
 void *volatile kh_partner_swap_root;         /* the field the swap state belongs to */
-volatile int kh_partner_swap_force;          /* a revert out of gameplay: no combo wait */
 volatile int kh_partner_swap_fresh = 1; /* set out of the field: earlier touches are no requests */
 volatile unsigned int kh_partner_swap_requests;
 
@@ -123,55 +122,6 @@ int kh_vita_lockon_switch(void)
 int kh_vita_camera_follow(void)
 {
     return !kh_config.camera_stick || kh_config.camera_follow || kh_lockon_active;
-}
-
-/* diagnostics: the camera's own turns (the target yaw set by the game, not by an input), by
- * source: 0 Ov002_Camera_UpdateFollow's turn behind a sideways walk, 1 Ov002_TickCamera
- * after a held point, 2 Ov002_TickCamera after what it aims at; blocked: left out
- * (kh_vita_camera_follow). Logged every 10 s while any came (at most 60 lines a run). */
-void kh_vita_camera_auto_turn(int source, int blocked)
-{
-    static uint32_t n[3][2], logged;
-    static uint64_t since;
-    const uint64_t now = sceKernelGetProcessTimeWide();
-    if (source < 0 || source > 2)
-        return;
-    if (!since)
-        since = now;
-    n[source][blocked != 0]++;
-    if (now - since >= 10000000u) {
-        if (logged < 60) {
-            logged++;
-            LOG("camera: own turns in 10 s (made/left out): behind a walk %u/%u, held point "
-                "%u/%u, aimed at %u/%u; right stick %d, camera_follow %d%s",
-                (unsigned)n[0][0], (unsigned)n[0][1], (unsigned)n[1][0], (unsigned)n[1][1],
-                (unsigned)n[2][0], (unsigned)n[2][1], kh_config.camera_stick,
-                kh_config.camera_follow, kh_lockon_active ? " (locked on)" : "");
-        }
-        memset(n, 0, sizeof(n));
-        since = now;
-    }
-}
-
-/* diagnostics: Ov002_Camera_UpdateFollow's state once a second while left or right is held
- * (the camera turning by itself behind a walk): the yaw and its target, its flags (+0x38,
- * +0x3c), this tick's turn bits, the hold counter (+0xdc), the stream's bits. At most 120
- * lines a run. */
-void kh_vita_camera_probe(unsigned int pad, int yaw, int target, unsigned int flags38,
-                          unsigned int flags3c, unsigned int bits, int hold, unsigned int stream)
-{
-    static uint64_t last;
-    static uint32_t logged;
-    const uint64_t now = sceKernelGetProcessTimeWide();
-    if (!(pad & 0x30) || logged >= 120 || now - last < 1000000u)
-        return;
-    last = now;
-    logged++;
-    LOG("camera: walking %s: yaw %04x target %04x, flags %08x/%08x, bits %x, hold %x, "
-        "stream %08x; right stick %d (%d,%d), camera_follow %d%s", (pad & 0x20) ? "left" : "right",
-        yaw & 0xffff, target & 0xffff, flags38, flags3c, bits, hold, stream,
-        kh_config.camera_stick, s_rx, s_ry, kh_config.camera_follow,
-        kh_lockon_active ? ", locked on" : "");
 }
 
 /* request bits for this camera tick: each axis pulsed in proportion to its deflection */

@@ -47,6 +47,7 @@ extern uint64_t (*snd7_clock_us)(void);
 typedef struct {
     uint32_t lists, commands, notes, seq_starts, alarms, voices_max;
     uint32_t unknown_cmd, unknown_seq;
+    uint32_t wave_redecodes; /* looping ADPCM waves decoded again: their bytes changed */
     /* snd7_render by step (us): the driver's frames (sequencer, envelopes, commands), the
      * channels' mixing, the limiter and the conversion; samples rendered and channels mixed
      * (one channel over one chunk counts its samples) */

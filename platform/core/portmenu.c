@@ -32,7 +32,7 @@ static int s_repeat_dir;
 static char s_note[64]; /* feedback after an action ("Defaults restored.") */
 
 enum {
-    IT_PRESET, IT_SCALE, IT_FPS, IT_DYNRES, IT_SWAP, IT_TEXFILTER, IT_FILTER2D, IT_EFFECT, IT_BURST, IT_SHOWFPS,
+    IT_PRESET, IT_SCALE, IT_FPS, IT_DYNRES, IT_SWAP, IT_TEXFILTER, IT_FILTER2D, IT_EFFECT, IT_SHOWFPS,
     IT_ASPECT, IT_HUD, IT_LAYOUT, IT_INSET, IT_CORNER, IT_OPACITY, IT_SINGLE, IT_PANELOP, IT_HUDSIZE,
     IT_CAMERA, IT_CAMSPEED, IT_CAMFOLLOW, IT_INVX, IT_INVY, IT_DEADZONE, IT_DPAD, IT_RMODE, IT_REAR,
     IT_BUTTON, /* + the DS button index */
@@ -53,7 +53,6 @@ static const Item s_video[] = {
     { IT_TEXFILTER, 0, "Texture filter", "Smooth: bilinear filtering. Sharp: as on the DS." },
     { IT_FILTER2D, 0, "2D filter", "Sprites and text. Sharp: square pixels, smooth edges." },
     { IT_EFFECT, 0, "Screen effect", "Scanlines or an LCD grid over the DS's pixels." },
-    { IT_BURST, 0, "Remove defeat flash", "No white flash when some enemies (Possessor) die." },
     { IT_SHOWFPS, 0, "Show FPS", "A frame-rate counter in the top-left corner." },
 };
 static const Item s_screen[] = {
@@ -177,7 +176,6 @@ static void value(const Item *it, char *out, size_t n)
         break;
     }
     case IT_EFFECT: snprintf(out, n, "%s", effects[kh_config.screen_effect % 3]); break;
-    case IT_BURST: snprintf(out, n, "%s", kh_config.burst_soften ? "On" : "Off"); break;
     case IT_SHOWFPS: snprintf(out, n, "%s", kh_config.show_fps ? "On" : "Off"); break;
     case IT_DYNRES: snprintf(out, n, "%s", kh_config.dynamic_res ? "On" : "Off"); break;
     case IT_SWAP: snprintf(out, n, "%s", kh_config.partner_swap ? "On" : "Off"); break;
@@ -251,7 +249,6 @@ static void change(const Item *it, int d)
         break;
     case IT_FILTER2D: kh_config.filter_2d = wrap(kh_config.filter_2d, 0, 2, d); break;
     case IT_EFFECT: kh_config.screen_effect = wrap(kh_config.screen_effect, 0, 2, d); break;
-    case IT_BURST: kh_config.burst_soften ^= 1; break;
     case IT_SHOWFPS: kh_config.show_fps ^= 1; break;
     case IT_DYNRES: kh_config.dynamic_res ^= 1; break;
     case IT_SWAP: kh_config.partner_swap ^= 1; break;

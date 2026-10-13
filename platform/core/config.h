@@ -52,8 +52,6 @@ typedef struct {
     int hud;            /* widescreen field: 0 the 2D stretched over 16:9, 1 kept 4:3 in the middle,
                          * 2 kept 4:3 with the HUD's corners at the display's edges */
     int screen_effect;  /* 0 none, 1 scanlines, 2 LCD grid */
-    int burst_soften;   /* for a moment after an enemy's defeat, a translucent polygon over the
-                         * whole screen is not drawn (the Possessor's white flash): 0 off, 1 on */
     int inset_corner;   /* the small screen: 0 top-right, 1 top-left, 2 bottom-right, 3 bottom-left */
     int inset_opacity;  /* the small screen's opacity, 50-100 % */
     int rear_touch;     /* rear touchpad halves: 0 off, 1 L / R, 2 Select / Start */

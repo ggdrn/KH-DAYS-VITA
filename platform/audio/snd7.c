@@ -540,6 +540,22 @@ static uint32_t wave_sum(const uint8_t *src, uint32_t end)
     return h;
 }
 
+/* A looping wave's bytes checked again as it wraps (the mixer): a note can start before its
+ * wave archive has finished loading (the camp menu's music), and what was decoded then came
+ * out as a loud noise at every loop for as long as the music played (0.7.21) -- the DS plays
+ * the bytes as they are at each pass. Changed, the wave is decoded again from its start. */
+static void wave_recheck(WaveCache *w)
+{
+    const uint32_t sum = wave_sum(w->src, w->n / 2 + 4);
+    if (sum == w->sum)
+        return;
+    w->sum = sum;
+    w->done = 0;
+    w->pred = (int16_t)(w->src[0] | w->src[1] << 8);
+    w->index = w->src[2] > 88 ? 88 : w->src[2];
+    s_stats.wave_redecodes++;
+}
+
 /* The decoded wave for an ADPCM wave of end bytes (loop start ls_bytes), NULL when there is
  * no room (the channel then decodes as it plays) */
 static WaveCache *wave_cache_get(const uint8_t *src, uint32_t end, uint32_t ls_bytes)
@@ -748,6 +764,9 @@ static void mix_channel(Channel *c, int32_t *al, int32_t *ar, int count, uint64_
                     while (POS_INT(pos) >= n)
                         pos -= (uint64_t)(n - ls) << 32;
                     i = POS_INT(pos);
+                    wave_recheck(w);
+                    if (w->done < n)
+                        wave_decode(w, POS_INT(pos + step * (uint64_t)(count - k)) + 2);
                 }
                 if (!silent) {
                     const int s = lerp15(pcm[i], pcm[i + 1], pos);

@@ -13,7 +13,6 @@
 static const KhConfig s_defaults = {
     .render_scale = 3, .layout = 0, .inset_width = 224, .aspect = KH_ASPECT_WIDE,
     .frame_interpolation = 0, .dynamic_res = 1, .partner_swap = 0, .texture_filter = 1, .filter_2d = 2, .hud = 0, .screen_effect = 0,
-    .burst_soften = 1,
     .inset_corner = 0, .inset_opacity = 100, .rear_touch = 0, .stick_deadzone = 2, .r_toggle = 0,
     .fast_forward = 2, .camera_stick = 1, .camera_speed = 2,
     .camera_invert_x = 0, .camera_invert_y = 0, .camera_follow = 0, .dpad_deck = 1, .show_fps = 0, .volume = 100,
@@ -139,9 +138,6 @@ void config_save(void)
                "hud = %d\n\n", kh_config.hud);
     fprintf(f, "# Screen effect: 0 none, 1 scanlines, 2 LCD grid.\n"
                "screen_effect = %d\n\n", kh_config.screen_effect);
-    fprintf(f, "# 1: for 3 s after an enemy is defeated, the translucent veil some enemies (the\n"
-               "# Possessor) lay over the whole screen is not drawn (no white flash); 0: it is.\n"
-               "burst_soften = %d\n\n", kh_config.burst_soften);
     fprintf(f, "# Small screen: corner 0 top-right, 1 top-left, 2 bottom-right, 3 bottom-left;\n"
                "# opacity 50 to 100.\n"
                "inset_corner = %d\ninset_opacity = %d\n\n", kh_config.inset_corner,
@@ -254,8 +250,6 @@ static void set(const char *k, const char *v, int version)
         kh_config.show_fps = atoi(v) != 0;
     else if (!strcmp(k, "volume"))
         kh_config.volume = clampi(atoi(v), 0, 100);
-    else if (!strcmp(k, "burst_soften"))
-        kh_config.burst_soften = atoi(v) != 0;
     else if (!strcmp(k, "hud"))
         kh_config.hud = clampi(atoi(v), 0, 2);
     else if (!strcmp(k, "screen_effect"))
@@ -372,13 +366,13 @@ void config_load(void)
     kh_log_verbose = kh_config.debug;
     LOG("config: render_scale %d, fps %d, aspect %d, layout %d, inset %d, texture_filter %d, "
         "camera %d/%d, camera_follow %d, dpad_deck %d, volume %d, debug %d, hud %d%% mode %d, "
-        "single %d, 2d filter %d, burst_soften %d",
+        "single %d, 2d filter %d",
         kh_config.render_scale,
         kh_config.frame_interpolation ? 60 : 30, kh_config.aspect, kh_config.layout,
         kh_config.inset_width, kh_config.texture_filter, kh_config.camera_stick,
         kh_config.camera_speed, kh_config.camera_follow, kh_config.dpad_deck, kh_config.volume,
         kh_config.debug, kh_config.hud_size, kh_config.hud, kh_config.single_screen,
-        kh_config.filter_2d, kh_config.burst_soften);
+        kh_config.filter_2d);
 }
 
 /* For the game's code (decomp, PLATFORM_VITA): config mission_balance */
