@@ -33,6 +33,9 @@ int video_on_inset(int px, int py);
 /* Experimental single screen (config single_screen): on, the top screen alone over the display
  * and the config's panels (parts of the bottom screen) over it; game.c turns it on in missions. */
 void video_set_single_screen(int on);
+/* config single_screen before the game (the title's overlay): one screen at a time, the
+ * title's menu on the left over the player's picture (ux0:data/khdays/menu_bg.png). */
+void video_set_single_menus(int on);
 /* The bottom screen's picture is all black: as the small screen it is left out (a black box in
  * the corner during the field's conversations looked like a fault). */
 void video_set_inset_blank(int blank);

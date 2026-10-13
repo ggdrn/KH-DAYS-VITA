@@ -99,9 +99,9 @@ void config_save(void)
                "# keep up, back at render_scale when it can. 0 off (always render_scale), 1 on.\n"
                "dynamic_res = %d\n\n", kh_config.dynamic_res);
     fprintf(f, "# Experimental: in a story mission with a partner, touch the partner's HUD to\n"
-               "# play as the partner (Roxas's panels, its own HP and weapon; the AI plays\n"
-               "# Roxas); touch it again, a scene that needs Roxas or the partner falling gives\n"
-               "# him back. 0 off, 1 on.\n"
+               "# play as the partner (Roxas's deck and his weapon's stats, its own HP and\n"
+               "# moves; the AI plays Roxas); touch it again, a scene that needs Roxas or the\n"
+               "# partner falling gives him back. 0 off, 1 on.\n"
                "partner_swap = %d\n\n", kh_config.partner_swap);
     fprintf(f, "# How the large screen fills the display: wide (the 3D drawn for 16:9 in the\n"
                "# field, true proportions), stretch (the DS picture stretched), 4:3 (as on the\n"
@@ -173,7 +173,10 @@ void config_save(void)
                "language = %d\n\n", kh_config.language);
     fprintf(f, "# Experimental single screen: in missions, the top screen alone over the whole\n"
                "# display, parts of the bottom screen as panels over it (touch a panel to touch\n"
-               "# the DS screen there). single_screen 0 off, 1 on; panel_opacity 50 to 100.\n"
+               "# the DS screen there); before the game, the logos one at a time and the\n"
+               "# title's menu on the left over your own picture, ux0:data/khdays/menu_bg.png\n"
+               "# (or .jpg; none comes with the port). single_screen 0 off, 1 on;\n"
+               "# panel_opacity 50 to 100.\n"
                "single_screen = %d\npanel_opacity = %d\n", kh_config.single_screen,
             kh_config.panel_opacity);
     fprintf(f, "# Panels: sx sy sw sh (the rectangle on the DS bottom screen, 256x192), anchor\n"

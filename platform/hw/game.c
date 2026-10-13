@@ -666,6 +666,10 @@ static void present(void)
     const int single = kh_config.single_screen && (!dual || dual_top_only) && a_on_top &&
                        kh_overlay_loaded(22);
     video_set_single_screen(single);
+    /* and before the game (the title's overlay, ov000: the logos, the title, its menus): one
+     * screen at a time, the title's menu over the player's picture */
+    video_set_single_menus(kh_config.single_screen && !dual && kh_overlay_loaded(0) &&
+                           !kh_overlay_loaded(22));
     /* a tutorial page (Ov002_OpenTutorialPage leaves the sub engine with BG2 and BG3 alone,
      * which nothing else in the field does) is shown whole; while the game is paused the bottom
      * screen is drawn without the fade it gets behind the pause menu, the panels being part of

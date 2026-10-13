@@ -31,6 +31,10 @@ or No$GBA, and DeSmuME `.dsv` files, can be copied there.
 
 Settings: `ux0:data/khdays/config.ini`, or in game with **L+R+Select**.
 
+Single screen (port menu, beta): before the game, the title's menu is shown on the left over a
+picture of your own, `ux0:data/khdays/menu_bg.png` (or `.jpg`); none comes with the port.
+Characters on the right half of the picture stay clear of the menu.
+
 ## Controls
 
 | Vita | DS / port |
@@ -73,4 +77,5 @@ ROM bytes go into the build. Changes to the game code are made in `build/decomp`
 ## Legal
 
 This repository holds only the port's own code, tools and a patch against the decomp: no ROM,
-no game assets, no Sony modules. Kingdom Hearts is a trademark of Disney and Square Enix.
+no game assets, no Sony modules. `platform/compat/stb_image.h` is Sean Barrett's stb_image
+(public domain or MIT, at the user's choice), used to read the single screen's menu picture. Kingdom Hearts is a trademark of Disney and Square Enix.

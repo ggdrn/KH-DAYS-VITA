@@ -2,6 +2,7 @@
 
 #include "config.h"
 #include "log.h"
+#include "menubg.h"
 #include "paths.h"
 #include "threadstat.h"
 
@@ -744,6 +745,14 @@ static void run_capture(void)
 /* Experimental single screen (config single_screen, game.c decides when): the top screen alone
  * over the display, and the config's panels -- rectangles of the bottom screen -- over it. */
 static int s_single;
+/* config single_screen before the game (the title's overlay: the logos, the title and its
+ * menus): one screen at a time -- the one with something on it, alone in the middle; both,
+ * the title's menu (the bottom screen) on the left over the player's picture (menubg.c) */
+static int s_menus;
+static int s_menus_layout = -1; /* 0 the top screen alone, 1 the bottom one, 2 the menu */
+static int s_blank[2];
+static GLuint s_menubg_tex;
+static int s_menubg_tried;
 /* the bottom screen is all black (the field's conversations): as the small screen, not shown */
 static int s_inset_blank;
 static int s_tutorial; /* the bottom screen holds a tutorial page: shown whole, in the middle */
@@ -853,6 +862,90 @@ static void compute_layout(void)
         s_rect[1] = (ScreenRect){ 0, 0, DISPLAY_W, DISPLAY_H };
         s_inset = -1;
     }
+}
+
+void video_set_single_menus(int on)
+{
+    on = on != 0;
+    if (on == s_menus)
+        return;
+    s_menus = on;
+    s_menus_layout = -1;
+    s_blank[0] = s_blank[1] = 0;
+    compute_layout();
+}
+
+/* a screen of one colour (a logo faded out, a screen the game leaves black) */
+static int screen_blank(const uint32_t *p)
+{
+    const uint32_t c = p[0] & 0xffffffu;
+    int x, y;
+    for (y = 4; y < DS_SCREEN_H; y += 8)
+        for (x = 4; x < DS_SCREEN_W; x += 8)
+            if ((p[y * DS_SCREEN_W + x] & 0xffffffu) != c)
+                return 0;
+    return 1;
+}
+
+static void menus_layout(const uint32_t *const src[2])
+{
+    const ScreenRect none = { 0, 0, 0, 0 };
+    const ScreenRect alone = kh_config.aspect == KH_ASPECT_STRETCH
+                                 ? (ScreenRect){ 0, 0, DISPLAY_W, DISPLAY_H }
+                                 : (ScreenRect){ (DISPLAY_W - 725) / 2, 0, 725, 544 };
+    int k, top, bottom, l;
+    for (k = 0; k < 2; k++)
+        if (src[k])
+            s_blank[k] = screen_blank(src[k]);
+    /* the 3D's screen counts as drawn whatever its 2D */
+    top = !s_blank[0] || s_3d_screen == 0;
+    bottom = !s_blank[1] || s_3d_screen == 1;
+    l = top && bottom ? 2 : bottom ? 1 : 0;
+    if (l == 2) {
+        /* the menu on the left, under the picture's logo, clear of its characters */
+        s_rect[0] = none;
+        s_rect[1] = (ScreenRect){ 48, 196, 384, 288 };
+        if (!s_menubg_tried) {
+            uint32_t *px;
+            s_menubg_tried = 1;
+            px = menubg_load(DISPLAY_W, DISPLAY_H);
+            if (px) {
+                s_menubg_tex = new_texture(DISPLAY_W, DISPLAY_H, GL_LINEAR);
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, DISPLAY_W, DISPLAY_H, GL_RGBA,
+                                GL_UNSIGNED_BYTE, px);
+                free(px);
+            }
+        }
+    } else {
+        s_rect[l] = alone;
+        s_rect[!l] = none;
+    }
+    s_inset = -1;
+    if (l != s_menus_layout)
+        LOG("video: single screen before the game: %s", l == 2 ? "the menu over the picture"
+                                                        : l ? "the bottom screen" : "the top screen");
+    s_menus_layout = l;
+}
+
+/* the player's picture over the whole display (the menus' background) */
+static void draw_menubg(void)
+{
+    const float v[16] = { -1, 1, 0, 0, 1, 1, 1, 0, -1, -1, 0, 1, 1, -1, 1, 1 };
+    if (!s_menubg_tex || !s_overlay_prog)
+        return;
+    glBindTexture(GL_TEXTURE_2D, s_menubg_tex);
+    glUseProgram(s_overlay_prog);
+    glBindBuffer(GL_ARRAY_BUFFER, s_compose_vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(v), v, GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, (void *)0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, (void *)8);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glDisableVertexAttribArray(0);
+    glDisableVertexAttribArray(1);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glUseProgram(0);
 }
 
 void video_set_single_screen(int on)
@@ -1127,6 +1220,8 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
         s_pending = -1;
         compute_layout();
     }
+    if (s_menus && !s_single)
+        menus_layout(src);
     if (s_cap.pending)
         run_capture();
     seg_mark(0);
@@ -1134,6 +1229,8 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
     glViewport(0, 0, DISPLAY_W, DISPLAY_H);
     glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
+    if (s_menus && !s_single && s_menus_layout == 2)
+        draw_menubg();
     seg_mark(1);
     for (k = 0; k < 2; k++) {
         /* the large screen first, the inset over it */
@@ -1163,7 +1260,14 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
             /* a plain 2D screen, through the same pass for the effect and the opacity */
             float v[16];
             screen_quad(i, v);
+            if (s_menus && !s_single && s_menus_layout == 2) {
+                /* the title's menu over the picture: a window with rounded corners */
+                s_panel[1] = 10.0f;
+                s_panel[2] = (float)s_rect[i].w, s_panel[3] = (float)s_rect[i].h;
+                s_panel_rect[0] = 0, s_panel_rect[1] = 0, s_panel_rect[2] = 1, s_panel_rect[3] = 1;
+            }
             compose_pass(v, s_tex_cur(i), 0, 0, 0, 0, 1.0f, screen_alpha(i), FILTER_2D);
+            memset(s_panel, 0, sizeof(s_panel));
         } else {
             draw_quad(&s_rect[i]);
         }
