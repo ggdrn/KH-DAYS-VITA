@@ -13,9 +13,10 @@
 static const KhConfig s_defaults = {
     .render_scale = 3, .layout = 0, .inset_width = 224, .aspect = KH_ASPECT_WIDE,
     .frame_interpolation = 0, .dynamic_res = 1, .partner_swap = 0, .texture_filter = 1, .filter_2d = 2, .hud = 0, .screen_effect = 0,
+    .burst_soften = 1,
     .inset_corner = 0, .inset_opacity = 100, .rear_touch = 0, .stick_deadzone = 2, .r_toggle = 0,
     .fast_forward = 2, .camera_stick = 1, .camera_speed = 2,
-    .camera_invert_x = 0, .camera_invert_y = 0, .dpad_deck = 1, .show_fps = 0, .volume = 100,
+    .camera_invert_x = 0, .camera_invert_y = 0, .camera_follow = 0, .dpad_deck = 1, .show_fps = 0, .volume = 100,
     .button_icons = 1, .confirm_cross = 1, .single_screen = 0, .panel_opacity = 90, .language = 1, .hud_size = 100,
     /* the mission screen's bottom-screen parts (sx sy sw sh anchor dx dy scale), measured on
      * the DS's bottom screen in a mission: the INFORMATION bar top-left, the map in the
@@ -122,6 +123,9 @@ void config_save(void)
                "camera_stick = %d\ncamera_speed = %d\ncamera_invert_x = %d\ncamera_invert_y = %d\n\n",
             kh_config.camera_stick, kh_config.camera_speed, kh_config.camera_invert_x,
             kh_config.camera_invert_y);
+    fprintf(f, "# With the right stick on: 0 the camera does not swing round by itself when the\n"
+               "# player walks left or right (as in the hub), 1 it does, as on the DS.\n"
+               "camera_follow = %d\n\n", kh_config.camera_follow);
     fprintf(f, "# 1: in the field the d-pad moves the command deck's cursor (the left stick\n"
                "# walks); 0: the d-pad is the DS d-pad everywhere.\n"
                "dpad_deck = %d\n\n", kh_config.dpad_deck);
@@ -130,10 +134,14 @@ void config_save(void)
     fprintf(f, "# Sound volume, 0 to 100 (%% of the game's own).\n"
                "volume = %d\n\n", kh_config.volume);
     fprintf(f, "# Widescreen field: hud = 0 stretches the 2D (HUD) over 16:9, 1 keeps it 4:3 in\n"
-               "# the middle over the wide 3D.\n"
+               "# the middle over the wide 3D, 2 keeps it 4:3 with the HUD (commands, HP, chain)\n"
+               "# at the display's edges.\n"
                "hud = %d\n\n", kh_config.hud);
     fprintf(f, "# Screen effect: 0 none, 1 scanlines, 2 LCD grid.\n"
                "screen_effect = %d\n\n", kh_config.screen_effect);
+    fprintf(f, "# 1: for 3 s after an enemy is defeated, translucent 3D effects do not stack (no\n"
+               "# white flash from the Possessor's burst); 0: they stack as before.\n"
+               "burst_soften = %d\n\n", kh_config.burst_soften);
     fprintf(f, "# Small screen: corner 0 top-right, 1 top-left, 2 bottom-right, 3 bottom-left;\n"
                "# opacity 50 to 100.\n"
                "inset_corner = %d\ninset_opacity = %d\n\n", kh_config.inset_corner,
@@ -238,14 +246,18 @@ static void set(const char *k, const char *v, int version)
         kh_config.camera_invert_x = atoi(v) != 0;
     else if (!strcmp(k, "camera_invert_y"))
         kh_config.camera_invert_y = atoi(v) != 0;
+    else if (!strcmp(k, "camera_follow"))
+        kh_config.camera_follow = atoi(v) != 0;
     else if (!strcmp(k, "dpad_deck"))
         kh_config.dpad_deck = atoi(v) != 0;
     else if (!strcmp(k, "show_fps"))
         kh_config.show_fps = atoi(v) != 0;
     else if (!strcmp(k, "volume"))
         kh_config.volume = clampi(atoi(v), 0, 100);
+    else if (!strcmp(k, "burst_soften"))
+        kh_config.burst_soften = atoi(v) != 0;
     else if (!strcmp(k, "hud"))
-        kh_config.hud = atoi(v) != 0;
+        kh_config.hud = clampi(atoi(v), 0, 2);
     else if (!strcmp(k, "screen_effect"))
         kh_config.screen_effect = clampi(atoi(v), 0, 2);
     else if (!strcmp(k, "inset_corner"))

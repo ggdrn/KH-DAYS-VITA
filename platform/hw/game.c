@@ -513,9 +513,17 @@ static void hud_after_2d(void)
 #define DEFEAT_TRACE_VB 120
 static volatile uint32_t s_defeat_vb;
 static volatile int s_defeats;
+/* config burst_soften: for BURST_VB VBlanks after any defeat, the 3D's translucent pixels do
+ * not stack whatever their polygon IDs (gpu3d kh_gpu3d_one_layer): a burst of particles of
+ * many IDs (the Possessor's) still came out as a white flash with the same-ID rule alone */
+#define BURST_VB 180
+static volatile uint32_t s_burst_vb;
+static volatile int s_burst_seen;
 
 void kh_vita_enemy_defeated(const void *enemy)
 {
+    s_burst_vb = s_vblanks;
+    s_burst_seen = 1;
     if (s_defeats >= DEFEAT_TRACES)
         return;
     s_defeat_vb = s_vblanks;
@@ -664,7 +672,8 @@ static void present(void)
      * upload and no pass over the screen more than without it (0.1.12-0.1.15 sorted the HUD
      * out with a layer map and a texture of its own, and lost up to 20 frames a second) */
     const int hud_wanted = (!dual || dual_top_only) && a_on_top && kh_overlay_loaded(22) &&
-                           PauseMenu_GetMode() == 0 && kh_config.hud_size < 100;
+                           PauseMenu_GetMode() == 0 &&
+                           (kh_config.hud_size < 100 || video_hud_edges());
     const int hud_on = hud_wanted && !s_dialog_open;
     {
         /* config partner_swap: a dialogue or a movie needs Roxas (Ov022_RefreshSlotRows); out
@@ -829,7 +838,8 @@ static void present(void)
         /* dual 3D: each frame takes its own screen's (gx3d.h) */
         kh_gx3d_dual = dual;
         kh_gx3d_wide_x = kh_gx3d_wide_screen[a_on_top ? 0 : 1];
-        /* config hud: the 2D kept 4:3 in the middle while the 3D is wide */
+        /* config hud: the 2D kept 4:3 in the middle while the 3D is wide (1), its HUD's
+         * corners then drawn at the display's edges (2) */
         video_set_hud_scale(kh_config.hud && kh_gx3d_wide_x < 0.999f ? kh_gx3d_wide_x : 1.0f);
     }
     {
@@ -845,6 +855,8 @@ static void present(void)
             if (dual && frame3d && frame3d->built_a_top == a_on_top)
                 s_dual_misbuilt++;
             defeat_trace(frame3d);
+            kh_gpu3d_one_layer = kh_config.burst_soften && s_burst_seen &&
+                                 s_vblanks - s_burst_vb < BURST_VB;
             kh_gpu3d_prepare(frame3d);
             s_cur.prep = (uint32_t)(sceKernelGetProcessTimeWide() - t);
             stage_max(&s_prep_max, s_cur.prep);

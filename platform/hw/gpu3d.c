@@ -646,16 +646,21 @@ static void clear_marks(void)
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 }
 
-/* a blended batch of polygon ID id about to be drawn: the marks of another ID cleared */
+volatile int kh_gpu3d_one_layer;
+
+/* a blended batch of polygon ID id about to be drawn: the marks of another ID cleared (with
+ * kh_gpu3d_one_layer, the marks are kept for the whole frame: one translucent layer a pixel) */
 static void marks_before(int id)
 {
-    if (s_marks_id != id)
+    if (s_marks_id != id && !kh_gpu3d_one_layer)
         clear_marks();
     s_marks_id = id;
 }
 
 static void marks_after(int first, int count)
 {
+    if (kh_gpu3d_one_layer)
+        return; /* never cleared before the frame's end, nothing to keep */
     if (s_nmarks == MARKS_MAX)
         clear_marks();
     s_marks[s_nmarks].first = first;

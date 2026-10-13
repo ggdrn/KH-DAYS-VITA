@@ -62,6 +62,8 @@ void video_overlay_changed(void);
 /* The 2D's horizontal scale on the 3D screen: 1, or < 1 to keep it 4:3 in the middle of a
  * widescreen 3D (config hud). */
 void video_set_hud_scale(float scale);
+/* config hud 2 with the 2D kept 4:3: the HUD's corners drawn at the display's edges. */
+int video_hud_edges(void);
 /* Lay the screens out again (after the port menu changed the aspect or the inset size). */
 void video_relayout(void);
 

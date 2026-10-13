@@ -117,6 +117,13 @@ int kh_vita_lockon_switch(void)
     return dir;
 }
 
+/* Ov002_Camera_UpdateFollow: whether the camera swings round by itself behind a walk to the
+ * left or right, as on the DS; not while the right stick turns it (config camera_follow) */
+int kh_vita_camera_follow(void)
+{
+    return !kh_config.camera_stick || kh_config.camera_follow;
+}
+
 /* request bits for this camera tick: each axis pulsed in proportion to its deflection */
 unsigned int kh_vita_camera_bits(void)
 {

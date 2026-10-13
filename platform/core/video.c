@@ -582,7 +582,9 @@ static void draw_composed(int screen)
 {
     float v[16];
     const float hud = screen == s_inset ? 1.0f : s_hud_scale;
-    const int shrink = s_hud_shrink && screen != s_inset && kh_config.hud_size < 100;
+    /* config hud 2: the 2D kept 4:3 in the middle, the HUD's corners at the display's edges */
+    const int edges = video_hud_edges() && screen != s_inset;
+    const int shrink = s_hud_shrink && screen != s_inset && (kh_config.hud_size < 100 || edges);
     screen_quad(screen, v);
     compose_pass(v, s_tex_cur(screen), 0, s_3d_tex, s_3d_bright, 0, hud, screen_alpha(screen),
                  FILTER_2D);
@@ -597,8 +599,10 @@ static void draw_composed(int screen)
             if (q[2] <= q[0] || bx[2] <= bx[0] || bx[3] <= bx[1])
                 continue;
             /* the corner shrunk to its own edges, then only the box the HUD fills in it */
-            const float zx0 = r->x + ((q[0] / DS_SCREEN_W - 0.5f) * hud + 0.5f) * r->w;
-            const float zx1 = r->x + ((q[2] / DS_SCREEN_W - 0.5f) * hud + 0.5f) * r->w;
+            /* at the edges, each corner moved out by the width the 3D has beside the 4:3 2D */
+            const float shift = edges ? (1.0f - hud) * 0.5f * r->w * ((b & 1) ? 1.0f : -1.0f) : 0.0f;
+            const float zx0 = r->x + ((q[0] / DS_SCREEN_W - 0.5f) * hud + 0.5f) * r->w + shift;
+            const float zx1 = r->x + ((q[2] / DS_SCREEN_W - 0.5f) * hud + 0.5f) * r->w + shift;
             const float zy0 = r->y + q[1] / DS_SCREEN_H * r->h, zy1 = r->y + q[3] / DS_SCREEN_H * r->h;
             const float sx = (zx1 - zx0) / (q[2] - q[0]) * k, sy = (zy1 - zy0) / (q[3] - q[1]) * k;
             const float ox = (b & 1) ? zx1 - (q[2] - q[0]) * sx : zx0; /* right ones keep their right edge */
@@ -625,6 +629,11 @@ static void draw_composed(int screen)
 void video_set_hud_scale(float scale)
 {
     s_hud_scale = scale;
+}
+
+int video_hud_edges(void)
+{
+    return kh_config.hud == 2 && s_hud_scale < 0.999f;
 }
 
 static GLuint new_texture(int w, int h, GLint filter)
@@ -883,8 +892,14 @@ int video_map_top(int px, int py, int *x, int *y)
         return 0;
     if (s_inset == 0 && video_on_inset(px, py))
         return 0;
-    /* the 2D kept 4:3 in the middle of a wide 3D (config hud) */
+    /* the 2D kept 4:3 in the middle of a wide 3D (config hud); with the HUD's corners at the
+     * edges (config hud 2, while they are drawn there), each half of the display reads the 4:3
+     * picture held to its own edge */
     u = ((float)(px - r->x) / (float)r->w - 0.5f) / s_hud_scale + 0.5f;
+    if (s_hud_shrink && video_hud_edges()) {
+        const float f = (float)(px - r->x) / (float)r->w;
+        u = f < 0.5f ? f / s_hud_scale : 1.0f - (1.0f - f) / s_hud_scale;
+    }
     if (u < 0.0f || u >= 1.0f)
         return 0;
     *x = (int)(u * DS_SCREEN_W);
