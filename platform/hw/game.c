@@ -513,9 +513,9 @@ static void hud_after_2d(void)
 #define DEFEAT_TRACE_VB 120
 static volatile uint32_t s_defeat_vb;
 static volatile int s_defeats;
-/* config burst_soften: for BURST_VB VBlanks after any defeat, the 3D's translucent pixels do
- * not stack whatever their polygon IDs (gpu3d kh_gpu3d_one_layer): a burst of particles of
- * many IDs (the Possessor's) still came out as a white flash with the same-ID rule alone */
+/* config burst_soften: for BURST_VB VBlanks after any defeat, a translucent polygon over the
+ * whole screen is left out (gpu3d kh_gpu3d_drop_veil): the Possessor's dying veil, seen as a
+ * white flash (0.7.22's trace: from 7 VBlanks after the defeat, for about 45) */
 #define BURST_VB 180
 static volatile uint32_t s_burst_vb;
 static volatile int s_burst_seen;
@@ -855,7 +855,7 @@ static void present(void)
             if (dual && frame3d && frame3d->built_a_top == a_on_top)
                 s_dual_misbuilt++;
             defeat_trace(frame3d);
-            kh_gpu3d_one_layer = kh_config.burst_soften && s_burst_seen &&
+            kh_gpu3d_drop_veil = kh_config.burst_soften && s_burst_seen &&
                                  s_vblanks - s_burst_vb < BURST_VB;
             kh_gpu3d_prepare(frame3d);
             s_cur.prep = (uint32_t)(sceKernelGetProcessTimeWide() - t);

@@ -16705,7 +16705,7 @@ index 09328f6ad..b5d206002 100644
      int nOwner;                         /* +0x30 */
  } Ov002PoolEntry;
 diff --git a/src/overlays/scenes/ov002_field/Ov002_Camera_UpdateFollow.c b/src/overlays/scenes/ov002_field/Ov002_Camera_UpdateFollow.c
-index a34a3af7b..c0d8eb1f3 100644
+index a34a3af7b..b1500b624 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_Camera_UpdateFollow.c
 +++ b/src/overlays/scenes/ov002_field/Ov002_Camera_UpdateFollow.c
 @@ -1,3 +1,13 @@
@@ -16731,7 +16731,7 @@ index a34a3af7b..c0d8eb1f3 100644
    unsigned char unknown08[4];
    int kind;
    unsigned char unknown10[0x10];
-@@ -97,6 +107,11 @@ extern void Ov002_TickScriptedCamera(void);
+@@ -97,6 +107,12 @@ extern void Ov002_TickScriptedCamera(void);
  extern void Ov002_ResetCamera(void);
  extern unsigned char data_0204be04;
  extern unsigned short gPadHeld;
@@ -16739,11 +16739,12 @@ index a34a3af7b..c0d8eb1f3 100644
 +extern unsigned int kh_vita_camera_bits(void);
 +extern void kh_vita_camera_state(int manual, unsigned int bits);
 +extern int kh_vita_camera_follow(void);
++extern void kh_vita_camera_auto_turn(int source, int blocked);
 +#endif
  extern unsigned short gPadPressed;
  extern unsigned char data_0204c240;
  extern const short data_0203d210[];
-@@ -232,6 +247,10 @@ Ov002NextFn Ov002_Camera_UpdateFollow(void)
+@@ -232,6 +248,10 @@ Ov002NextFn Ov002_Camera_UpdateFollow(void)
    if (bVar22) {
      Ov002_Camera_LeaveLookView();
    }
@@ -16754,7 +16755,7 @@ index a34a3af7b..c0d8eb1f3 100644
    if ((piVar7[0xe] & 0x2000U) == 0)
      goto request_input;
    uVar4 = gPadHeld;
-@@ -493,6 +512,11 @@ LAB_arm9_ov002__0204d9ac:
+@@ -493,6 +513,11 @@ LAB_arm9_ov002__0204d9ac:
        if (((iVar11 != 2) || (sVar5 = Session_GetLocalPlayerIndex(), sVar5 != 0)) &&
           (((gPadPressed & 0x100) != 0 && ((gPadPressed & 0x200) == 0))))
        {
@@ -16766,7 +16767,7 @@ index a34a3af7b..c0d8eb1f3 100644
          piVar7[0xe] = piVar7[0xe] | 8;
        }
        if ((piVar7[0xe] & 0x4000U) != 0) {
-@@ -561,9 +585,17 @@ LAB_arm9_ov002__0204d9ac:
+@@ -561,9 +586,17 @@ LAB_arm9_ov002__0204d9ac:
        piVar7[0xe] = (uVar16 | 0x18) & 0xfffffdff;
      }
      uVar20 = 0;
@@ -16784,7 +16785,7 @@ index a34a3af7b..c0d8eb1f3 100644
    }
    iVar11 = func_ov022_020886d0(idx);
    if (iVar11 != 0) {
-@@ -606,7 +638,14 @@ LAB_arm9_ov002__0204d9ac:
+@@ -606,7 +639,14 @@ LAB_arm9_ov002__0204d9ac:
      *piVar7 = data_0203d210[((int)(uint)*(ushort *)(piVar7 + 0x28) >> 4) * 2];
      piVar7[1] = data_0203d210[((int)(uint)*(ushort *)((int)piVar7 + 0xa2) >> 4) * 2 + 1];
    }
@@ -16799,9 +16800,15 @@ index a34a3af7b..c0d8eb1f3 100644
      if ((piVar7[0xe] & 2U) != 0) {
        iVar11 = Ov022_GetGlobalPlusE0();
        if (((((uVar20 & 4) != 0) && ((piVar7[0xf] & 0x10U) == 0)) ||
-@@ -677,6 +716,12 @@ LAB_arm9_ov002__0204d9ac:
+@@ -676,7 +716,18 @@ LAB_arm9_ov002__0204d9ac:
+         piVar7[0x1f] = iVar11;
          uVar18 = Ov002_ComputeModeScaledFixedPoint();
          piVar7[0x2a] = uVar18;
++#ifdef PLATFORM_VITA
++        if ((piVar7[0xe] & 0x10000000U) == 0 && !kh_vita_camera_follow() &&
++            (gPadHeld & 0x30) != 0)
++          kh_vita_camera_auto_turn(0, 1);
++#endif
          if (((piVar7[0xe] & 0x10000000U) == 0) &&
 +#ifdef PLATFORM_VITA
 +           /* the camera swung round behind a walk to the left or right (not in the hub, flag
@@ -16812,6 +16819,16 @@ index a34a3af7b..c0d8eb1f3 100644
             (((gPadHeld & 0x20) != 0 || ((gPadHeld & 0x10) != 0))))
          {
            GetFrameRateMode();
+@@ -688,6 +739,9 @@ LAB_arm9_ov002__0204d9ac:
+           }
+           piVar7[0x37] = iVar11;
+           if (iVar11 > 0x333) {
++#ifdef PLATFORM_VITA
++            kh_vita_camera_auto_turn(0, 0);
++#endif
+             iVar12 = piVar7[0x16];
+             if ((gPadHeld & 0x20) != 0) {
+               piVar7[0x20] = iVar12 + 0x300U & 0xffff;
 diff --git a/src/overlays/scenes/ov002_field/Ov002_CancelQueuedLoads.c b/src/overlays/scenes/ov002_field/Ov002_CancelQueuedLoads.c
 index 88834eb06..594e376f1 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_CancelQueuedLoads.c
@@ -18163,7 +18180,7 @@ index 779179365..0691779d1 100644
      int pad0c;
      int nPending;                       /* +0x10 */
 diff --git a/src/overlays/scenes/ov002_field/Ov002_TickCamera.c b/src/overlays/scenes/ov002_field/Ov002_TickCamera.c
-index 192cf2a6d..36c475c63 100644
+index 192cf2a6d..d0b3665a6 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_TickCamera.c
 +++ b/src/overlays/scenes/ov002_field/Ov002_TickCamera.c
 @@ -1,3 +1,5 @@
@@ -18172,6 +18189,44 @@ index 192cf2a6d..36c475c63 100644
  
  #include "nitro/fx_types.h"
  
+@@ -42,6 +44,12 @@ extern int Ov002_UpdateCameraDistance(int nSlot);
+ extern unsigned char data_0204be04;
+ extern unsigned short gPadPressed;
+ extern VecFx32 data_020475ac;
++#ifdef PLATFORM_VITA
++/* platform/core/input.c: the camera's own turns left to the right stick (config camera_follow,
++ * not while locked on), and counted */
++extern int kh_vita_camera_follow(void);
++extern void kh_vita_camera_auto_turn(int source, int blocked);
++#endif
+ 
+ static inline int FX_Mul(int a, int b)
+ {
+@@ -186,6 +194,10 @@ void *Ov002_TickCamera(void)
+                 VEC_Normalize(&vDelta, &vDelta);
+             }
+             nAngle = FX_Atan2(vDelta.x, vDelta.z);
++#ifdef PLATFORM_VITA
++            kh_vita_camera_auto_turn(1, !kh_vita_camera_follow());
++            if (kh_vita_camera_follow())
++#endif
+             *(int *)(pCam + 0x80) =
+                 Ov002_TurnAngleToward(*(int *)(pCam + 0x80), nAngle);
+             if ((*(unsigned int *)(pCam + 0x38) & 0x100) == 0
+@@ -235,7 +247,12 @@ void *Ov002_TickCamera(void)
+                 *(int *)(pCam + 0x88) =
+                     Ov002_GetCameraDistance(*(int *)(pCam + 0x44));
+             }
+-            if (Ov002_IsPointOnScreen(&nBits, pObj, 0x50, 0) == 0) {
++            if (Ov002_IsPointOnScreen(&nBits, pObj, 0x50, 0) == 0
++#ifdef PLATFORM_VITA
++                && (kh_vita_camera_auto_turn(2, !kh_vita_camera_follow()),
++                    kh_vita_camera_follow())
++#endif
++                ) {
+                 nAngle = *(int *)(pCam + 0x58);
+                 func_0201653c(pObj, &nScreenA, &nScreenB);
+                 func_020166c4(nScreenA, nScreenB, (int *)&vDirA,
 diff --git a/src/overlays/scenes/ov002_field/Ov002_TickEntryPool.c b/src/overlays/scenes/ov002_field/Ov002_TickEntryPool.c
 index 23fffaed3..117d26914 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_TickEntryPool.c

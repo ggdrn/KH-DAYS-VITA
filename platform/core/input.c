@@ -117,11 +117,40 @@ int kh_vita_lockon_switch(void)
     return dir;
 }
 
-/* Ov002_Camera_UpdateFollow: whether the camera swings round by itself behind a walk to the
- * left or right, as on the DS; not while the right stick turns it (config camera_follow) */
+/* Ov002_Camera_UpdateFollow, Ov002_TickCamera: whether the camera turns by itself (behind a
+ * walk to the left or right, or after what the game aims at), as on the DS; not while the
+ * right stick turns it (config camera_follow), unless locked on */
 int kh_vita_camera_follow(void)
 {
-    return !kh_config.camera_stick || kh_config.camera_follow;
+    return !kh_config.camera_stick || kh_config.camera_follow || kh_lockon_active;
+}
+
+/* diagnostics: the camera's own turns (the target yaw set by the game, not by an input), by
+ * source: 0 Ov002_Camera_UpdateFollow's turn behind a sideways walk, 1 Ov002_TickCamera
+ * after a held point, 2 Ov002_TickCamera after what it aims at; blocked: left out
+ * (kh_vita_camera_follow). Logged every 10 s while any came (at most 60 lines a run). */
+void kh_vita_camera_auto_turn(int source, int blocked)
+{
+    static uint32_t n[3][2], logged;
+    static uint64_t since;
+    const uint64_t now = sceKernelGetProcessTimeWide();
+    if (source < 0 || source > 2)
+        return;
+    if (!since)
+        since = now;
+    n[source][blocked != 0]++;
+    if (now - since >= 10000000u) {
+        if (logged < 60) {
+            logged++;
+            LOG("camera: own turns in 10 s (made/left out): behind a walk %u/%u, held point "
+                "%u/%u, aimed at %u/%u; right stick %d, camera_follow %d%s",
+                (unsigned)n[0][0], (unsigned)n[0][1], (unsigned)n[1][0], (unsigned)n[1][1],
+                (unsigned)n[2][0], (unsigned)n[2][1], kh_config.camera_stick,
+                kh_config.camera_follow, kh_lockon_active ? " (locked on)" : "");
+        }
+        memset(n, 0, sizeof(n));
+        since = now;
+    }
 }
 
 /* request bits for this camera tick: each axis pulsed in proportion to its deflection */

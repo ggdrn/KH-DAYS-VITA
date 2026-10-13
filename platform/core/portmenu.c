@@ -53,7 +53,7 @@ static const Item s_video[] = {
     { IT_TEXFILTER, 0, "Texture filter", "Smooth: bilinear filtering. Sharp: as on the DS." },
     { IT_FILTER2D, 0, "2D filter", "Sprites and text. Sharp: square pixels, smooth edges." },
     { IT_EFFECT, 0, "Screen effect", "Scanlines or an LCD grid over the DS's pixels." },
-    { IT_BURST, 0, "Soften defeat bursts", "No white flash when some enemies (Possessor) burst." },
+    { IT_BURST, 0, "Remove defeat flash", "No white flash when some enemies (Possessor) die." },
     { IT_SHOWFPS, 0, "Show FPS", "A frame-rate counter in the top-left corner." },
 };
 static const Item s_screen[] = {

@@ -598,6 +598,30 @@ static void apply_state(const DrawState *st)
     }
 }
 
+volatile int kh_gpu3d_drop_veil;
+
+/* the share of the screen a polygon's bounding box covers, 0 to 1 (vertices behind the eye
+ * left out, the rest clamped to the screen) */
+static float screen_share(const KhGxFrame *f, const KhGxPolygon *p)
+{
+    float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
+    int k;
+    for (k = 0; k < p->count; k++) {
+        const KhGxVertex *v = &f->vtx[p->v[k]];
+        float x, y;
+        if (!(v->w > 0))
+            continue;
+        x = v->x / v->w, y = v->y / v->w;
+        x = x < -1 ? -1 : x > 1 ? 1 : x;
+        y = y < -1 ? -1 : y > 1 ? 1 : y;
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+    }
+    return x1 > x0 && y1 > y0 ? (x1 - x0) * (y1 - y0) / 4.0f : 0.0f;
+}
+
 /* The frame's draws as last sent: the same frame is drawn twice at 60 fps (its halfway mix,
  * then itself), with other vertices only; the second time these are sent again as they are,
  * with no polygon sorted, grouped or indexed anew (that was half of the 3D's CPU time). */
@@ -646,21 +670,16 @@ static void clear_marks(void)
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 }
 
-volatile int kh_gpu3d_one_layer;
-
-/* a blended batch of polygon ID id about to be drawn: the marks of another ID cleared (with
- * kh_gpu3d_one_layer, the marks are kept for the whole frame: one translucent layer a pixel) */
+/* a blended batch of polygon ID id about to be drawn: the marks of another ID cleared */
 static void marks_before(int id)
 {
-    if (s_marks_id != id && !kh_gpu3d_one_layer)
+    if (s_marks_id != id)
         clear_marks();
     s_marks_id = id;
 }
 
 static void marks_after(int first, int count)
 {
-    if (kh_gpu3d_one_layer)
-        return; /* never cleared before the frame's end, nothing to keep */
     if (s_nmarks == MARKS_MAX)
         clear_marks();
     s_marks[s_nmarks].first = first;
@@ -1054,6 +1073,15 @@ static unsigned draw_frame(const KhGxFrame *f, const KhGxVertex *vtx)
             ps->id = (int)((p->attr >> 24) & 63);
             if (alpha == 0) {
                 s_stats.skipped++; /* wireframe: not yet */
+                s_pkey[i] = 0xffffffffu;
+                continue;
+            }
+            /* config burst_soften: the veil some enemies (the Possessor) lay over the whole
+             * screen as they die, translucent and fading out over some 45 VBlanks (0.7.22's
+             * log: one polygon, 100% of the screen, alpha 29 down to 1), came out as a white
+             * flash: left out for a moment after each defeat (game.c) */
+            if (kh_gpu3d_drop_veil && alpha < 31 && screen_share(f, p) >= 0.9f) {
+                s_stats.skipped++;
                 s_pkey[i] = 0xffffffffu;
                 continue;
             }
@@ -1552,23 +1580,10 @@ void kh_gpu3d_describe(const KhGxFrame *f, char *out, int n)
     }
     for (i = 0; i < f->npoly; i++) {
         const KhGxPolygon *p = &f->poly[i];
-        float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f, area;
+        float area;
         modes[(p->attr >> 4) & 3]++;
         tr += p->translucent;
-        for (k = 0; k < p->count; k++) {
-            const KhGxVertex *v = &f->vtx[p->v[k]];
-            float x, y;
-            if (!(v->w > 0))
-                continue;
-            x = v->x / v->w, y = v->y / v->w;
-            x = x < -1 ? -1 : x > 1 ? 1 : x;
-            y = y < -1 ? -1 : y > 1 ? 1 : y;
-            if (x < x0) x0 = x;
-            if (x > x1) x1 = x;
-            if (y < y0) y0 = y;
-            if (y > y1) y1 = y;
-        }
-        area = x1 > x0 && y1 > y0 ? (x1 - x0) * (y1 - y0) / 4.0f : 0.0f;
+        area = screen_share(f, p);
         if (area > big_area)
             big_area = area, big = i;
     }

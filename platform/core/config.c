@@ -139,8 +139,8 @@ void config_save(void)
                "hud = %d\n\n", kh_config.hud);
     fprintf(f, "# Screen effect: 0 none, 1 scanlines, 2 LCD grid.\n"
                "screen_effect = %d\n\n", kh_config.screen_effect);
-    fprintf(f, "# 1: for 3 s after an enemy is defeated, translucent 3D effects do not stack (no\n"
-               "# white flash from the Possessor's burst); 0: they stack as before.\n"
+    fprintf(f, "# 1: for 3 s after an enemy is defeated, the translucent veil some enemies (the\n"
+               "# Possessor) lay over the whole screen is not drawn (no white flash); 0: it is.\n"
                "burst_soften = %d\n\n", kh_config.burst_soften);
     fprintf(f, "# Small screen: corner 0 top-right, 1 top-left, 2 bottom-right, 3 bottom-left;\n"
                "# opacity 50 to 100.\n"
@@ -371,12 +371,14 @@ void config_load(void)
     }
     kh_log_verbose = kh_config.debug;
     LOG("config: render_scale %d, fps %d, aspect %d, layout %d, inset %d, texture_filter %d, "
-        "camera %d/%d, dpad_deck %d, volume %d, debug %d, hud %d%%, single %d, 2d filter %d",
+        "camera %d/%d, camera_follow %d, dpad_deck %d, volume %d, debug %d, hud %d%% mode %d, "
+        "single %d, 2d filter %d, burst_soften %d",
         kh_config.render_scale,
         kh_config.frame_interpolation ? 60 : 30, kh_config.aspect, kh_config.layout,
         kh_config.inset_width, kh_config.texture_filter, kh_config.camera_stick,
-        kh_config.camera_speed, kh_config.dpad_deck, kh_config.volume, kh_config.debug,
-        kh_config.hud_size, kh_config.single_screen, kh_config.filter_2d);
+        kh_config.camera_speed, kh_config.camera_follow, kh_config.dpad_deck, kh_config.volume,
+        kh_config.debug, kh_config.hud_size, kh_config.hud, kh_config.single_screen,
+        kh_config.filter_2d, kh_config.burst_soften);
 }
 
 /* For the game's code (decomp, PLATFORM_VITA): config mission_balance */

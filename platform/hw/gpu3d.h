@@ -80,8 +80,8 @@ void kh_gpu3d_describe(const KhGxFrame *f, char *out, int n);
 
 /* config debug = 3 (game.c): the 3D not drawn, the last picture kept */
 extern volatile int kh_gpu3d_test_skip;
-/* game.c, config burst_soften: 1 for a moment after an enemy's defeat, no translucent pixel
- * drawn over another translucent one of any polygon ID (the DS's rule holds within an ID) */
-extern volatile int kh_gpu3d_one_layer;
+/* game.c, config burst_soften: 1 for a moment after an enemy's defeat, translucent polygons
+ * over (nearly) the whole screen left out (the Possessor's dying veil, seen as a white flash) */
+extern volatile int kh_gpu3d_drop_veil;
 
 #endif
