@@ -63,7 +63,10 @@ python3 tools/rewrite_decomp.py
 python3 configure_vita.py --with-game --rom ../days.nds && ninja
 ```
 
-The VPK lands in `build/VPK/`. The ROM is read at configure time only for the overlay table; no
+The VPK lands in `build/VPK/`. After pulling changes, run the same four commands again:
+`setup.sh` brings `build/decomp` to the new patch by itself as long as it holds only what the
+last setup applied (a tree from before 0.7.27, or one with edits of its own: remove
+`build/decomp` first, or export the edits with `./export_patch.sh`). The ROM is read at configure time only for the overlay table; no
 ROM bytes go into the build. Changes to the game code are made in `build/decomp` under
 `PLATFORM_VITA` and exported with `./export_patch.sh`.
 
