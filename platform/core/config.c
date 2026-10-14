@@ -173,8 +173,8 @@ void config_save(void)
                "language = %d\n\n", kh_config.language);
     fprintf(f, "# Experimental single screen: in missions, the top screen alone over the whole\n"
                "# display, parts of the bottom screen as panels over it (touch a panel to touch\n"
-               "# the DS screen there); before the game, the logos one at a time and the\n"
-               "# title's menu on the left over your own picture, ux0:data/khdays/menu_bg.png\n"
+               "# the DS screen there); before the game, the bottom screen (the title's menu)\n"
+               "# on the left over your own picture, ux0:data/khdays/menu_bg.png\n"
                "# (or .jpg; none comes with the port). single_screen 0 off, 1 on;\n"
                "# panel_opacity 50 to 100.\n"
                "single_screen = %d\npanel_opacity = %d\n", kh_config.single_screen,

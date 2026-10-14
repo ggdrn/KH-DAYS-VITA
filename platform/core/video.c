@@ -746,11 +746,10 @@ static void run_capture(void)
  * over the display, and the config's panels -- rectangles of the bottom screen -- over it. */
 static int s_single;
 /* config single_screen before the game (the title's overlay: the logos, the title and its
- * menus): one screen at a time -- the one with something on it, alone in the middle; both,
- * the title's menu (the bottom screen) on the left over the player's picture (menubg.c) */
+ * menus): the bottom screen (the title's menu) on the left over the player's picture
+ * (menubg.c), the whole time */
 static int s_menus;
-static int s_menus_layout = -1; /* 0 the top screen alone, 1 the bottom one, 2 the menu */
-static int s_blank[2];
+static int s_menus_layout = -1; /* 2: the menu over the picture */
 static GLuint s_menubg_tex;
 static int s_menubg_tried;
 /* the bottom screen is all black (the field's conversations): as the small screen, not shown */
@@ -871,60 +870,32 @@ void video_set_single_menus(int on)
         return;
     s_menus = on;
     s_menus_layout = -1;
-    s_blank[0] = s_blank[1] = 0;
     compute_layout();
 }
 
-/* a screen of one colour (a logo faded out, a screen the game leaves black) */
-static int screen_blank(const uint32_t *p)
+/* One layout from the first logo to the game, never switched (0.7.31 showed whichever screen
+ * had something on it, and the title kept changing its layout): the bottom screen (the title's
+ * menu) on the left, under the picture's logo and clear of its characters, the top one not
+ * shown */
+static void menus_layout(void)
 {
-    const uint32_t c = p[0] & 0xffffffu;
-    int x, y;
-    for (y = 4; y < DS_SCREEN_H; y += 8)
-        for (x = 4; x < DS_SCREEN_W; x += 8)
-            if ((p[y * DS_SCREEN_W + x] & 0xffffffu) != c)
-                return 0;
-    return 1;
-}
-
-static void menus_layout(const uint32_t *const src[2])
-{
-    const ScreenRect none = { 0, 0, 0, 0 };
-    const ScreenRect alone = kh_config.aspect == KH_ASPECT_STRETCH
-                                 ? (ScreenRect){ 0, 0, DISPLAY_W, DISPLAY_H }
-                                 : (ScreenRect){ (DISPLAY_W - 725) / 2, 0, 725, 544 };
-    int k, top, bottom, l;
-    for (k = 0; k < 2; k++)
-        if (src[k])
-            s_blank[k] = screen_blank(src[k]);
-    /* the 3D's screen counts as drawn whatever its 2D */
-    top = !s_blank[0] || s_3d_screen == 0;
-    bottom = !s_blank[1] || s_3d_screen == 1;
-    l = top && bottom ? 2 : bottom ? 1 : 0;
-    if (l == 2) {
-        /* the menu on the left, under the picture's logo, clear of its characters */
-        s_rect[0] = none;
-        s_rect[1] = (ScreenRect){ 48, 196, 384, 288 };
-        if (!s_menubg_tried) {
-            uint32_t *px;
-            s_menubg_tried = 1;
-            px = menubg_load(DISPLAY_W, DISPLAY_H);
-            if (px) {
-                s_menubg_tex = new_texture(DISPLAY_W, DISPLAY_H, GL_LINEAR);
-                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, DISPLAY_W, DISPLAY_H, GL_RGBA,
-                                GL_UNSIGNED_BYTE, px);
-                free(px);
-            }
-        }
-    } else {
-        s_rect[l] = alone;
-        s_rect[!l] = none;
-    }
+    s_rect[0] = (ScreenRect){ 0, 0, 0, 0 };
+    s_rect[1] = (ScreenRect){ 48, 196, 384, 288 };
     s_inset = -1;
-    if (l != s_menus_layout)
-        LOG("video: single screen before the game: %s", l == 2 ? "the menu over the picture"
-                                                        : l ? "the bottom screen" : "the top screen");
-    s_menus_layout = l;
+    if (!s_menubg_tried) {
+        uint32_t *px;
+        s_menubg_tried = 1;
+        px = menubg_load(DISPLAY_W, DISPLAY_H);
+        if (px) {
+            s_menubg_tex = new_texture(DISPLAY_W, DISPLAY_H, GL_LINEAR);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, DISPLAY_W, DISPLAY_H, GL_RGBA,
+                            GL_UNSIGNED_BYTE, px);
+            free(px);
+        }
+    }
+    if (s_menus_layout != 2)
+        LOG("video: single screen before the game: the menu over the picture");
+    s_menus_layout = 2;
 }
 
 /* the player's picture over the whole display (the menus' background) */
@@ -1221,7 +1192,7 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
         compute_layout();
     }
     if (s_menus && !s_single)
-        menus_layout(src);
+        menus_layout();
     if (s_cap.pending)
         run_capture();
     seg_mark(0);
