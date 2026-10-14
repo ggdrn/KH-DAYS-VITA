@@ -12123,7 +12123,7 @@ index e43f5318f..60c3f4296 100644
      } else if (Ov002_IsObjectFlag2000Set(object) == 0) {
          if ((pressed & 0x100) != 0) {
 diff --git a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
-index f3055d4ba..32fe34987 100644
+index f3055d4ba..7037df5b2 100644
 --- a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 +++ b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 @@ -1,7 +1,11 @@
@@ -12147,7 +12147,7 @@ index f3055d4ba..32fe34987 100644
  } Ov022FlagsView;
  
  typedef struct Ov022NodeOwner {
-@@ -90,6 +94,240 @@ extern void func_ov022_0208a1a4(void);
+@@ -90,6 +94,245 @@ extern void func_ov022_0208a1a4(void);
  extern unsigned short gPadPressed;
  extern unsigned short gPadHeld;
  
@@ -12223,9 +12223,9 @@ index f3055d4ba..32fe34987 100644
 +/* The weapon of Roxas's panels for the partner played, as its stats only: the 0x20-byte row its
 + * action table holds at +8 (Ov022_BuildActionTable: Ov002_LoadCharacterWeapon, the
 + * character's own wp.b.z row for that weapon -- attack, magic, reach), plain data, with the
-+ * reach ability's alternative angle (+0xa from +0x16). The model and its animation tables
-+ * stay the partner's own: 0.7.11 to 0.7.24 rebuilt them and faulted on the way back. The
-+ * action rows (moves, combos) are the character's whatever the weapon. */
++ * reach ability's alternative angle (+0xa from +0x16), but its own weapon type (below). The
++ * model and its animation tables stay the partner's own: 0.7.11 to 0.7.24 rebuilt them and
++ * faulted on the way back; a weapon type's own combo animations would need that rebuild. */
 +#define SWAP_ACTOR_KIND 0xc
 +#define SWAP_WEAPON_ROW 0x918
 +#define SWAP_WEAPON_ROW_SIZE 0x20
@@ -12248,6 +12248,11 @@ index f3055d4ba..32fe34987 100644
 +        Ov002_LoadCharacterWeapon(built, kind, w);
 +        if (Slot_EvalPackedParam(((unsigned char *)partner)[9], 0x59) != 0)
 +            memcpy(built + 2, built + 0xe, 2);
++        /* byte 0 is the weapon's type, which picks the animations of the moves (the player
++         * overlays' slot-kind maps, e.g. Ov034_MapSlotKindToAnim); only the build's own are
++         * loaded (pfnSetup: Ov002_LoadAnimTables), so the partner keeps its own type -- with
++         * Roxas's (0.7.31 to 0.7.33) its attacks had no animation */
++        built[0] = row[0];
 +        memcpy(row, built, sizeof(built));
 +        KH_TRACE_ALWAYS("swap: partner (kind %d) fights with Roxas's weapon %d (its stats)", kind,
 +                        w);
@@ -12388,7 +12393,7 @@ index f3055d4ba..32fe34987 100644
  void Ov022_RefreshSlotRows(int unused)
  {
      Ov022Root *root = NNSi_FndGetCurrentRootHeap();
-@@ -119,6 +357,9 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -119,6 +362,9 @@ void Ov022_RefreshSlotRows(int unused)
          gPadHeld |= root->savedMask1;
          func_ov022_02087a70();
      }
@@ -12398,7 +12403,7 @@ index f3055d4ba..32fe34987 100644
      primaryNode = root->firstOwner->node;
      primaryField66 = primaryNode->field066;
      resourceBase = Ov022_GetGlobalPlus14();
-@@ -143,7 +384,16 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -143,7 +389,16 @@ void Ov022_RefreshSlotRows(int unused)
              if ((int)(*(long long *)node & 0x10000LL) == 0) {
                  Ov022_LoadNodeFromResource(node, cursor->rowIndex);
              } else {
@@ -12770,7 +12775,7 @@ index 571c98c86..9b683d0bb 100644
   * it; skipped while paused), draws the local group's view lists and link seats, updates the peers'
   * animations and applies the scene scale to the views. */
 diff --git a/src/overlays/field/ov022_battle/Ov022_UpdateCommandInput.c b/src/overlays/field/ov022_battle/Ov022_UpdateCommandInput.c
-index c52f88764..ba5b156c0 100644
+index c52f88764..c0afc4370 100644
 --- a/src/overlays/field/ov022_battle/Ov022_UpdateCommandInput.c
 +++ b/src/overlays/field/ov022_battle/Ov022_UpdateCommandInput.c
 @@ -1,3 +1,4 @@
@@ -12826,6 +12831,26 @@ index c52f88764..ba5b156c0 100644
              bNoRepeat = 1;
              if (Ov002_IsMissionClearFinished(bNoRepeat) != 0) {
                  bNoRepeat = 0;
+@@ -357,6 +374,19 @@ void Ov022_UpdateCommandInput(struct Actor *pActor)
+             break;
+         }
+         pActor->bMenuFlag = (u8)bMenuActive;
++#ifdef PLATFORM_VITA
++        {
++            /* diagnostics: the commands taken from the deck (a Limit shown and not taken) */
++            static int logged;
++            if (logged < 300) {
++                logged++;
++                KH_TRACE_ALWAYS("deck: actor %d (HP %d) takes command kind %d arg %d arg2 %d "
++                                "(panel open %d, shortcut %d)", pActor->nId, pActor->nHp,
++                                pActor->nCommandKind, pActor->nCmdArg, pActor->nCmdArg2,
++                                Ov002_Hud_IsPanelOpen(), bMenuActive);
++            }
++        }
++#endif
+     }
+     if (Ov002_Panel_GetCursor() == 0 && Ov002_Panel_GetState() == 0
+         && bAllySel != 0) {
 diff --git a/src/overlays/field/ov022_battle/Ov022_UpdateRumble.c b/src/overlays/field/ov022_battle/Ov022_UpdateRumble.c
 index 37fa6b3a8..4e6e53e71 100644
 --- a/src/overlays/field/ov022_battle/Ov022_UpdateRumble.c
