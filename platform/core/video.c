@@ -2,6 +2,7 @@
 
 #include "config.h"
 #include "log.h"
+#include "menubg.h"
 #include "paths.h"
 #include "threadstat.h"
 
@@ -582,7 +583,9 @@ static void draw_composed(int screen)
 {
     float v[16];
     const float hud = screen == s_inset ? 1.0f : s_hud_scale;
-    const int shrink = s_hud_shrink && screen != s_inset && kh_config.hud_size < 100;
+    /* config hud 2: the 2D kept 4:3 in the middle, the HUD's corners at the display's edges */
+    const int edges = video_hud_edges() && screen != s_inset;
+    const int shrink = s_hud_shrink && screen != s_inset && (kh_config.hud_size < 100 || edges);
     screen_quad(screen, v);
     compose_pass(v, s_tex_cur(screen), 0, s_3d_tex, s_3d_bright, 0, hud, screen_alpha(screen),
                  FILTER_2D);
@@ -597,8 +600,10 @@ static void draw_composed(int screen)
             if (q[2] <= q[0] || bx[2] <= bx[0] || bx[3] <= bx[1])
                 continue;
             /* the corner shrunk to its own edges, then only the box the HUD fills in it */
-            const float zx0 = r->x + ((q[0] / DS_SCREEN_W - 0.5f) * hud + 0.5f) * r->w;
-            const float zx1 = r->x + ((q[2] / DS_SCREEN_W - 0.5f) * hud + 0.5f) * r->w;
+            /* at the edges, each corner moved out by the width the 3D has beside the 4:3 2D */
+            const float shift = edges ? (1.0f - hud) * 0.5f * r->w * ((b & 1) ? 1.0f : -1.0f) : 0.0f;
+            const float zx0 = r->x + ((q[0] / DS_SCREEN_W - 0.5f) * hud + 0.5f) * r->w + shift;
+            const float zx1 = r->x + ((q[2] / DS_SCREEN_W - 0.5f) * hud + 0.5f) * r->w + shift;
             const float zy0 = r->y + q[1] / DS_SCREEN_H * r->h, zy1 = r->y + q[3] / DS_SCREEN_H * r->h;
             const float sx = (zx1 - zx0) / (q[2] - q[0]) * k, sy = (zy1 - zy0) / (q[3] - q[1]) * k;
             const float ox = (b & 1) ? zx1 - (q[2] - q[0]) * sx : zx0; /* right ones keep their right edge */
@@ -625,6 +630,11 @@ static void draw_composed(int screen)
 void video_set_hud_scale(float scale)
 {
     s_hud_scale = scale;
+}
+
+int video_hud_edges(void)
+{
+    return kh_config.hud == 2 && s_hud_scale < 0.999f;
 }
 
 static GLuint new_texture(int w, int h, GLint filter)
@@ -735,6 +745,13 @@ static void run_capture(void)
 /* Experimental single screen (config single_screen, game.c decides when): the top screen alone
  * over the display, and the config's panels -- rectangles of the bottom screen -- over it. */
 static int s_single;
+/* config single_screen before the game (the title's overlay: the logos, the title and its
+ * menus): the bottom screen (the title's menu) on the left over the player's picture
+ * (menubg.c), the whole time */
+static int s_menus;
+static int s_menus_layout = -1; /* 2: the menu over the picture */
+static GLuint s_menubg_tex;
+static int s_menubg_tried;
 /* the bottom screen is all black (the field's conversations): as the small screen, not shown */
 static int s_inset_blank;
 static int s_tutorial; /* the bottom screen holds a tutorial page: shown whole, in the middle */
@@ -819,6 +836,17 @@ static void compute_layout(void)
         s_rect[0] = inset_rect();
         s_inset = 0;
         break;
+    case LAYOUT_LEFT_TOP:
+    case LAYOUT_LEFT_BOTTOM: {
+        /* one screen 4:3 on the left, the display's height (725x544); the other in the strip
+         * beside it (235 wide), as wide as it fits, in its middle */
+        const int big = s_layout == LAYOUT_LEFT_TOP ? 0 : 1, sw = DISPLAY_W - 725 - 8;
+        const int sh = sw * 3 / 4;
+        s_rect[big] = (ScreenRect){ 0, 0, 725, 544 };
+        s_rect[!big] = (ScreenRect){ 725 + 4, (DISPLAY_H - sh) / 2, sw, sh };
+        s_inset = !big;
+        break;
+    }
     default:
         s_rect[0] = (ScreenRect){ 0, 92, 480, 360 };
         s_rect[1] = (ScreenRect){ 480, 92, 480, 360 };
@@ -833,6 +861,62 @@ static void compute_layout(void)
         s_rect[1] = (ScreenRect){ 0, 0, DISPLAY_W, DISPLAY_H };
         s_inset = -1;
     }
+}
+
+void video_set_single_menus(int on)
+{
+    on = on != 0;
+    if (on == s_menus)
+        return;
+    s_menus = on;
+    s_menus_layout = -1;
+    compute_layout();
+}
+
+/* One layout from the first logo to the game, never switched (0.7.31 showed whichever screen
+ * had something on it, and the title kept changing its layout): the bottom screen (the title's
+ * menu) on the left, under the picture's logo and clear of its characters, the top one not
+ * shown */
+static void menus_layout(void)
+{
+    s_rect[0] = (ScreenRect){ 0, 0, 0, 0 };
+    s_rect[1] = (ScreenRect){ 48, 196, 384, 288 };
+    s_inset = -1;
+    if (!s_menubg_tried) {
+        uint32_t *px;
+        s_menubg_tried = 1;
+        px = menubg_load(DISPLAY_W, DISPLAY_H);
+        if (px) {
+            s_menubg_tex = new_texture(DISPLAY_W, DISPLAY_H, GL_LINEAR);
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, DISPLAY_W, DISPLAY_H, GL_RGBA,
+                            GL_UNSIGNED_BYTE, px);
+            free(px);
+        }
+    }
+    if (s_menus_layout != 2)
+        LOG("video: single screen before the game: the menu over the picture");
+    s_menus_layout = 2;
+}
+
+/* the player's picture over the whole display (the menus' background) */
+static void draw_menubg(void)
+{
+    const float v[16] = { -1, 1, 0, 0, 1, 1, 1, 0, -1, -1, 0, 1, 1, -1, 1, 1 };
+    if (!s_menubg_tex || !s_overlay_prog)
+        return;
+    glBindTexture(GL_TEXTURE_2D, s_menubg_tex);
+    glUseProgram(s_overlay_prog);
+    glBindBuffer(GL_ARRAY_BUFFER, s_compose_vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(v), v, GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, (void *)0);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, (void *)8);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glDisableVertexAttribArray(0);
+    glDisableVertexAttribArray(1);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glUseProgram(0);
 }
 
 void video_set_single_screen(int on)
@@ -867,7 +951,11 @@ int video_inset_screen(void)
 
 void video_swap_screens(void)
 {
-    video_set_layout(video_layout() == LAYOUT_TOP_MAIN ? LAYOUT_BOTTOM_MAIN : LAYOUT_TOP_MAIN);
+    const ScreenLayout l = video_layout();
+    video_set_layout(l == LAYOUT_LEFT_TOP      ? LAYOUT_LEFT_BOTTOM
+                     : l == LAYOUT_LEFT_BOTTOM ? LAYOUT_LEFT_TOP
+                     : l == LAYOUT_TOP_MAIN    ? LAYOUT_BOTTOM_MAIN
+                                               : LAYOUT_TOP_MAIN);
 }
 
 void video_set_inset_blank(int blank)
@@ -883,8 +971,14 @@ int video_map_top(int px, int py, int *x, int *y)
         return 0;
     if (s_inset == 0 && video_on_inset(px, py))
         return 0;
-    /* the 2D kept 4:3 in the middle of a wide 3D (config hud) */
+    /* the 2D kept 4:3 in the middle of a wide 3D (config hud); with the HUD's corners at the
+     * edges (config hud 2, while they are drawn there), each half of the display reads the 4:3
+     * picture held to its own edge */
     u = ((float)(px - r->x) / (float)r->w - 0.5f) / s_hud_scale + 0.5f;
+    if (s_hud_shrink && video_hud_edges()) {
+        const float f = (float)(px - r->x) / (float)r->w;
+        u = f < 0.5f ? f / s_hud_scale : 1.0f - (1.0f - f) / s_hud_scale;
+    }
     if (u < 0.0f || u >= 1.0f)
         return 0;
     *x = (int)(u * DS_SCREEN_W);
@@ -1097,6 +1191,8 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
         s_pending = -1;
         compute_layout();
     }
+    if (s_menus && !s_single)
+        menus_layout();
     if (s_cap.pending)
         run_capture();
     seg_mark(0);
@@ -1104,6 +1200,8 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
     glViewport(0, 0, DISPLAY_W, DISPLAY_H);
     glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
+    if (s_menus && !s_single && s_menus_layout == 2)
+        draw_menubg();
     seg_mark(1);
     for (k = 0; k < 2; k++) {
         /* the large screen first, the inset over it */
@@ -1133,7 +1231,14 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
             /* a plain 2D screen, through the same pass for the effect and the opacity */
             float v[16];
             screen_quad(i, v);
+            if (s_menus && !s_single && s_menus_layout == 2) {
+                /* the title's menu over the picture: a window with rounded corners */
+                s_panel[1] = 10.0f;
+                s_panel[2] = (float)s_rect[i].w, s_panel[3] = (float)s_rect[i].h;
+                s_panel_rect[0] = 0, s_panel_rect[1] = 0, s_panel_rect[2] = 1, s_panel_rect[3] = 1;
+            }
             compose_pass(v, s_tex_cur(i), 0, 0, 0, 0, 1.0f, screen_alpha(i), FILTER_2D);
+            memset(s_panel, 0, sizeof(s_panel));
         } else {
             draw_quad(&s_rect[i]);
         }

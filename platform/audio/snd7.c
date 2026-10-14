@@ -11,11 +11,13 @@
 
 #include <math.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 void (*snd7_send_to_arm9)(uint32_t word);
 uint64_t (*snd7_clock_us)(void);
+void (*snd7_log)(const char *line);
 uintptr_t snd7_ptr_base;
 
 /* a 32-bit DS-side pointer (command arguments, the links inside banks): the address itself on
@@ -1552,6 +1554,24 @@ static void setup_pcm(const DsCommand *c)
     ch->reg_timer = c->arg[0] >> 16;
     ch->rate = timer_rate(ch->reg_timer);
     hw_reg_gain(ch);
+    {
+        /* diagnostics: the first ones of a run, and the first after any change of set-up */
+        static uint32_t logged, last_key;
+        const uint32_t key = (uint32_t)ch->format | (uint32_t)ch->repeat << 2 |
+                             (uint32_t)ch->reg_timer << 4 | (c->arg[0] & 15) << 20;
+        if (snd7_log && logged < 200 && key != last_key) {
+            static const char *const fmts[4] = { "PCM8", "PCM16", "ADPCM", "PSG" };
+            char line[200];
+            logged++;
+            last_key = key;
+            snprintf(line, sizeof(line), "snd: ARM9 channel %d: %s, repeat %d, loop start %u, "
+                     "end %u bytes, timer %04x (%.0f Hz), volume %d shift %d pan %d, data "
+                     "%08x", (int)(c->arg[0] & 15), fmts[ch->format & 3], ch->repeat,
+                     (unsigned)ch->loop_start, (unsigned)ch->end, (unsigned)ch->reg_timer,
+                     ch->rate, ch->reg_volume, ch->reg_shift, ch->reg_pan, (unsigned)c->arg[1]);
+            snd7_log(line);
+        }
+    }
 }
 
 static void process_command(const DsCommand *c)
@@ -1789,20 +1809,31 @@ static void process_list(const List *l)
 
 /* ---- output ------------------------------------------------------------------------------ */
 
+/* Every alarm due by now, each as many times as its period went by: a stream refills one
+ * block of its ring per alarm (NNS_SndStrmSetup: 4 blocks, an alarm every ~5 ms at 52 kHz),
+ * and one alarm a render step (10 ms) left three blocks of four played again unfilled -- the
+ * loud noise from the camp menu's stream on (0.7.21 to 0.7.31). Far behind (the audio thread
+ * held up), it starts again from now instead of firing a burst. */
 static void alarms_run(void)
 {
     int i;
     for (i = 0; i < ALARMS; i++) {
         Alarm *a = &s_alarm[i];
-        if (!a->active || s_time < a->next)
-            continue;
-        if (snd7_send_to_arm9)
-            snd7_send_to_arm9((uint32_t)i | (a->id & 0xff) << 8);
-        s_stats.alarms++;
-        if (a->period > 0)
-            a->next += a->period;
-        else
-            a->active = 0;
+        int n = 0;
+        while (a->active && s_time >= a->next) {
+            if (snd7_send_to_arm9)
+                snd7_send_to_arm9((uint32_t)i | (a->id & 0xff) << 8);
+            s_stats.alarms++;
+            if (a->period > 0) {
+                a->next += a->period;
+                if (++n >= 8 && s_time >= a->next) {
+                    a->next = s_time + a->period;
+                    s_stats.alarm_resyncs++;
+                }
+            } else {
+                a->active = 0;
+            }
+        }
     }
 }
 

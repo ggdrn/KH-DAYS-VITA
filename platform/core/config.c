@@ -15,7 +15,7 @@ static const KhConfig s_defaults = {
     .frame_interpolation = 0, .dynamic_res = 1, .partner_swap = 0, .texture_filter = 1, .filter_2d = 2, .hud = 0, .screen_effect = 0,
     .inset_corner = 0, .inset_opacity = 100, .rear_touch = 0, .stick_deadzone = 2, .r_toggle = 0,
     .fast_forward = 2, .camera_stick = 1, .camera_speed = 2,
-    .camera_invert_x = 0, .camera_invert_y = 0, .dpad_deck = 1, .show_fps = 0, .volume = 100,
+    .camera_invert_x = 0, .camera_invert_y = 0, .camera_follow = 0, .dpad_deck = 1, .show_fps = 0, .volume = 100,
     .button_icons = 1, .confirm_cross = 1, .single_screen = 0, .panel_opacity = 90, .language = 1, .hud_size = 100,
     /* the mission screen's bottom-screen parts (sx sy sw sh anchor dx dy scale), measured on
      * the DS's bottom screen in a mission: the INFORMATION bar top-left, the map in the
@@ -53,7 +53,7 @@ static const struct {
 };
 static const char *const s_ds_buttons[KH_BTN_COUNT] = { "button_a", "button_b", "button_x",
     "button_y", "button_l", "button_r", "button_start", "button_select" };
-static const char *const s_layouts[] = { "top", "bottom", "side" };
+static const char *const s_layouts[] = { "top", "bottom", "side", "left", "left_bottom" };
 static const char *const s_aspects[] = { "wide", "stretch", "4:3" };
 
 const char *config_vita_button_name(int i) { return s_vita_buttons[i].name; }
@@ -99,17 +99,19 @@ void config_save(void)
                "# keep up, back at render_scale when it can. 0 off (always render_scale), 1 on.\n"
                "dynamic_res = %d\n\n", kh_config.dynamic_res);
     fprintf(f, "# Experimental: in a story mission with a partner, touch the partner's HUD to\n"
-               "# play as the partner (Roxas's panels; the AI plays Roxas); touch it again, or\n"
-               "# any scene that needs Roxas, to get him back. 0 off, 1 on.\n"
+               "# play as the partner (Roxas's deck and his weapon's stats, its own HP and\n"
+               "# moves; the AI plays Roxas); touch it again, a scene that needs Roxas or the\n"
+               "# partner falling gives him back. 0 off, 1 on.\n"
                "partner_swap = %d\n\n", kh_config.partner_swap);
     fprintf(f, "# How the large screen fills the display: wide (the 3D drawn for 16:9 in the\n"
                "# field, true proportions), stretch (the DS picture stretched), 4:3 (as on the\n"
                "# DS, with borders).\n"
                "aspect = %s\n\n", s_aspects[clampi(kh_config.aspect, 0, 2)]);
     fprintf(f, "# Screen layout: top (top screen large, touch screen small in the top-right\n"
-               "# corner), bottom (the reverse), side (both side by side). Touching the small\n"
-               "# screen swaps them.\n"
-               "layout = %s\n\n", s_layouts[kh_config.layout % 3]);
+               "# corner), bottom (the reverse), side (both side by side), left (top screen 4:3\n"
+               "# on the left over the whole height, touch screen small beside it),\n"
+               "# left_bottom (the reverse). Touching the small screen swaps them.\n"
+               "layout = %s\n\n", s_layouts[kh_config.layout % 5]);
     fprintf(f, "# Width in pixels of the small screen (it keeps the DS's 4:3), 128 to 480.\n"
                "inset_width = %d\n\n", kh_config.inset_width);
     fprintf(f, "# 3D textures: 0 sharp as on the DS, 1 smoothed (bilinear filtering).\n"
@@ -122,6 +124,9 @@ void config_save(void)
                "camera_stick = %d\ncamera_speed = %d\ncamera_invert_x = %d\ncamera_invert_y = %d\n\n",
             kh_config.camera_stick, kh_config.camera_speed, kh_config.camera_invert_x,
             kh_config.camera_invert_y);
+    fprintf(f, "# With the right stick on: 0 the camera does not swing round by itself when the\n"
+               "# player walks left or right (as in the hub), 1 it does, as on the DS.\n"
+               "camera_follow = %d\n\n", kh_config.camera_follow);
     fprintf(f, "# 1: in the field the d-pad moves the command deck's cursor (the left stick\n"
                "# walks); 0: the d-pad is the DS d-pad everywhere.\n"
                "dpad_deck = %d\n\n", kh_config.dpad_deck);
@@ -130,7 +135,8 @@ void config_save(void)
     fprintf(f, "# Sound volume, 0 to 100 (%% of the game's own).\n"
                "volume = %d\n\n", kh_config.volume);
     fprintf(f, "# Widescreen field: hud = 0 stretches the 2D (HUD) over 16:9, 1 keeps it 4:3 in\n"
-               "# the middle over the wide 3D.\n"
+               "# the middle over the wide 3D, 2 keeps it 4:3 with the HUD (commands, HP, chain)\n"
+               "# at the display's edges.\n"
                "hud = %d\n\n", kh_config.hud);
     fprintf(f, "# Screen effect: 0 none, 1 scanlines, 2 LCD grid.\n"
                "screen_effect = %d\n\n", kh_config.screen_effect);
@@ -167,7 +173,10 @@ void config_save(void)
                "language = %d\n\n", kh_config.language);
     fprintf(f, "# Experimental single screen: in missions, the top screen alone over the whole\n"
                "# display, parts of the bottom screen as panels over it (touch a panel to touch\n"
-               "# the DS screen there). single_screen 0 off, 1 on; panel_opacity 50 to 100.\n"
+               "# the DS screen there); before the game, the bottom screen (the title's menu)\n"
+               "# on the left over your own picture, ux0:data/khdays/menu_bg.png\n"
+               "# (or .jpg; none comes with the port). single_screen 0 off, 1 on;\n"
+               "# panel_opacity 50 to 100.\n"
                "single_screen = %d\npanel_opacity = %d\n", kh_config.single_screen,
             kh_config.panel_opacity);
     fprintf(f, "# Panels: sx sy sw sh (the rectangle on the DS bottom screen, 256x192), anchor\n"
@@ -214,7 +223,8 @@ static void set(const char *k, const char *v, int version)
     if (!strcmp(k, "render_scale"))
         kh_config.render_scale = clampi(atoi(v), 1, 4);
     else if (!strcmp(k, "layout"))
-        kh_config.layout = !strcmp(v, "bottom") ? 1 : !strcmp(v, "side") ? 2 : 0;
+        kh_config.layout = !strcmp(v, "bottom") ? 1 : !strcmp(v, "side") ? 2
+                           : !strcmp(v, "left") ? 3 : !strcmp(v, "left_bottom") ? 4 : 0;
     else if (!strcmp(k, "inset_width"))
         kh_config.inset_width = clampi(atoi(v), 128, 480);
     else if (!strcmp(k, "aspect"))
@@ -238,6 +248,8 @@ static void set(const char *k, const char *v, int version)
         kh_config.camera_invert_x = atoi(v) != 0;
     else if (!strcmp(k, "camera_invert_y"))
         kh_config.camera_invert_y = atoi(v) != 0;
+    else if (!strcmp(k, "camera_follow"))
+        kh_config.camera_follow = atoi(v) != 0;
     else if (!strcmp(k, "dpad_deck"))
         kh_config.dpad_deck = atoi(v) != 0;
     else if (!strcmp(k, "show_fps"))
@@ -245,7 +257,7 @@ static void set(const char *k, const char *v, int version)
     else if (!strcmp(k, "volume"))
         kh_config.volume = clampi(atoi(v), 0, 100);
     else if (!strcmp(k, "hud"))
-        kh_config.hud = atoi(v) != 0;
+        kh_config.hud = clampi(atoi(v), 0, 2);
     else if (!strcmp(k, "screen_effect"))
         kh_config.screen_effect = clampi(atoi(v), 0, 2);
     else if (!strcmp(k, "inset_corner"))
@@ -359,12 +371,14 @@ void config_load(void)
     }
     kh_log_verbose = kh_config.debug;
     LOG("config: render_scale %d, fps %d, aspect %d, layout %d, inset %d, texture_filter %d, "
-        "camera %d/%d, dpad_deck %d, volume %d, debug %d, hud %d%%, single %d, 2d filter %d",
+        "camera %d/%d, camera_follow %d, dpad_deck %d, volume %d, debug %d, hud %d%% mode %d, "
+        "single %d, 2d filter %d",
         kh_config.render_scale,
         kh_config.frame_interpolation ? 60 : 30, kh_config.aspect, kh_config.layout,
         kh_config.inset_width, kh_config.texture_filter, kh_config.camera_stick,
-        kh_config.camera_speed, kh_config.dpad_deck, kh_config.volume, kh_config.debug,
-        kh_config.hud_size, kh_config.single_screen, kh_config.filter_2d);
+        kh_config.camera_speed, kh_config.camera_follow, kh_config.dpad_deck, kh_config.volume,
+        kh_config.debug, kh_config.hud_size, kh_config.hud, kh_config.single_screen,
+        kh_config.filter_2d);
 }
 
 /* For the game's code (decomp, PLATFORM_VITA): config mission_balance */

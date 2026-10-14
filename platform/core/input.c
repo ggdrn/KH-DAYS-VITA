@@ -22,7 +22,6 @@ volatile int kh_partner_swap_member; /* the partner's member id while swapped (t
 volatile unsigned int kh_partner_swap_seen; /* the touches the game has answered */
 void *volatile kh_swap_pickup_owner; /* the played partner's pickup (the log's drop summary) */
 void *volatile kh_partner_swap_root;         /* the field the swap state belongs to */
-volatile int kh_partner_swap_force;          /* a revert out of gameplay: no combo wait */
 volatile int kh_partner_swap_fresh = 1; /* set out of the field: earlier touches are no requests */
 volatile unsigned int kh_partner_swap_requests;
 
@@ -115,6 +114,14 @@ int kh_vita_lockon_switch(void)
     if (!armed && ax < LOCKON_PUSH)
         next_repeat = 0; /* let go part of the way: no repeat until the next flick */
     return dir;
+}
+
+/* Ov002_Camera_UpdateFollow, Ov002_TickCamera: whether the camera turns by itself (behind a
+ * walk to the left or right, or after what the game aims at), as on the DS; not while the
+ * right stick turns it (config camera_follow), unless locked on */
+int kh_vita_camera_follow(void)
+{
+    return !kh_config.camera_stick || kh_config.camera_follow || kh_lockon_active;
 }
 
 /* request bits for this camera tick: each axis pulsed in proportion to its deflection */

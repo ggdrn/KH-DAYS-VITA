@@ -513,9 +513,24 @@ static void hud_after_2d(void)
 #define DEFEAT_TRACE_VB 120
 static volatile uint32_t s_defeat_vb;
 static volatile int s_defeats;
+/* For BURST_VB VBlanks after any defeat, a translucent polygon over the whole screen is left
+ * out (gpu3d kh_gpu3d_drop_veil): the Possessor's dying veil, seen as a white flash (0.7.22's
+ * trace: from 7 VBlanks after the defeat, for about 45); after a Possessor's, its burst too
+ * (kh_gpu3d_burst_update) */
+#define BURST_VB 180
+static volatile uint32_t s_burst_vb, s_possessor_vb;
+static volatile int s_burst_seen, s_possessor_seen;
 
 void kh_vita_enemy_defeated(const void *enemy)
 {
+    s_burst_vb = s_vblanks;
+    s_burst_seen = 1;
+    /* a Possessor's (or a Massive Possessor's) overlay loaded: its burst is left out too */
+    if (kh_overlay_loaded(117) || kh_overlay_loaded(118) || kh_overlay_loaded(185) ||
+        kh_overlay_loaded(186) || kh_overlay_loaded(187)) {
+        s_possessor_vb = s_vblanks;
+        s_possessor_seen = 1;
+    }
     if (s_defeats >= DEFEAT_TRACES)
         return;
     s_defeat_vb = s_vblanks;
@@ -528,8 +543,8 @@ void kh_vita_enemy_defeated(const void *enemy)
 
 static void defeat_trace(const KhGxFrame *f)
 {
-    static char last[512];
-    char line[512];
+    static char last[1024];
+    char line[1024];
     int k;
     const uint32_t since = s_vblanks - s_defeat_vb;
     if (!s_defeats || since > DEFEAT_TRACE_VB)
@@ -651,6 +666,10 @@ static void present(void)
     const int single = kh_config.single_screen && (!dual || dual_top_only) && a_on_top &&
                        kh_overlay_loaded(22);
     video_set_single_screen(single);
+    /* and before the game (the title's overlay, ov000: the logos, the title, its menus): one
+     * screen at a time, the title's menu over the player's picture */
+    video_set_single_menus(kh_config.single_screen && !dual && kh_overlay_loaded(0) &&
+                           !kh_overlay_loaded(22));
     /* a tutorial page (Ov002_OpenTutorialPage leaves the sub engine with BG2 and BG3 alone,
      * which nothing else in the field does) is shown whole; while the game is paused the bottom
      * screen is drawn without the fade it gets behind the pause menu, the panels being part of
@@ -664,7 +683,8 @@ static void present(void)
      * upload and no pass over the screen more than without it (0.1.12-0.1.15 sorted the HUD
      * out with a layer map and a texture of its own, and lost up to 20 frames a second) */
     const int hud_wanted = (!dual || dual_top_only) && a_on_top && kh_overlay_loaded(22) &&
-                           PauseMenu_GetMode() == 0 && kh_config.hud_size < 100;
+                           PauseMenu_GetMode() == 0 &&
+                           (kh_config.hud_size < 100 || video_hud_edges());
     const int hud_on = hud_wanted && !s_dialog_open;
     {
         /* config partner_swap: a dialogue or a movie needs Roxas (Ov022_RefreshSlotRows); out
@@ -829,7 +849,8 @@ static void present(void)
         /* dual 3D: each frame takes its own screen's (gx3d.h) */
         kh_gx3d_dual = dual;
         kh_gx3d_wide_x = kh_gx3d_wide_screen[a_on_top ? 0 : 1];
-        /* config hud: the 2D kept 4:3 in the middle while the 3D is wide */
+        /* config hud: the 2D kept 4:3 in the middle while the 3D is wide (1), its HUD's
+         * corners then drawn at the display's edges (2) */
         video_set_hud_scale(kh_config.hud && kh_gx3d_wide_x < 0.999f ? kh_gx3d_wide_x : 1.0f);
     }
     {
@@ -845,6 +866,11 @@ static void present(void)
             if (dual && frame3d && frame3d->built_a_top == a_on_top)
                 s_dual_misbuilt++;
             defeat_trace(frame3d);
+            kh_gpu3d_drop_veil = s_burst_seen &&
+                                 s_vblanks - s_burst_vb < BURST_VB;
+            kh_gpu3d_burst_update(dual ? NULL : frame3d,
+                                  s_possessor_seen &&
+                                      s_vblanks - s_possessor_vb < BURST_VB);
             kh_gpu3d_prepare(frame3d);
             s_cur.prep = (uint32_t)(sceKernelGetProcessTimeWide() - t);
             stage_max(&s_prep_max, s_cur.prep);
@@ -1705,6 +1731,9 @@ void kh_game_run(void)
                         "%u alarms, %u unknown commands, %u unknown sequence ops", (unsigned)ss.lists,
                         (unsigned)ss.commands, (unsigned)ss.seq_starts, (unsigned)ss.notes,
                         (unsigned)ss.alarms, (unsigned)ss.unknown_cmd, (unsigned)ss.unknown_seq);
+                if (ss.alarm_resyncs)
+                    LOG("snd: 10 s: %u alarms so far behind they started again",
+                        (unsigned)ss.alarm_resyncs);
             }
             if (gs.commands)
                 LOGV("gx3d: 10 s: %u swaps, %u cmds, %u polys (%u culled), %u verts, %u unknown, "

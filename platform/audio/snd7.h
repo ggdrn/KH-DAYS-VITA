@@ -44,9 +44,13 @@ extern void (*snd7_send_to_arm9)(uint32_t word);
 /* A microsecond clock for the render's own timing (the log), NULL for none (tools/snd_test). */
 extern uint64_t (*snd7_clock_us)(void);
 
+/* A line for the log, NULL for none: the channels the ARM9 sets up itself (a stream's ring). */
+extern void (*snd7_log)(const char *line);
+
 typedef struct {
     uint32_t lists, commands, notes, seq_starts, alarms, voices_max;
     uint32_t unknown_cmd, unknown_seq;
+    uint32_t alarm_resyncs; /* alarms so far behind they started again from now */
     /* snd7_render by step (us): the driver's frames (sequencer, envelopes, commands), the
      * channels' mixing, the limiter and the conversion; samples rendered and channels mixed
      * (one channel over one chunk counts its samples) */

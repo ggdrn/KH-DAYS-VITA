@@ -13,6 +13,9 @@ typedef enum {
     LAYOUT_TOP_MAIN = 0,  /* top screen over the whole display (16:9), touch screen small */
     LAYOUT_BOTTOM_MAIN,   /* touch screen large (4:3), top screen small */
     LAYOUT_SIDE_BY_SIDE,  /* both screens, 480x360 each */
+    LAYOUT_LEFT_TOP,      /* top screen 4:3 on the left over the display's height, the touch
+                           * screen small in the middle of the strip beside it */
+    LAYOUT_LEFT_BOTTOM,   /* the same with the touch screen large */
     LAYOUT_COUNT
 } ScreenLayout;
 
@@ -30,6 +33,9 @@ int video_on_inset(int px, int py);
 /* Experimental single screen (config single_screen): on, the top screen alone over the display
  * and the config's panels (parts of the bottom screen) over it; game.c turns it on in missions. */
 void video_set_single_screen(int on);
+/* config single_screen before the game (the title's overlay): one screen at a time, the
+ * title's menu on the left over the player's picture (ux0:data/khdays/menu_bg.png). */
+void video_set_single_menus(int on);
 /* The bottom screen's picture is all black: as the small screen it is left out (a black box in
  * the corner during the field's conversations looked like a fault). */
 void video_set_inset_blank(int blank);
@@ -62,6 +68,8 @@ void video_overlay_changed(void);
 /* The 2D's horizontal scale on the 3D screen: 1, or < 1 to keep it 4:3 in the middle of a
  * widescreen 3D (config hud). */
 void video_set_hud_scale(float scale);
+/* config hud 2 with the 2D kept 4:3: the HUD's corners drawn at the display's edges. */
+int video_hud_edges(void);
 /* Lay the screens out again (after the port menu changed the aspect or the inset size). */
 void video_relayout(void);
 

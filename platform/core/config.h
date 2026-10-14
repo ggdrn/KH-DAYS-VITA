@@ -44,10 +44,13 @@ typedef struct {
     int camera_stick;   /* the right stick turns the field camera: 0 off, 1 on */
     int camera_speed;   /* 1 slow, 2 normal, 3 fast */
     int camera_invert_x, camera_invert_y;
+    int camera_follow;  /* with camera_stick on, the camera still swings round behind a walk to
+                         * the left or right (as on the DS): 0 no, 1 yes */
     int dpad_deck;      /* the d-pad moves the command deck's cursor in the field: 0 off, 1 on */
     int show_fps;       /* a frame-rate counter in a corner: 0 off, 1 on */
     int volume;         /* 0-100 % of the game's own volume */
-    int hud;            /* widescreen field: 0 the 2D stretched over 16:9, 1 kept 4:3 in the middle */
+    int hud;            /* widescreen field: 0 the 2D stretched over 16:9, 1 kept 4:3 in the middle,
+                         * 2 kept 4:3 with the HUD's corners at the display's edges */
     int screen_effect;  /* 0 none, 1 scanlines, 2 LCD grid */
     int inset_corner;   /* the small screen: 0 top-right, 1 top-left, 2 bottom-right, 3 bottom-left */
     int inset_opacity;  /* the small screen's opacity, 50-100 % */

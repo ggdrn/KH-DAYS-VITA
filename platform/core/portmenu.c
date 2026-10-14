@@ -34,7 +34,7 @@ static char s_note[64]; /* feedback after an action ("Defaults restored.") */
 enum {
     IT_PRESET, IT_SCALE, IT_FPS, IT_DYNRES, IT_SWAP, IT_TEXFILTER, IT_FILTER2D, IT_EFFECT, IT_SHOWFPS,
     IT_ASPECT, IT_HUD, IT_LAYOUT, IT_INSET, IT_CORNER, IT_OPACITY, IT_SINGLE, IT_PANELOP, IT_HUDSIZE,
-    IT_CAMERA, IT_CAMSPEED, IT_INVX, IT_INVY, IT_DEADZONE, IT_DPAD, IT_RMODE, IT_REAR,
+    IT_CAMERA, IT_CAMSPEED, IT_CAMFOLLOW, IT_INVX, IT_INVY, IT_DEADZONE, IT_DPAD, IT_RMODE, IT_REAR,
     IT_BUTTON, /* + the DS button index */
     IT_LANGUAGE, IT_VOLUME, IT_FFWD, IT_ICONS, IT_CONFIRM, IT_MISSION, IT_DEFAULTS, IT_CLOSE,
 };
@@ -57,18 +57,19 @@ static const Item s_video[] = {
 };
 static const Item s_screen[] = {
     { IT_ASPECT, 0, "Aspect ratio", "Widescreen: the 3D drawn for 16:9 in the field." },
-    { IT_HUD, 0, "Widescreen HUD", "The 2D stretched to 16:9, or kept 4:3 in the middle." },
+    { IT_HUD, 0, "Widescreen HUD", "Stretched, 4:3 centered, or 4:3 with the HUD at the edges." },
     { IT_LAYOUT, 0, "Screen layout", "Touch the small screen to swap the screens." },
     { IT_INSET, 0, "Small screen size", "Width of the small screen, in Vita pixels." },
     { IT_CORNER, 0, "Small screen corner", NULL },
     { IT_OPACITY, 0, "Small screen opacity", "See the game through the small screen." },
     { IT_HUDSIZE, 0, "HUD size", "Commands, HP, chain (and map, target) in the field." },
-    { IT_SINGLE, 0, "Single screen (beta)", "Missions on one screen: map and gauge as panels." },
+    { IT_SINGLE, 0, "Single screen (beta)", "One screen: missions with panels; title menu over menu_bg.png." },
     { IT_PANELOP, 0, "Panel opacity", "Single screen: see the game through the panels." },
 };
 static const Item s_controls[] = {
     { IT_CAMERA, 0, "Right stick camera", "Turns the field camera; locked on, switches target." },
     { IT_CAMSPEED, 0, "Camera speed", "How far to tilt the stick for full speed." },
+    { IT_CAMFOLLOW, 0, "Camera follows walk", "Right stick on: swing round behind a sideways walk." },
     { IT_INVX, 0, "Invert camera X", NULL },
     { IT_INVY, 0, "Invert camera Y", NULL },
     { IT_DEADZONE, 0, "Stick dead zone", "How far the sticks move before they count." },
@@ -152,7 +153,8 @@ static void value(const Item *it, char *out, size_t n)
 {
     static const char *const aspects[] = { "Widescreen 3D", "Stretched", "4:3 original" };
     static const char *const layouts[] = { "Top screen large", "Bottom screen large",
-                                           "Side by side" };
+                                           "Side by side", "Top 4:3 left, small right",
+                                           "Bottom 4:3 left, small right" };
     static const char *const speeds[] = { "", "Slow", "Normal", "Fast" };
     static const char *const effects[] = { "None", "Scanlines", "LCD grid" };
     static const char *const corners[] = { "Top right", "Top left", "Bottom right",
@@ -179,8 +181,12 @@ static void value(const Item *it, char *out, size_t n)
     case IT_DYNRES: snprintf(out, n, "%s", kh_config.dynamic_res ? "On" : "Off"); break;
     case IT_SWAP: snprintf(out, n, "%s", kh_config.partner_swap ? "On" : "Off"); break;
     case IT_ASPECT: snprintf(out, n, "%s", aspects[kh_config.aspect % 3]); break;
-    case IT_HUD: snprintf(out, n, "%s", kh_config.hud ? "Centered 4:3" : "Stretched"); break;
-    case IT_LAYOUT: snprintf(out, n, "%s", layouts[kh_config.layout % 3]); break;
+    case IT_HUD: {
+        static const char *const huds[] = { "Stretched", "Centered 4:3", "4:3 at the edges" };
+        snprintf(out, n, "%s", huds[kh_config.hud % 3]);
+        break;
+    }
+    case IT_LAYOUT: snprintf(out, n, "%s", layouts[kh_config.layout % LAYOUT_COUNT]); break;
     case IT_INSET: snprintf(out, n, "%d", kh_config.inset_width); break;
     case IT_CORNER: snprintf(out, n, "%s", corners[kh_config.inset_corner & 3]); break;
     case IT_OPACITY: snprintf(out, n, "%d%%", kh_config.inset_opacity); break;
@@ -189,6 +195,7 @@ static void value(const Item *it, char *out, size_t n)
     case IT_PANELOP: snprintf(out, n, "%d%%", kh_config.panel_opacity); break;
     case IT_CAMERA: snprintf(out, n, "%s", kh_config.camera_stick ? "On" : "Off"); break;
     case IT_CAMSPEED: snprintf(out, n, "%s", speeds[kh_config.camera_speed & 3]); break;
+    case IT_CAMFOLLOW: snprintf(out, n, "%s", kh_config.camera_follow ? "On" : "Off"); break;
     case IT_INVX: snprintf(out, n, "%s", kh_config.camera_invert_x ? "Yes" : "No"); break;
     case IT_INVY: snprintf(out, n, "%s", kh_config.camera_invert_y ? "Yes" : "No"); break;
     case IT_DEADZONE: snprintf(out, n, "%s", zones[kh_config.stick_deadzone & 3]); break;
@@ -250,9 +257,9 @@ static void change(const Item *it, int d)
         kh_config.aspect = wrap(kh_config.aspect, 0, 2, d);
         video_relayout();
         break;
-    case IT_HUD: kh_config.hud ^= 1; break;
+    case IT_HUD: kh_config.hud = wrap(kh_config.hud, 0, 2, d); break;
     case IT_LAYOUT:
-        kh_config.layout = wrap(kh_config.layout, 0, 2, d);
+        kh_config.layout = wrap(kh_config.layout, 0, LAYOUT_COUNT - 1, d);
         video_set_layout((ScreenLayout)kh_config.layout);
         break;
     case IT_INSET:
@@ -274,6 +281,7 @@ static void change(const Item *it, int d)
         break;
     case IT_CAMERA: kh_config.camera_stick ^= 1; break;
     case IT_CAMSPEED: kh_config.camera_speed = wrap(kh_config.camera_speed, 1, 3, d); break;
+    case IT_CAMFOLLOW: kh_config.camera_follow ^= 1; break;
     case IT_INVX: kh_config.camera_invert_x ^= 1; break;
     case IT_INVY: kh_config.camera_invert_y ^= 1; break;
     case IT_DEADZONE: kh_config.stick_deadzone = wrap(kh_config.stick_deadzone, 1, 3, d); break;

@@ -598,6 +598,79 @@ static void apply_state(const DrawState *st)
     }
 }
 
+volatile int kh_gpu3d_drop_veil;
+
+/* the share of the screen a polygon's bounding box covers, 0 to 1 (vertices behind the eye
+ * left out, the rest clamped to the screen) */
+static float screen_share(const KhGxFrame *f, const KhGxPolygon *p)
+{
+    float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
+    int k;
+    for (k = 0; k < p->count; k++) {
+        const KhGxVertex *v = &f->vtx[p->v[k]];
+        float x, y;
+        if (!(v->w > 0))
+            continue;
+        x = v->x / v->w, y = v->y / v->w;
+        x = x < -1 ? -1 : x > 1 ? 1 : x;
+        y = y < -1 ? -1 : y > 1 ? 1 : y;
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+    }
+    return x1 > x0 && y1 > y0 ? (x1 - x0) * (y1 - y0) / 4.0f : 0.0f;
+}
+
+/* The burst some enemies (the Possessor) give off as they die: about a
+ * hundred more translucent polygons for some 20 VBlanks, which came out as a white flash
+ * (0.7.23's trace: translucent polygons from ~140 to ~270), under the veil above. Its polygons
+ * are told apart by their polygon IDs: an ID no translucent polygon had 1 to 2 s before the
+ * defeat. s_burst_hist holds each new frame's translucent IDs; while the drop is on, the
+ * baseline taken when it began stays. */
+#define BURST_HIST 64
+static uint64_t s_burst_hist[BURST_HIST], s_burst_base;
+static int s_burst_at, s_burst_on;
+static uint32_t s_burst_serial = 0xffffffffu;
+static uint32_t s_burst_dropped;
+
+static uint64_t translucent_ids(const KhGxFrame *f)
+{
+    uint64_t m = 0;
+    int i;
+    for (i = 0; i < f->npoly; i++) {
+        const KhGxPolygon *p = &f->poly[i];
+        if (p->translucent && ((p->attr >> 4) & 3) != 3 && ((p->attr >> 16) & 31) != 0)
+            m |= 1ull << ((p->attr >> 24) & 63);
+    }
+    return m;
+}
+
+void kh_gpu3d_burst_update(const KhGxFrame *f, int active)
+{
+    int k;
+    if (active && !s_burst_on) {
+        /* the IDs of the older half of the history: the newer one may already hold the burst
+         * (it starts before the game reports the defeat) */
+        s_burst_base = 0;
+        for (k = BURST_HIST / 2; k < BURST_HIST; k++)
+            s_burst_base |= s_burst_hist[(s_burst_at - 1 - k + BURST_HIST * 2) % BURST_HIST];
+        s_burst_dropped = 0;
+    } else if (!active && s_burst_on && s_burst_dropped) {
+        LOG("gpu3d: defeat burst over: %u translucent polygons of new IDs left out (IDs kept "
+            "%08x%08x)", (unsigned)s_burst_dropped, (unsigned)(s_burst_base >> 32),
+            (unsigned)s_burst_base);
+    }
+    s_burst_on = active;
+    if (f && f->serial != s_burst_serial) {
+        s_burst_serial = f->serial;
+        if (!active) {
+            s_burst_hist[s_burst_at] = translucent_ids(f);
+            s_burst_at = (s_burst_at + 1) % BURST_HIST;
+        }
+    }
+}
+
 /* The frame's draws as last sent: the same frame is drawn twice at 60 fps (its halfway mix,
  * then itself), with other vertices only; the second time these are sent again as they are,
  * with no polygon sorted, grouped or indexed anew (that was half of the 3D's CPU time). */
@@ -1049,6 +1122,23 @@ static unsigned draw_frame(const KhGxFrame *f, const KhGxVertex *vtx)
             ps->id = (int)((p->attr >> 24) & 63);
             if (alpha == 0) {
                 s_stats.skipped++; /* wireframe: not yet */
+                s_pkey[i] = 0xffffffffu;
+                continue;
+            }
+            /* the veil some enemies (the Possessor) lay over the whole
+             * screen as they die, translucent and fading out over some 45 VBlanks (0.7.22's
+             * log: one polygon, 100% of the screen, alpha 29 down to 1), came out as a white
+             * flash: left out for a moment after each defeat (game.c) */
+            if (kh_gpu3d_drop_veil && alpha < 31 && screen_share(f, p) >= 0.9f) {
+                s_stats.skipped++;
+                s_pkey[i] = 0xffffffffu;
+                continue;
+            }
+            /* and the burst under it: translucent polygons of IDs new since before the defeat */
+            if (s_burst_on && p->translucent && ((p->attr >> 4) & 3) != 3 &&
+                !(s_burst_base >> ((p->attr >> 24) & 63) & 1)) {
+                s_stats.skipped++;
+                s_burst_dropped++;
                 s_pkey[i] = 0xffffffffu;
                 continue;
             }
@@ -1547,23 +1637,10 @@ void kh_gpu3d_describe(const KhGxFrame *f, char *out, int n)
     }
     for (i = 0; i < f->npoly; i++) {
         const KhGxPolygon *p = &f->poly[i];
-        float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f, area;
+        float area;
         modes[(p->attr >> 4) & 3]++;
         tr += p->translucent;
-        for (k = 0; k < p->count; k++) {
-            const KhGxVertex *v = &f->vtx[p->v[k]];
-            float x, y;
-            if (!(v->w > 0))
-                continue;
-            x = v->x / v->w, y = v->y / v->w;
-            x = x < -1 ? -1 : x > 1 ? 1 : x;
-            y = y < -1 ? -1 : y > 1 ? 1 : y;
-            if (x < x0) x0 = x;
-            if (x > x1) x1 = x;
-            if (y < y0) y0 = y;
-            if (y > y1) y1 = y;
-        }
-        area = x1 > x0 && y1 > y0 ? (x1 - x0) * (y1 - y0) / 4.0f : 0.0f;
+        area = screen_share(f, p);
         if (area > big_area)
             big_area = area, big = i;
     }
@@ -1581,9 +1658,42 @@ void kh_gpu3d_describe(const KhGxFrame *f, char *out, int n)
     if (big >= 0 && k > 0 && k < n) {
         const KhGxPolygon *p = &f->poly[big];
         const KhGxVertex *v = &f->vtx[p->v[0]];
-        snprintf(out + k, (size_t)(n - k), "; largest %d%% of the screen: attr %08x tex %08x "
-                 "rgb %d %d %d alpha %d", (int)(big_area * 100.0f + 0.5f), (unsigned)p->attr,
-                 (unsigned)p->teximage, v->r, v->g, v->b, v->a);
+        k += snprintf(out + k, (size_t)(n - k), "; largest %d%% of the screen: attr %08x tex %08x "
+                      "rgb %d %d %d alpha %d", (int)(big_area * 100.0f + 0.5f), (unsigned)p->attr,
+                      (unsigned)p->teximage, v->r, v->g, v->b, v->a);
+    }
+    {
+        /* the translucent polygons by polygon ID, the most numerous first: how many, their
+         * summed share of the screen, the first one's texture, mode, alpha and vertex colour */
+        int count[64] = { 0 }, first[64], shown;
+        float share[64] = { 0 };
+        for (i = 0; i < f->npoly; i++) {
+            const KhGxPolygon *p = &f->poly[i];
+            const int id = (int)((p->attr >> 24) & 63);
+            if (!p->translucent)
+                continue;
+            if (!count[id]++)
+                first[id] = i;
+            share[id] += screen_share(f, p);
+        }
+        for (shown = 0; shown < 6 && k > 0 && k < n; shown++) {
+            int best = -1, id;
+            for (id = 0; id < 64; id++)
+                if (count[id] && (best < 0 || count[id] > count[best]))
+                    best = id;
+            if (best < 0)
+                break;
+            {
+                const KhGxPolygon *p = &f->poly[first[best]];
+                const KhGxVertex *v = &f->vtx[p->v[0]];
+                k += snprintf(out + k, (size_t)(n - k), "%s id %d: %d (%d%%) tex %08x mode %d "
+                              "alpha %d rgb %d %d %d", shown ? "," : "; translucent by ID:", best,
+                              count[best], (int)(share[best] * 100.0f + 0.5f),
+                              (unsigned)p->teximage, (int)((p->attr >> 4) & 3),
+                              (int)((p->attr >> 16) & 31), v->r, v->g, v->b);
+            }
+            count[best] = 0;
+        }
     }
 }
 

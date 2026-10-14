@@ -31,6 +31,10 @@ or No$GBA, and DeSmuME `.dsv` files, can be copied there.
 
 Settings: `ux0:data/khdays/config.ini`, or in game with **L+R+Select**.
 
+Single screen (port menu, beta): before the game, the title's menu is shown on the left over a
+picture of your own, `ux0:data/khdays/menu_bg.png` (or `.jpg`); none comes with the port.
+Characters on the right half of the picture stay clear of the menu.
+
 ## Controls
 
 | Vita | DS / port |
@@ -63,11 +67,15 @@ python3 tools/rewrite_decomp.py
 python3 configure_vita.py --with-game --rom ../days.nds && ninja
 ```
 
-The VPK lands in `build/VPK/`. The ROM is read at configure time only for the overlay table; no
+The VPK lands in `build/VPK/`. After pulling changes, run the same four commands again:
+`setup.sh` brings `build/decomp` to the new patch by itself as long as it holds only what the
+last setup applied (a tree from before 0.7.27, or one with edits of its own: remove
+`build/decomp` first, or export the edits with `./export_patch.sh`). The ROM is read at configure time only for the overlay table; no
 ROM bytes go into the build. Changes to the game code are made in `build/decomp` under
 `PLATFORM_VITA` and exported with `./export_patch.sh`.
 
 ## Legal
 
 This repository holds only the port's own code, tools and a patch against the decomp: no ROM,
-no game assets, no Sony modules. Kingdom Hearts is a trademark of Disney and Square Enix.
+no game assets, no Sony modules. `platform/compat/stb_image.h` is Sean Barrett's stb_image
+(public domain or MIT, at the user's choice), used to read the single screen's menu picture. Kingdom Hearts is a trademark of Disney and Square Enix.
