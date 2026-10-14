@@ -885,6 +885,8 @@ static void present(void)
             uint64_t t = sceKernelGetProcessTimeWide();
             s_stage = "3d textures";
             frame3d = dual ? toggle_frame : kh_gx3d_acquire();
+            if (!dual && frame3d)
+                s_shown_serial = frame3d->serial; /* the frame this swap shows */
             trace_polys = frame3d ? frame3d->npoly : -1;
             /* a dual-3D frame is built with engine A on the other screen than it is shown */
             if (dual && frame3d && frame3d->built_a_top == a_on_top)
@@ -1065,7 +1067,10 @@ static void present(void)
             if (lock30 && !dual) {
                 /* the 30 fps pacing (above) */
                 static uint32_t last_serial, last_vc, repeats_in_row;
-                const uint32_t ser = kh_gx3d_serial(), vc = (uint32_t)sceDisplayGetVcount();
+                /* the game frame drawn (taken at kh_gx3d_acquire), not the count after the
+                 * swap: a frame published while this one was drawn was counted here and the
+                 * next swap showed "0 new" (0.7.39 / 0.7.40's figures) */
+                const uint32_t ser = s_shown_serial, vc = (uint32_t)sceDisplayGetVcount();
                 const uint32_t n = ser - last_serial, d = vc - last_vc;
                 s_pace_new[n > 3 ? 3 : n]++;
                 s_pace_gap[d < 2 ? 0 : d > 4 ? 3 : d - 1]++;
