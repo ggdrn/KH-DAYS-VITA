@@ -12653,6 +12653,94 @@ index 11da93d12..b6f174877 100644
      char padding008[0x10];
      unsigned short flags018;
      unsigned short flags01a;
+diff --git a/src/overlays/field/ov022_battle/Ov022_StepRun.c b/src/overlays/field/ov022_battle/Ov022_StepRun.c
+index 4de6e65c1..9cab6e9c7 100644
+--- a/src/overlays/field/ov022_battle/Ov022_StepRun.c
++++ b/src/overlays/field/ov022_battle/Ov022_StepRun.c
+@@ -8,6 +8,7 @@
+  * writing the run's cue back into the actor's record.
+  */
+ 
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_TRACE_ALWAYS */
+ #include "nitro/types.h"
+ 
+ struct Actor;
+@@ -77,6 +78,28 @@ extern void Ov022_StepRunSequences(struct Run *pRun, int nDelta);
+ extern void Ov022_FeedRunSequences(struct Run *pRun);
+ extern void Ov022_ResetSlotBytes(u8 *pBlk);
+ extern int func_ov022_020ab350(struct Actor *pActor);
++#ifdef PLATFORM_VITA
++/* config partner_swap: the run (the Limit's: armed at low HP, engaged from state 2 to 10, the
++ * deck held meanwhile) marks its sender as 1 << the session's local slot and waits in state 3
++ * for the mask of the session's players (GetGlobalU16At6, 1 alone). While player 1 plays the
++ * partner, QueryActiveStateOrDelegate answers the partner's party index: the mask came out 2,
++ * never matched, and the run stayed engaged -- every magic and item of the deck held, and no
++ * Limit, for the rest of the mission (0.7.34 / 0.7.35's logs). The session's own slot is 0, as
++ * in Ov022_SendControlPacket. */
++extern volatile int kh_partner_swap_index, kh_partner_swap_member;
++static int kh_run_local_slot(void)
++{
++    return kh_partner_swap_index > 0 ? 0 : QueryActiveStateOrDelegate();
++}
++/* ... and Roxas on the partner AI starts no Limit (as the deck's magic and items: 0.7.35) */
++static int kh_run_blocked(struct Run *pRun)
++{
++    return (kh_partner_swap_member > 0 && pRun->pActor->nId == 0) || Ov022_IsActionBlocked(pRun);
++}
++#define Ov022_IsActionBlocked_0 kh_run_blocked
++#else
++#define Ov022_IsActionBlocked_0 Ov022_IsActionBlocked
++#endif
+ 
+ void Ov022_StepRun(struct Run *pRun, int nDelta)
+ {
+@@ -93,13 +116,13 @@ void Ov022_StepRun(struct Run *pRun, int nDelta)
+     pActor = pRun->pActor;
+     switch (nState) {
+     case 0:
+-        if (Session_IsReady() != 0 && Ov022_IsActionBlocked(pRun) == 0) {
++        if (Session_IsReady() != 0 && Ov022_IsActionBlocked_0(pRun) == 0) {
+             pRun->nState = 1;
+             pRun->nTimer = 0;
+         }
+         break;
+     case 1:
+-        if (Ov022_IsActionBlocked(pRun) != 0) {
++        if (Ov022_IsActionBlocked_0(pRun) != 0) {
+             pRun->nState = 0;
+         } else {
+             pRun->nTimer += nDelta;
+@@ -107,7 +130,11 @@ void Ov022_StepRun(struct Run *pRun, int nDelta)
+                 pRun->nTimer = 0;
+                 func_ov022_02094730(pRun, 0);
+                 pRun->nState = 2;
++#ifdef PLATFORM_VITA
++                pRun->nSlotMask = (u8)(1 << kh_run_local_slot());
++#else
+                 pRun->nSlotMask = (u8)(1 << QueryActiveStateOrDelegate());
++#endif
+                 func_ov022_02094b40(pRun);
+             }
+         }
+@@ -131,6 +158,18 @@ void Ov022_StepRun(struct Run *pRun, int nDelta)
+         if (Ov022_IsActionBlocked(pRun) != 0) {
+             pRun->nFlags |= 2;
+         }
++#ifdef PLATFORM_VITA
++        {
++            /* a run started by a build before this one (or a stray bit): the bits of players
++             * the session does not have are dropped, the local player's counted */
++            const unsigned short nPlayers = GetGlobalU16At6();
++            if ((pRun->nSlotMask & ~nPlayers) != 0) {
++                KH_TRACE_ALWAYS("swap: actor %d's run held in state 3 (mask %x of %x): released",
++                                pActor->nId, pRun->nSlotMask, nPlayers);
++                pRun->nSlotMask = (u8)((pRun->nSlotMask & nPlayers) | (nPlayers & 1));
++            }
++        }
++#endif
+         if (Ov022_ArePartsDone(pRun) != 0) {
+             if (Session_IsReady() != 0) {
+                 if (pRun->nSlotMask == GetGlobalU16At6() && pRun->nTimer >= 0) {
 diff --git a/src/overlays/field/ov022_battle/Ov022_SubmitGaugeValue.c b/src/overlays/field/ov022_battle/Ov022_SubmitGaugeValue.c
 index c41320cfd..8bf62796a 100644
 --- a/src/overlays/field/ov022_battle/Ov022_SubmitGaugeValue.c
@@ -12742,7 +12830,7 @@ index cd1deb4fa..8a7ea3279 100644
      short nAngleBias;            /* 0x478 */
      u8 pad47a[0x1e7e];
 diff --git a/src/overlays/field/ov022_battle/Ov022_TranslateCommandToAction.c b/src/overlays/field/ov022_battle/Ov022_TranslateCommandToAction.c
-index e5550fed5..5c8ab7934 100644
+index e5550fed5..f16c1b38c 100644
 --- a/src/overlays/field/ov022_battle/Ov022_TranslateCommandToAction.c
 +++ b/src/overlays/field/ov022_battle/Ov022_TranslateCommandToAction.c
 @@ -1,3 +1,4 @@
@@ -12768,16 +12856,15 @@ index e5550fed5..5c8ab7934 100644
      u8 pad46c[0x6a];
      signed char nCommandKind;    /* 0x4d6 */
      u8 pad4d7[1];
-@@ -88,6 +89,18 @@ void Ov022_TranslateCommandToAction(struct Actor *pActor)
+@@ -88,6 +89,17 @@ void Ov022_TranslateCommandToAction(struct Actor *pActor)
      int bLocked;
      int nAim;
  
 +#ifdef PLATFORM_VITA
 +    {
 +        /* config partner_swap: Roxas on the partner AI (the partner played) takes no command of
-+         * the deck -- its slots, keys, items, which are what the player spends meanwhile, and
-+         * the Limit when his HP is low: started by the AI, the Limit was never finished and
-+         * held every command of the field until the end of the mission (0.7.34's log) */
++         * the deck -- its slots, keys, items, which are what the player spends meanwhile (his
++         * Limit is held off in Ov022_StepRun) */
 +        extern volatile int kh_partner_swap_member;
 +        if (kh_partner_swap_member > 0 && pActor->nId == 0 &&
 +            (pActor->nCommandKind == 8 || (pActor->nCommandKind >= 0xb && pActor->nCommandKind <= 0xd)))
@@ -12971,6 +13058,26 @@ index 170251d12..bd7f17c6b 100644
  /* * Was parked as a register-allocation tie. It was not -- it was a THUMB function that had only
   * ever been verified as ARM (giving a nonsense size gap), plus two ordinary steers:
   *   - `i = 0` must be a STATEMENT after the calls, not a declaration-initialiser. As an
+diff --git a/src/overlays/field/ov022_battle/func_ov022_02094730.c b/src/overlays/field/ov022_battle/func_ov022_02094730.c
+index 0b9116801..2f75af9c6 100644
+--- a/src/overlays/field/ov022_battle/func_ov022_02094730.c
++++ b/src/overlays/field/ov022_battle/func_ov022_02094730.c
+@@ -12,7 +12,15 @@ struct marshal_02094730 {
+ void func_ov022_02094730(int param_1, int param_2) {
+     struct marshal_02094730 m;
+     m.f0 = *(unsigned char *)(*(int *)(param_1 + 0x328) + 9);
++#ifdef PLATFORM_VITA
++    {
++        /* config partner_swap: the sender's bit is the session's own slot (Ov022_StepRun) */
++        extern volatile int kh_partner_swap_index;
++        m.f2 = kh_partner_swap_index > 0 ? 0 : QueryActiveStateOrDelegate();
++    }
++#else
+     m.f2 = QueryActiveStateOrDelegate();
++#endif
+     m.f5 = param_2;
+     *(short *)(param_1 + 0x33c) = MsgQueue_Post(0x10, &m, 1);
+ }
 diff --git a/src/overlays/field/ov022_battle/func_ov022_020aeef8.c b/src/overlays/field/ov022_battle/func_ov022_020aeef8.c
 index 73a3e7bd4..fce568167 100644
 --- a/src/overlays/field/ov022_battle/func_ov022_020aeef8.c
