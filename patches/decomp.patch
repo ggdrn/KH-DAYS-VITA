@@ -12123,7 +12123,7 @@ index e43f5318f..60c3f4296 100644
      } else if (Ov002_IsObjectFlag2000Set(object) == 0) {
          if ((pressed & 0x100) != 0) {
 diff --git a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
-index f3055d4ba..839bc7ab2 100644
+index f3055d4ba..bfa1ba9de 100644
 --- a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 +++ b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 @@ -1,7 +1,11 @@
@@ -12147,7 +12147,7 @@ index f3055d4ba..839bc7ab2 100644
  } Ov022FlagsView;
  
  typedef struct Ov022NodeOwner {
-@@ -90,6 +94,290 @@ extern void func_ov022_0208a1a4(void);
+@@ -90,6 +94,301 @@ extern void func_ov022_0208a1a4(void);
  extern unsigned short gPadPressed;
  extern unsigned short gPadHeld;
  
@@ -12262,9 +12262,20 @@ index f3055d4ba..839bc7ab2 100644
 +    }
 +}
 +
++/* Flag bit 44 (high word bit 12) is the partner AI asking its actor's Limit run to start without
++ * the button held (Ov022_IsActionBlocked; Ov022_StepPartnerSlot's state 10 keeps it up). Left up
++ * on Roxas by the AI while swapped, his Limit went off by itself once he was played again
++ * (0.7.36's log); each swap starts both without it. */
++#define SWAP_AI_LIMIT_HIGH (1u << 12)
++
 +static void swap_apply(Ov022Root *root, int from, int to)
 +{
 +    Ov022Node *roxas = swap_node(root, 0);
++    roxas->flagsHigh &= ~SWAP_AI_LIMIT_HIGH;
++    if (from > 0 && from < root->count)
++        swap_node(root, from)->flagsHigh &= ~SWAP_AI_LIMIT_HIGH;
++    if (to > 0 && to < root->count)
++        swap_node(root, to)->flagsHigh &= ~SWAP_AI_LIMIT_HIGH;
 +    /* the panels: the partner's HP max and member are Roxas's while it is played */
 +    if (to > 0) {
 +        /* each one keeps its own HP: the partner played down, Roxas comes back as he was
@@ -12438,7 +12449,7 @@ index f3055d4ba..839bc7ab2 100644
  void Ov022_RefreshSlotRows(int unused)
  {
      Ov022Root *root = NNSi_FndGetCurrentRootHeap();
-@@ -119,6 +407,9 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -119,6 +418,9 @@ void Ov022_RefreshSlotRows(int unused)
          gPadHeld |= root->savedMask1;
          func_ov022_02087a70();
      }
@@ -12448,7 +12459,7 @@ index f3055d4ba..839bc7ab2 100644
      primaryNode = root->firstOwner->node;
      primaryField66 = primaryNode->field066;
      resourceBase = Ov022_GetGlobalPlus14();
-@@ -143,7 +434,16 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -143,7 +445,16 @@ void Ov022_RefreshSlotRows(int unused)
              if ((int)(*(long long *)node & 0x10000LL) == 0) {
                  Ov022_LoadNodeFromResource(node, cursor->rowIndex);
              } else {
