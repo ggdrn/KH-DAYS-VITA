@@ -12123,7 +12123,7 @@ index e43f5318f..60c3f4296 100644
      } else if (Ov002_IsObjectFlag2000Set(object) == 0) {
          if ((pressed & 0x100) != 0) {
 diff --git a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
-index f3055d4ba..6a44b803c 100644
+index f3055d4ba..839bc7ab2 100644
 --- a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 +++ b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 @@ -1,7 +1,11 @@
@@ -12147,7 +12147,7 @@ index f3055d4ba..6a44b803c 100644
  } Ov022FlagsView;
  
  typedef struct Ov022NodeOwner {
-@@ -90,6 +94,267 @@ extern void func_ov022_0208a1a4(void);
+@@ -90,6 +94,290 @@ extern void func_ov022_0208a1a4(void);
  extern unsigned short gPadPressed;
  extern unsigned short gPadHeld;
  
@@ -12312,6 +12312,7 @@ index f3055d4ba..6a44b803c 100644
 +}
 +
 +extern int data_ov022_020b2e78;
++static int s_zone_swap; /* the swap the zone watch below belongs to */
 +
 +static void swap_tick(Ov022Root *root)
 +{
@@ -12361,6 +12362,8 @@ index f3055d4ba..6a44b803c 100644
 +                KH_TRACE_ALWAYS("swap: no partner to play (%d entries)", root->count);
 +        }
 +    }
++    if (!cur)
++        s_zone_swap = 0;
 +    if (cur) {
 +        Ov022Node *roxas = swap_node(root, 0);
 +        Ov022Node *partner = cur < root->count ? swap_node(root, cur) : 0;
@@ -12370,14 +12373,34 @@ index f3055d4ba..6a44b803c 100644
 +         * game played it again and again (Roxas taken to the area's start) or hung. Gone only
 +         * when it stays out of any zone for some 5 s. */
 +        static int out_of_zone;
++        /* A new zone entered by the partner played: Roxas is given back once it is in and the
++         * game lets go of the player (the enemies of a zone did not come out with the partner
++         * played: the user's 0.7.33 to 0.7.35 logs). Not in the middle of the change (above). */
++        static int zone_last = -1, zone_new_frames;
 +        const char *why;
 +        out_of_zone = partner && partner->field066 == -1 ? out_of_zone + 1 : 0;
++        if (cur != s_zone_swap) {
++            s_zone_swap = cur;
++            zone_last = partner ? partner->field066 : -1;
++            zone_new_frames = 0;
++        }
++        if (partner && partner->field066 != -1) {
++            if (zone_last == -1)
++                zone_last = partner->field066;
++            if (partner->field066 != zone_last)
++                zone_new_frames = (Ov022_IsInputAllowedForActiveSlot() == 0 && !(root->flags & 4))
++                                      ? zone_new_frames + 1 : 0;
++        }
 +        why = !kh_partner_swap_enabled() ? "option off"
 +                          : kh_partner_swap_hold ? "a scene (dialogue, movie)"
 +                          : !partner || out_of_zone > 150 ? "the partner gone"
 +                          : partner->field012 == 0 ? "the partner down"
 +                          : roxas->field012 == 0 ? "Roxas down"
-+                          : (root->flags & 4) ? "the field stopped" : NULL;
++                          : (root->flags & 4) ? "the field stopped"
++                          : zone_new_frames > 15 ? "a new zone" : NULL;
++        if (why && zone_new_frames > 15)
++            KH_TRACE_ALWAYS("swap: zone %d -> %d (Roxas in zone %d)", zone_last,
++                            partner->field066, roxas->field066);
 +        /* The game holding the player (a zone change, an exit's walk) is not a reason either:
 +         * the one played goes through it, and a field change ends the swap (above). 0.7.19 to
 +         * 0.7.24 gave Roxas back there and put him where the partner was, in the middle of the
@@ -12415,7 +12438,7 @@ index f3055d4ba..6a44b803c 100644
  void Ov022_RefreshSlotRows(int unused)
  {
      Ov022Root *root = NNSi_FndGetCurrentRootHeap();
-@@ -119,6 +384,9 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -119,6 +407,9 @@ void Ov022_RefreshSlotRows(int unused)
          gPadHeld |= root->savedMask1;
          func_ov022_02087a70();
      }
@@ -12425,7 +12448,7 @@ index f3055d4ba..6a44b803c 100644
      primaryNode = root->firstOwner->node;
      primaryField66 = primaryNode->field066;
      resourceBase = Ov022_GetGlobalPlus14();
-@@ -143,7 +411,16 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -143,7 +434,16 @@ void Ov022_RefreshSlotRows(int unused)
              if ((int)(*(long long *)node & 0x10000LL) == 0) {
                  Ov022_LoadNodeFromResource(node, cursor->rowIndex);
              } else {
