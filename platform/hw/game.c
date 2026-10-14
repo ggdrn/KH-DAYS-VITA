@@ -123,6 +123,13 @@ static void boot_state(void)
 
 static uint32_t s_render_us; /* the last frame's 2D rendering time, both engines */
 static volatile uint32_t s_vblanks; /* VBlanks raised so far (vblank_thread) */
+/* 30 fps pacing (the log, every 600 display frames): game frames new in each swap shown (0: the
+ * same picture twice, a hitch; 2 or more: one never shown), VBlanks between swaps, and VBlanks
+ * between the game's own frames (its SWAP_BUFFERS published) */
+static uint32_t s_pace_new[4], s_pace_gap[4], s_game_gap[4], s_pace_runs;
+static uint32_t s_shown_serial;              /* the game frame the last swap showed */
+static volatile uint32_t s_game_frame_vb;    /* the VBlank of the game's last frame */
+static uint32_t s_pace_waits, s_pace_wait_us, s_pace_wait_miss;
 static uint32_t s_2d_skipped;      /* displayed frames that reused the last 2D image */
 static volatile uint32_t s_debug_shown = 0x80000000u; /* VBlank of the last debug mode change */
 
@@ -731,6 +738,23 @@ static void present(void)
             kh_gpu3d_set_scale(p == 4 ? 1 : kh_config.render_scale);
         }
     }
+    if (lock30 && !dual && kh_gx3d_serial() == s_shown_serial &&
+        s_vblanks - s_game_frame_vb < 8) {
+        /* 30 fps: the game's frames come every two VBlanks, and so do the swaps, each on its
+         * own clock: a game frame finished just as a swap took the picture went to the next
+         * one, which showed the same picture twice and then skipped one -- up to 55 of 600
+         * swaps (0.7.39's log) with the game itself regular. The display waits for the game's
+         * next frame (a VBlank at most) and so takes each one just after it is done. Not while
+         * the game makes no frames (a still screen). */
+        const uint64_t t = sceKernelGetProcessTimeWide(), until = t + 17000;
+        s_stage = "wait for the game frame";
+        while (kh_gx3d_serial() == s_shown_serial && sceKernelGetProcessTimeWide() < until)
+            sceKernelDelayThread(200);
+        s_pace_waits++;
+        s_pace_wait_us += (uint32_t)(sceKernelGetProcessTimeWide() - t);
+        s_pace_wait_miss += kh_gx3d_serial() == s_shown_serial;
+    }
+    s_shown_serial = kh_gx3d_serial(); /* the frame this swap takes */
     const int gpu_probe = kh_config.debug == 3 ? 0 : video_gpu_probe_begin();
     uint64_t t0 = sceKernelGetProcessTimeWide();
     unsigned tex3d = 0, raw3d;
@@ -861,6 +885,8 @@ static void present(void)
             uint64_t t = sceKernelGetProcessTimeWide();
             s_stage = "3d textures";
             frame3d = dual ? toggle_frame : kh_gx3d_acquire();
+            if (!dual && frame3d)
+                s_shown_serial = frame3d->serial; /* the frame this swap shows */
             trace_polys = frame3d ? frame3d->npoly : -1;
             /* a dual-3D frame is built with engine A on the other screen than it is shown */
             if (dual && frame3d && frame3d->built_a_top == a_on_top)
@@ -1038,6 +1064,27 @@ static void present(void)
             video_run_capture(top, bottom);
         } else {
             video_present(top, bottom);
+            if (lock30 && !dual) {
+                /* the 30 fps pacing (above) */
+                static uint32_t last_serial, last_vc, repeats_in_row;
+                /* the game frame drawn (taken at kh_gx3d_acquire), not the count after the
+                 * swap: a frame published while this one was drawn was counted here and the
+                 * next swap showed "0 new" (0.7.39 / 0.7.40's figures) */
+                const uint32_t ser = s_shown_serial, vc = (uint32_t)sceDisplayGetVcount();
+                const uint32_t n = ser - last_serial, d = vc - last_vc;
+                s_pace_new[n > 3 ? 3 : n]++;
+                s_pace_gap[d < 2 ? 0 : d > 4 ? 3 : d - 1]++;
+                /* a repeat then a double: the game's frame landed just past the swap */
+                if (n == 0)
+                    repeats_in_row++;
+                else {
+                    if (repeats_in_row && n >= 2)
+                        s_pace_runs++;
+                    repeats_in_row = 0;
+                }
+                last_serial = ser;
+                last_vc = vc;
+            }
             if (dual_field) {
                 /* VBlanks between a fight's top-screen swaps (1, 2, 3, 4 or more) */
                 static uint32_t last_vc;
@@ -1386,6 +1433,14 @@ static void swap_wait(void)
         sceKernelDelayThread(200);
     last = *count;
     {
+        /* the 30 fps pacing: VBlanks between the game's frames (2 at its 30 fps) */
+        static uint32_t vb_prev;
+        const uint32_t g = s_vblanks - vb_prev;
+        vb_prev = s_vblanks;
+        s_game_gap[g < 1 ? 0 : g > 3 ? 3 : g]++;
+        s_game_frame_vb = s_vblanks;
+    }
+    {
         /* Game-side hitches in the field: a 3D frame more than 50 ms after the one before it
          * (the game's 30 fps is 33 ms), with the cartridge reads made meanwhile (the reads
          * are the game thread's own: the memory card takes ~6.6 ms a 64 KiB block) */
@@ -1542,6 +1597,29 @@ void kh_game_run(void)
                     if (s_locked)
                         LOG("display: screen at 30 fps (two VBlanks a swap) in %u of 600 "
                             "display frames", (unsigned)s_locked);
+                    if (s_pace_new[0] + s_pace_new[1] + s_pace_new[2] + s_pace_new[3]) {
+                        LOG("display: 30 fps pacing: swaps with 0/1/2/3+ new game frames "
+                            "%u/%u/%u/%u (0 = the same picture again, %u of them caught up "
+                            "next); VBlanks between swaps <2/2/3/4+ %u/%u/%u/%u; VBlanks "
+                            "between game frames 0/1/2/3+ %u/%u/%u/%u",
+                            (unsigned)s_pace_new[0], (unsigned)s_pace_new[1],
+                            (unsigned)s_pace_new[2], (unsigned)s_pace_new[3],
+                            (unsigned)s_pace_runs, (unsigned)s_pace_gap[0],
+                            (unsigned)s_pace_gap[1], (unsigned)s_pace_gap[2],
+                            (unsigned)s_pace_gap[3], (unsigned)s_game_gap[0],
+                            (unsigned)s_game_gap[1], (unsigned)s_game_gap[2],
+                            (unsigned)s_game_gap[3]);
+                    }
+                    if (s_pace_waits)
+                        LOG("display: 30 fps pacing: waited for the game's frame %u times, "
+                            "%u us on average, %u of them in vain (a VBlank)",
+                            (unsigned)s_pace_waits, (unsigned)(s_pace_wait_us / s_pace_waits),
+                            (unsigned)s_pace_wait_miss);
+                    s_pace_waits = s_pace_wait_us = s_pace_wait_miss = 0;
+                    memset(s_pace_new, 0, sizeof(s_pace_new));
+                    memset(s_pace_gap, 0, sizeof(s_pace_gap));
+                    memset(s_game_gap, 0, sizeof(s_game_gap));
+                    s_pace_runs = 0;
                     s_locked = 0;
                     if (s_swaps60)
                         LOG("display: 60 fps: %u swaps, %u of them a VBlank late or more: %u with "
