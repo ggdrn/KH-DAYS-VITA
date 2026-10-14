@@ -127,6 +127,9 @@ static volatile uint32_t s_vblanks; /* VBlanks raised so far (vblank_thread) */
  * same picture twice, a hitch; 2 or more: one never shown), VBlanks between swaps, and VBlanks
  * between the game's own frames (its SWAP_BUFFERS published) */
 static uint32_t s_pace_new[4], s_pace_gap[4], s_game_gap[4], s_pace_runs;
+static uint32_t s_shown_serial;              /* the game frame the last swap showed */
+static volatile uint32_t s_game_frame_vb;    /* the VBlank of the game's last frame */
+static uint32_t s_pace_waits, s_pace_wait_us, s_pace_wait_miss;
 static uint32_t s_2d_skipped;      /* displayed frames that reused the last 2D image */
 static volatile uint32_t s_debug_shown = 0x80000000u; /* VBlank of the last debug mode change */
 
@@ -735,6 +738,23 @@ static void present(void)
             kh_gpu3d_set_scale(p == 4 ? 1 : kh_config.render_scale);
         }
     }
+    if (lock30 && !dual && kh_gx3d_serial() == s_shown_serial &&
+        s_vblanks - s_game_frame_vb < 8) {
+        /* 30 fps: the game's frames come every two VBlanks, and so do the swaps, each on its
+         * own clock: a game frame finished just as a swap took the picture went to the next
+         * one, which showed the same picture twice and then skipped one -- up to 55 of 600
+         * swaps (0.7.39's log) with the game itself regular. The display waits for the game's
+         * next frame (a VBlank at most) and so takes each one just after it is done. Not while
+         * the game makes no frames (a still screen). */
+        const uint64_t t = sceKernelGetProcessTimeWide(), until = t + 17000;
+        s_stage = "wait for the game frame";
+        while (kh_gx3d_serial() == s_shown_serial && sceKernelGetProcessTimeWide() < until)
+            sceKernelDelayThread(200);
+        s_pace_waits++;
+        s_pace_wait_us += (uint32_t)(sceKernelGetProcessTimeWide() - t);
+        s_pace_wait_miss += kh_gx3d_serial() == s_shown_serial;
+    }
+    s_shown_serial = kh_gx3d_serial(); /* the frame this swap takes */
     const int gpu_probe = kh_config.debug == 3 ? 0 : video_gpu_probe_begin();
     uint64_t t0 = sceKernelGetProcessTimeWide();
     unsigned tex3d = 0, raw3d;
@@ -1413,6 +1433,7 @@ static void swap_wait(void)
         const uint32_t g = s_vblanks - vb_prev;
         vb_prev = s_vblanks;
         s_game_gap[g < 1 ? 0 : g > 3 ? 3 : g]++;
+        s_game_frame_vb = s_vblanks;
     }
     {
         /* Game-side hitches in the field: a 3D frame more than 50 ms after the one before it
@@ -1584,6 +1605,12 @@ void kh_game_run(void)
                             (unsigned)s_game_gap[1], (unsigned)s_game_gap[2],
                             (unsigned)s_game_gap[3]);
                     }
+                    if (s_pace_waits)
+                        LOG("display: 30 fps pacing: waited for the game's frame %u times, "
+                            "%u us on average, %u of them in vain (a VBlank)",
+                            (unsigned)s_pace_waits, (unsigned)(s_pace_wait_us / s_pace_waits),
+                            (unsigned)s_pace_wait_miss);
+                    s_pace_waits = s_pace_wait_us = s_pace_wait_miss = 0;
                     memset(s_pace_new, 0, sizeof(s_pace_new));
                     memset(s_pace_gap, 0, sizeof(s_pace_gap));
                     memset(s_game_gap, 0, sizeof(s_game_gap));
