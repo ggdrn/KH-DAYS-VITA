@@ -12123,7 +12123,7 @@ index e43f5318f..60c3f4296 100644
      } else if (Ov002_IsObjectFlag2000Set(object) == 0) {
          if ((pressed & 0x100) != 0) {
 diff --git a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
-index f3055d4ba..7037df5b2 100644
+index f3055d4ba..6a44b803c 100644
 --- a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 +++ b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 @@ -1,7 +1,11 @@
@@ -12147,7 +12147,7 @@ index f3055d4ba..7037df5b2 100644
  } Ov022FlagsView;
  
  typedef struct Ov022NodeOwner {
-@@ -90,6 +94,245 @@ extern void func_ov022_0208a1a4(void);
+@@ -90,6 +94,267 @@ extern void func_ov022_0208a1a4(void);
  extern unsigned short gPadPressed;
  extern unsigned short gPadHeld;
  
@@ -12311,6 +12311,8 @@ index f3055d4ba..7037df5b2 100644
 +    }
 +}
 +
++extern int data_ov022_020b2e78;
++
 +static void swap_tick(Ov022Root *root)
 +{
 +    /* in the port's memory: ov022's own statics start over when an area reloads it, and the
@@ -12387,13 +12389,33 @@ index f3055d4ba..7037df5b2 100644
 +    }
 +    if (want != cur)
 +        swap_apply(root, cur, want);
++    {
++        /* diagnostics: the commands held for long (Ov022_IsInputAllowedForActiveSlot: the
++         * active actor's own move at +0x2668, or the field's hold) -- 0.7.34's log, a Limit
++         * started by the AI that held every command until the mission's end */
++        static int held, logged;
++        const int s = ((int *)&data_ov022_020b2e78)[1];
++        const int e = GetEntryField20ByIndex(QueryActiveStateOrDelegate());
++        const int own = e ? *(int *)(e + 0x2668) : 0;
++        const int field = s ? (*(unsigned char *)(s + 0x3c) & 1) : 0;
++        if (own || field) {
++            if (++held == 90 && logged < 20) {
++                logged++;
++                KH_TRACE_ALWAYS("swap: commands held 3 s: actor %d's own move %08x, field hold "
++                                "%d (swapped %d)", QueryActiveStateOrDelegate(), own, field,
++                                kh_partner_swap_member);
++            }
++        } else {
++            held = 0;
++        }
++    }
 +}
 +#endif
 +
  void Ov022_RefreshSlotRows(int unused)
  {
      Ov022Root *root = NNSi_FndGetCurrentRootHeap();
-@@ -119,6 +362,9 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -119,6 +384,9 @@ void Ov022_RefreshSlotRows(int unused)
          gPadHeld |= root->savedMask1;
          func_ov022_02087a70();
      }
@@ -12403,7 +12425,7 @@ index f3055d4ba..7037df5b2 100644
      primaryNode = root->firstOwner->node;
      primaryField66 = primaryNode->field066;
      resourceBase = Ov022_GetGlobalPlus14();
-@@ -143,7 +389,16 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -143,7 +411,16 @@ void Ov022_RefreshSlotRows(int unused)
              if ((int)(*(long long *)node & 0x10000LL) == 0) {
                  Ov022_LoadNodeFromResource(node, cursor->rowIndex);
              } else {
@@ -12720,7 +12742,7 @@ index cd1deb4fa..8a7ea3279 100644
      short nAngleBias;            /* 0x478 */
      u8 pad47a[0x1e7e];
 diff --git a/src/overlays/field/ov022_battle/Ov022_TranslateCommandToAction.c b/src/overlays/field/ov022_battle/Ov022_TranslateCommandToAction.c
-index e5550fed5..acdd9f4e8 100644
+index e5550fed5..5c8ab7934 100644
 --- a/src/overlays/field/ov022_battle/Ov022_TranslateCommandToAction.c
 +++ b/src/overlays/field/ov022_battle/Ov022_TranslateCommandToAction.c
 @@ -1,3 +1,4 @@
@@ -12746,6 +12768,25 @@ index e5550fed5..acdd9f4e8 100644
      u8 pad46c[0x6a];
      signed char nCommandKind;    /* 0x4d6 */
      u8 pad4d7[1];
+@@ -88,6 +89,18 @@ void Ov022_TranslateCommandToAction(struct Actor *pActor)
+     int bLocked;
+     int nAim;
+ 
++#ifdef PLATFORM_VITA
++    {
++        /* config partner_swap: Roxas on the partner AI (the partner played) takes no command of
++         * the deck -- its slots, keys, items, which are what the player spends meanwhile, and
++         * the Limit when his HP is low: started by the AI, the Limit was never finished and
++         * held every command of the field until the end of the mission (0.7.34's log) */
++        extern volatile int kh_partner_swap_member;
++        if (kh_partner_swap_member > 0 && pActor->nId == 0 &&
++            (pActor->nCommandKind == 8 || (pActor->nCommandKind >= 0xb && pActor->nCommandKind <= 0xd)))
++            pActor->nCommandKind = 7;
++    }
++#endif
+     bTrigger = 0;
+     pActor->nPendingAction = 0;
+     bLocked = 0;
 diff --git a/src/overlays/field/ov022_battle/Ov022_TryTriggerFinisher.c b/src/overlays/field/ov022_battle/Ov022_TryTriggerFinisher.c
 index 99aa137aa..05f8bf9fb 100644
 --- a/src/overlays/field/ov022_battle/Ov022_TryTriggerFinisher.c
