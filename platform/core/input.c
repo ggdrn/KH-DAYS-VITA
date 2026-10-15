@@ -35,6 +35,14 @@ int kh_partner_swap_enabled(void)
 
 /* config swap_roxas_items / swap_roxas_magic: Roxas on the partner AI takes the items or the
  * magic of his own deck (Ov022_TranslateCommandToAction) */
+/* config partner_swap: in a mission started with the swap on (the option is set out of
+ * missions only), the partners (members 1 and 2) have Roxas's abilities too, swapped or not
+ * (engine/Slot_EvalPackedParam.c) */
+int kh_swap_shares_abilities(int id)
+{
+    return id >= 1 && id <= 2 && kh_partner_swap_enabled();
+}
+
 int kh_partner_swap_roxas_items(void)
 {
     return kh_config.swap_roxas_items;

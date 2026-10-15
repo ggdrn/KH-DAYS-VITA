@@ -10012,20 +10012,33 @@ index f0ec5e085..210b1cda2 100644
 +}
 +#endif
 diff --git a/src/engine/Slot_EvalPackedParam.c b/src/engine/Slot_EvalPackedParam.c
-index 89376fcd5..5b964138b 100644
+index 89376fcd5..74eb2d50f 100644
 --- a/src/engine/Slot_EvalPackedParam.c
 +++ b/src/engine/Slot_EvalPackedParam.c
-@@ -14,7 +14,13 @@ extern struct Params data_0204c590[];
+@@ -14,7 +14,26 @@ extern struct Params data_0204c590[];
  extern unsigned char gPartyMembers[];
  extern int BitArray_GetField(unsigned char *p, int hi, int lo);
  
 +#ifdef PLATFORM_VITA
-+extern int kh_swap_deck_member(int id); /* config partner_swap: the deck as Roxas's */
++extern int kh_swap_deck_member(int id); /* config partner_swap: the deck shown, the partner's */
++extern int kh_swap_shares_abilities(int id);
++/* parameters 1 to 15 are the deck's (each magic's charges: Ov022_BuildSlotPool), the rest the
++ * panels' abilities and rules (dodge roll, glide, the combo's, the guard's...) */
++#define KH_FIRST_ABILITY 0x10
 +#endif
  int Slot_EvalPackedParam(int a, int b) {
      struct Params *v = &data_0204c590[b - 1];
 +#ifdef PLATFORM_VITA
 +    a = kh_swap_deck_member(a);
++    if (b >= KH_FIRST_ABILITY && kh_swap_shares_abilities(a)) {
++        /* config partner_swap: in a mission set up for the swap the partner has Roxas's
++         * abilities as well as its own (the higher of the two), for the whole mission; its
++         * deck stays its own */
++        const int own = (unsigned char)BitArray_GetField(gPartyMembers + a * 260 + 0x28, v->hi,
++                                                         v->lo);
++        const int roxas = (unsigned char)BitArray_GetField(gPartyMembers + 0x28, v->hi, v->lo);
++        return own > roxas ? own : roxas;
++    }
 +#endif
      return (unsigned char)BitArray_GetField(gPartyMembers + a * 260 + 0x28, v->hi, v->lo);
  }
@@ -12234,7 +12247,7 @@ index e43f5318f..60c3f4296 100644
      } else if (Ov002_IsObjectFlag2000Set(object) == 0) {
          if ((pressed & 0x100) != 0) {
 diff --git a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
-index f3055d4ba..b77cdf146 100644
+index f3055d4ba..29fbf440c 100644
 --- a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 +++ b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 @@ -1,7 +1,11 @@
@@ -12258,7 +12271,7 @@ index f3055d4ba..b77cdf146 100644
  } Ov022FlagsView;
  
  typedef struct Ov022NodeOwner {
-@@ -90,6 +94,296 @@ extern void func_ov022_0208a1a4(void);
+@@ -90,6 +94,304 @@ extern void func_ov022_0208a1a4(void);
  extern unsigned short gPadPressed;
  extern unsigned short gPadHeld;
  
@@ -12345,17 +12358,23 @@ index f3055d4ba..b77cdf146 100644
 +extern int Slot_EvalPackedParam(int nId, int nWhat);
 +extern unsigned char gPartyMembers[];
 +static unsigned char s_swap_row[SWAP_WEAPON_ROW_SIZE]; /* the partner's own, while played */
++static unsigned char s_roxas_row[SWAP_WEAPON_ROW_SIZE]; /* Roxas's own, while on the AI */
 +static int s_swap_row_kept;
 +
-+static void swap_weapon_row(Ov022Node *partner, int give)
++/* Roxas on the AI while the partner is played fights as the partner did: the partner's own
++ * weapon row (its damage) with his own weapon type (byte 0, his moves' animations), so that the
++ * pair hits no harder than the mission's own pair; his row back with him. */
++static void swap_weapon_row(Ov022Node *partner, Ov022Node *roxas, int give)
 +{
 +    unsigned char *row = (unsigned char *)partner + SWAP_WEAPON_ROW;
++    unsigned char *rrow = (unsigned char *)roxas + SWAP_WEAPON_ROW;
 +    if (give) {
 +        /* byte 4 of a record is its weapon (not traded: GetPlayerSlotTableEntry.c) */
 +        const int w = gPartyMembers[4];
 +        const int kind = *(int *)((char *)partner + SWAP_ACTOR_KIND);
 +        unsigned char built[SWAP_WEAPON_ROW_SIZE];
 +        memcpy(s_swap_row, row, sizeof(s_swap_row));
++        memcpy(s_roxas_row, rrow, sizeof(s_roxas_row));
 +        s_swap_row_kept = 1;
 +        Ov002_LoadCharacterWeapon(built, kind, w);
 +        if (Slot_EvalPackedParam(((unsigned char *)partner)[9], 0x59) != 0)
@@ -12366,10 +12385,12 @@ index f3055d4ba..b77cdf146 100644
 +         * Roxas's (0.7.31 to 0.7.33) its attacks had no animation */
 +        built[0] = row[0];
 +        memcpy(row, built, sizeof(built));
-+        KH_TRACE_ALWAYS("swap: partner (kind %d) fights with Roxas's weapon %d (its stats)", kind,
-+                        w);
++        memcpy(rrow + 1, s_swap_row + 1, sizeof(s_swap_row) - 1);
++        KH_TRACE_ALWAYS("swap: partner (kind %d) fights with Roxas's weapon %d (its stats), "
++                        "Roxas with the partner's", kind, w);
 +    } else if (s_swap_row_kept) {
 +        memcpy(row, s_swap_row, sizeof(s_swap_row));
++        memcpy(rrow, s_roxas_row, sizeof(s_roxas_row));
 +        s_swap_row_kept = 0;
 +    }
 +}
@@ -12398,11 +12419,11 @@ index f3055d4ba..b77cdf146 100644
 +             * partner's (engine/GetPlayerSlotTableEntry.c: kh_swap_deck_member) */
 +            const int id = ((unsigned char *)swap_node(root, to))[9];
 +            kh_partner_swap_member = id;
-+            swap_weapon_row(swap_node(root, to), 1);
++            swap_weapon_row(swap_node(root, to), roxas, 1);
 +        }
 +    } else if (from > 0 && from < root->count) {
 +        swap_log_hp("back", roxas, swap_node(root, from));
-+        swap_weapon_row(swap_node(root, from), 0);
++        swap_weapon_row(swap_node(root, from), roxas, 0);
 +        kh_partner_swap_member = 0;
 +    } else {
 +        kh_partner_swap_member = 0;
@@ -12555,7 +12576,7 @@ index f3055d4ba..b77cdf146 100644
  void Ov022_RefreshSlotRows(int unused)
  {
      Ov022Root *root = NNSi_FndGetCurrentRootHeap();
-@@ -119,6 +413,9 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -119,6 +421,9 @@ void Ov022_RefreshSlotRows(int unused)
          gPadHeld |= root->savedMask1;
          func_ov022_02087a70();
      }
@@ -12565,7 +12586,7 @@ index f3055d4ba..b77cdf146 100644
      primaryNode = root->firstOwner->node;
      primaryField66 = primaryNode->field066;
      resourceBase = Ov022_GetGlobalPlus14();
-@@ -135,6 +432,9 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -135,6 +440,9 @@ void Ov022_RefreshSlotRows(int unused)
  
          do {
              node = cursor->owner->node;
@@ -12575,7 +12596,7 @@ index f3055d4ba..b77cdf146 100644
              short oldField66 = node->field066;
              unsigned int flags = node->flagsLow;
              row = &rowBase[cursor->rowIndex];
-@@ -143,7 +443,16 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -143,7 +451,16 @@ void Ov022_RefreshSlotRows(int unused)
              if ((int)(*(long long *)node & 0x10000LL) == 0) {
                  Ov022_LoadNodeFromResource(node, cursor->rowIndex);
              } else {
@@ -12592,7 +12613,7 @@ index f3055d4ba..b77cdf146 100644
              }
              if ((root->flags & 4) == 0) {
                  func_ov022_020ad474(node);
-@@ -192,6 +501,9 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -192,6 +509,9 @@ void Ov022_RefreshSlotRows(int unused)
              index++;
          } while (index < root->count);
      }

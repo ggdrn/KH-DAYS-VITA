@@ -7,6 +7,7 @@
 #include "config.h"
 #include "font8x8.h"
 #include "video.h"
+#include "nitro/overlay.h"
 
 #include <psp2/ctrl.h>
 #include <stdio.h>
@@ -95,7 +96,7 @@ static const Item s_system[] = {
 };
 
 static const Item s_partner[] = {
-    { IT_SWAP, 0, "Partner swap (experimental)", "Touch the partner's HUD to play as the partner." },
+    { IT_SWAP, 0, "Partner swap (experimental)", "Touch the partner's HUD. Set out of a mission." },
     { IT_SWAP_ITEMS, 0, "Roxas uses items", "Swapped: Roxas on the AI may use his own items." },
     { IT_SWAP_MAGIC, 0, "Roxas uses magic", "Swapped: Roxas on the AI may cast his own magic." },
 };
@@ -185,7 +186,12 @@ static void value(const Item *it, char *out, size_t n)
     case IT_EFFECT: snprintf(out, n, "%s", effects[kh_config.screen_effect % 3]); break;
     case IT_SHOWFPS: snprintf(out, n, "%s", kh_config.show_fps ? "On" : "Off"); break;
     case IT_DYNRES: snprintf(out, n, "%s", kh_config.dynamic_res ? "On" : "Off"); break;
-    case IT_SWAP: snprintf(out, n, "%s", kh_config.partner_swap ? "On" : "Off"); break;
+    case IT_SWAP:
+        /* config partner_swap is set out of a mission only (the field, ov022, not loaded): a
+         * mission is set up for the swap or not from its start (Ov022_RefreshSlotRows) */
+        snprintf(out, n, "%s%s", kh_config.partner_swap ? "On" : "Off",
+                 kh_overlay_loaded(22) ? " (locked)" : "");
+        break;
     case IT_SWAP_ITEMS: snprintf(out, n, "%s", kh_config.swap_roxas_items ? "On" : "Off"); break;
     case IT_SWAP_MAGIC: snprintf(out, n, "%s", kh_config.swap_roxas_magic ? "On" : "Off"); break;
     case IT_ASPECT: snprintf(out, n, "%s", aspects[kh_config.aspect % 3]); break;
@@ -260,7 +266,12 @@ static void change(const Item *it, int d)
     case IT_EFFECT: kh_config.screen_effect = wrap(kh_config.screen_effect, 0, 2, d); break;
     case IT_SHOWFPS: kh_config.show_fps ^= 1; break;
     case IT_DYNRES: kh_config.dynamic_res ^= 1; break;
-    case IT_SWAP: kh_config.partner_swap ^= 1; break;
+    case IT_SWAP:
+        if (kh_overlay_loaded(22))
+            snprintf(s_note, sizeof(s_note), "Partner swap: change it out of a mission.");
+        else
+            kh_config.partner_swap ^= 1;
+        break;
     case IT_SWAP_ITEMS: kh_config.swap_roxas_items ^= 1; break;
     case IT_SWAP_MAGIC: kh_config.swap_roxas_magic ^= 1; break;
     case IT_ASPECT:

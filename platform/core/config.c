@@ -100,8 +100,9 @@ void config_save(void)
                "dynamic_res = %d\n\n", kh_config.dynamic_res);
     fprintf(f, "# Experimental: in a story mission with a partner, touch the partner's HUD to\n"
                "# play as the partner (its own deck, HP and moves, with the stats of Roxas's\n"
-               "# weapon; the AI plays Roxas); touch it again, a scene that needs Roxas or the\n"
-               "# partner falling gives him back. 0 off, 1 on.\n"
+               "# weapon and his abilities; the AI plays Roxas, with the partner's weapon\n"
+               "# stats); touch it again, a scene that needs Roxas or the partner falling gives\n"
+               "# him back. Set out of a mission only. 0 off, 1 on.\n"
                "partner_swap = %d\n"
                "# Meanwhile Roxas, on the AI, may use the items and the magic of his own deck:\n"
                "# 0 no (the default), 1 yes.\n"

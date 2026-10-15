@@ -282,6 +282,7 @@ static volatile int s_dump_2d; /* L+R+Triangle: the 2D side of the frame too */
 static volatile int s_fast_forward; /* L+R+Square */
 static void dump_2d(int a_on_top);
 static void dynamic_resolution(int late);
+static void dual_resolution(void);
 
 /* the last screen toggle of a dual-3D scene (kh_dual3d_toggled), with the display registers
  * as the game set them for that frame: read later, they were sometimes the next frame's */
@@ -1144,6 +1145,8 @@ static void present(void)
             if (last_vc && !gpu_probe && kh_config.debug != 3)
                 dynamic_resolution(vc - last_vc >= 2);
             last_vc = vc;
+        } else if (dual && kh_config.debug != 3) {
+            dual_resolution();
         } else if (lock30 && kh_config.debug != 3) {
             /* 30 fps: the configured size (two VBlanks a frame leave the GPU room) */
             const int top = kh_config.render_scale * 4;
@@ -1219,6 +1222,53 @@ static void dynamic_resolution(int late)
         calm = 0;
     }
     swaps = lates = 0;
+}
+
+/* Dual 3D (a scene with 3D on both screens, one frame each in turn): every toggle is a whole 3D
+ * frame, two for each picture of the scene, and the game waits for each. At the configured 4x
+ * the GPU took some 28 ms a frame and the scene ran at 40 game frames a second, its characters
+ * slowed down (0.7.42's log, a scene on both screens); nothing lowered the 3D there, the 60 fps
+ * step-down only watches single frames. Here: 2.5x at most as the scene starts (render_scale if
+ * lower), then each second, fewer toggles than 90% of the VBlanks (the DS toggles at every one): 0.5x down (to 1.5x at least);
+ * three seconds at 98% or more: 0.5x back up, to that start at most. Out of the scene the usual
+ * policies (30 fps: render_scale; 60 fps: dynamic_resolution) take it back. */
+static void dual_resolution(void)
+{
+    static uint32_t vb0, serial0, calm, was_vb = 0x80000000u;
+    const int top = kh_config.render_scale * 4, start = top < 10 ? top : 10;
+    const int floor_q = start < 6 ? start : 6;
+    const int q = kh_gpu3d_scale_quarters();
+    const uint32_t vb = s_vblanks, serial = kh_gx3d_serial();
+    if (vb - was_vb > 120) {
+        /* a new dual-3D scene */
+        if (q > start) {
+            kh_gpu3d_set_scale_quarters(start);
+            LOG("display: dual 3D scene: 3D at %d.%02dx", start / 4, start % 4 * 25);
+        }
+        vb0 = vb, serial0 = serial, calm = 0;
+    }
+    was_vb = vb;
+    if (vb - vb0 < 60)
+        return;
+    {
+        const uint32_t toggles = serial - serial0, vbs = vb - vb0;
+        if (toggles * 100 < vbs * 90 && q > floor_q) {
+            kh_gpu3d_set_scale_quarters(q - 2);
+            calm = 0;
+            LOG("display: dual 3D: %u toggles in %u VBlanks, 3D down to %d.%02dx",
+                (unsigned)toggles, (unsigned)vbs, (q - 2) / 4, (q - 2) % 4 * 25);
+        } else if (toggles * 100 >= vbs * 98) {
+            if (++calm >= 3 && q < start) {
+                kh_gpu3d_set_scale_quarters(q + 2);
+                calm = 0;
+                LOG("display: dual 3D: on time for 3 s, 3D up to %d.%02dx", (q + 2) / 4,
+                    (q + 2) % 4 * 25);
+            }
+        } else {
+            calm = 0;
+        }
+    }
+    vb0 = vb, serial0 = serial;
 }
 
 /* The 60 fps mix's clock: the display's own VBlank count. s_vblanks comes from the VBlank
