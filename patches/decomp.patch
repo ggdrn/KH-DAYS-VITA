@@ -9068,7 +9068,7 @@ index 7241b50d8..8a8872ba7 100644
      packed |= Ov105_GetStatusLow();
      Heap_SetCurrent(0);
 diff --git a/src/engine/GetPlayerSlotTableEntry.c b/src/engine/GetPlayerSlotTableEntry.c
-index 4b7ab6feb..646520201 100644
+index 4b7ab6feb..3e308b7c0 100644
 --- a/src/engine/GetPlayerSlotTableEntry.c
 +++ b/src/engine/GetPlayerSlotTableEntry.c
 @@ -2,7 +2,50 @@
@@ -9094,7 +9094,7 @@ index 4b7ab6feb..646520201 100644
 + * record (0.7.42: the records are no longer traded, each one keeps its own panels), but not
 + * for Roxas's own actor on the AI (kh_swap_actor, Ov022_RefreshSlotRows), whose magic and items
 + * stay his. */
-+volatile int kh_swap_actor = -1;
++extern volatile int kh_swap_actor; /* the port's (platform/core/input.c) */
 +
 +int kh_swap_deck_member(int id)
 +{

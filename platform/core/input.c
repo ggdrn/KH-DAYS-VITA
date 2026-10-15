@@ -24,6 +24,9 @@ void *volatile kh_swap_pickup_owner; /* the played partner's pickup (the log's d
 void *volatile kh_partner_swap_root;         /* the field the swap state belongs to */
 volatile int kh_partner_swap_fresh = 1; /* set out of the field: earlier touches are no requests */
 volatile unsigned int kh_partner_swap_requests;
+/* the party member whose actor the field is stepping, -1 outside (Ov022_RefreshSlotRows): the
+ * deck read for member 0 is the partner's while it is played, but Roxas's own for his actor */
+volatile int kh_swap_actor = -1;
 
 int kh_partner_swap_enabled(void)
 {
