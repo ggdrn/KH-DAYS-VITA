@@ -362,6 +362,11 @@ static int camera_look(uint64_t now)
 }
 /* HUD size: a dialogue box on the top screen (seen in the layer map) */
 static int s_dialog_open;
+/* config single_screen: the bottom screen's pictures black in a row (video_set_single_scene) */
+static int s_bottom_dark;
+/* config single_screen: a camp menu's mission list is up (Ov025/Ov008_MissionListInitStep to
+ * its Destroy) */
+volatile int kh_mission_list_open;
 extern int PauseMenu_GetMode(void); /* the game's pause state: 0 running */
 
 /* MASTER_BRIGHT brightening or darkening by a non-zero factor */
@@ -670,13 +675,28 @@ static void present(void)
     /* experimental single screen (config single_screen): in the field (ov022, its action code,
      * loaded; the same test as the widescreen 3D) with engine A on the top screen, the top
      * screen alone and the bottom one's map, target and mission gauge as panels over it */
+    /* the world / mission selection (the camp menus' mission list, ov025 in the field and
+     * ov008, from its page's start-up to its tear-down; Mission Mode's selection, ov006): the
+     * world over the whole display, the list (the bottom screen) beside it on the right */
+    if (!kh_overlay_loaded(25) && !kh_overlay_loaded(8))
+        kh_mission_list_open = 0;
+    const int world_select = kh_config.single_screen && !dual &&
+                       (kh_mission_list_open || (kh_overlay_loaded(6) && !kh_overlay_loaded(22)));
+    video_set_single_select(world_select);
     const int single = kh_config.single_screen && (!dual || dual_top_only) && a_on_top &&
-                       kh_overlay_loaded(22);
+                       kh_overlay_loaded(22) && !world_select;
     video_set_single_screen(single);
     /* and before the game (the title's overlay, ov000: the logos, the title, its menus): one
      * screen at a time, the title's menu over the player's picture */
-    video_set_single_menus(kh_config.single_screen && !dual && kh_overlay_loaded(0) &&
-                           !kh_overlay_loaded(22));
+    const int menus = kh_config.single_screen && !dual && kh_overlay_loaded(0) &&
+                      !kh_overlay_loaded(22) && !world_select;
+    video_set_single_menus(menus);
+    /* a scene out of the field's action whose bottom screen stays black (a dialogue, an event
+     * scene): the top screen alone over the display, its 3D widescreen; anything on the bottom
+     * screen (sampled below, as for the small screen) gives the player's own layout back at
+     * once. Half a second of black first, so that a fade does not switch it back and forth. */
+    video_set_single_scene(kh_config.single_screen && !dual && a_on_top &&
+                           !kh_overlay_loaded(22) && !world_select && !menus && s_bottom_dark >= 30);
     /* a tutorial page (Ov002_OpenTutorialPage leaves the sub engine with BG2 and BG3 alone,
      * which nothing else in the field does) is shown whole; while the game is paused the bottom
      * screen is drawn without the fade it gets behind the pause menu, the panels being part of
@@ -701,11 +721,7 @@ static void present(void)
         kh_partner_swap_hold = s_dialog_open || movie;
         if (!kh_overlay_loaded(22)) {
             extern volatile int kh_partner_swap_slot;
-            extern void kh_swap_records(int p);
-            /* out of the field still swapped: the two party records traded back before
-             * anything (the results, a save) reads them */
-            if (kh_partner_swap_member > 0)
-                kh_swap_records(kh_partner_swap_member);
+            /* each one keeps its own party record (0.7.42), nothing to give back */
             kh_partner_swap_index = kh_partner_swap_member = 0;
             kh_partner_swap_slot = -1;
             kh_partner_swap_fresh = 1;
@@ -864,7 +880,8 @@ static void present(void)
     {
         /* widescreen in the field (ov022, the field's action code, is loaded; menus over a
          * 3D model keep the DS's picture) when engine A's screen is drawn wider than 4:3 */
-        const int wide_ok = kh_config.aspect == KH_ASPECT_WIDE && kh_overlay_loaded(22);
+        const int wide_ok = kh_config.aspect == KH_ASPECT_WIDE &&
+                            (kh_overlay_loaded(22) || video_single_scene() || world_select);
         int k;
         for (k = 0; k < 2; k++) {
             const float aspect = video_screen_aspect(k);
@@ -875,7 +892,10 @@ static void present(void)
         kh_gx3d_wide_x = kh_gx3d_wide_screen[a_on_top ? 0 : 1];
         /* config hud: the 2D kept 4:3 in the middle while the 3D is wide (1), its HUD's
          * corners then drawn at the display's edges (2) */
-        video_set_hud_scale(kh_config.hud && kh_gx3d_wide_x < 0.999f ? kh_gx3d_wide_x : 1.0f);
+        /* (not the mission selection: its 2D, the starry sky and the banners, across the
+         * display with the world) */
+        video_set_hud_scale(kh_config.hud && !world_select && kh_gx3d_wide_x < 0.999f ? kh_gx3d_wide_x
+                                                                                 : 1.0f);
     }
     {
         const KhGxFrame *frame3d = NULL;
@@ -1049,6 +1069,7 @@ static void present(void)
         for (k = 0; k < 256 * 192 && !lit; k += 7)
             lit = (s_bottom[k] & 0xe0e0e0u) != 0;
         video_set_inset_blank(a_on_top && !lit);
+        s_bottom_dark = lit ? 0 : s_bottom_dark + (s_bottom_dark < 1000);
     }
     s_stage = "present";
     {

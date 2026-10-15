@@ -29,6 +29,18 @@ int kh_partner_swap_enabled(void)
 {
     return kh_config.partner_swap && kh_overlay_loaded(22);
 }
+
+/* config swap_roxas_items / swap_roxas_magic: Roxas on the partner AI takes the items or the
+ * magic of his own deck (Ov022_TranslateCommandToAction) */
+int kh_partner_swap_roxas_items(void)
+{
+    return kh_config.swap_roxas_items;
+}
+
+int kh_partner_swap_roxas_magic(void)
+{
+    return kh_config.swap_roxas_magic;
+}
 /* config r_toggle in the field: R does not turn the camera (Ov002_Camera_UpdateFollow) */
 volatile int kh_r_one_click;
 

@@ -12,7 +12,7 @@
 
 static const KhConfig s_defaults = {
     .render_scale = 3, .layout = 0, .inset_width = 224, .aspect = KH_ASPECT_WIDE,
-    .frame_interpolation = 0, .dynamic_res = 1, .partner_swap = 0, .texture_filter = 1, .filter_2d = 2, .hud = 0, .screen_effect = 0,
+    .frame_interpolation = 0, .dynamic_res = 1, .partner_swap = 0, .swap_roxas_items = 0, .swap_roxas_magic = 0, .texture_filter = 1, .filter_2d = 2, .hud = 0, .screen_effect = 0,
     .inset_corner = 0, .inset_opacity = 100, .rear_touch = 0, .stick_deadzone = 2, .r_toggle = 0,
     .fast_forward = 2, .camera_stick = 1, .camera_speed = 2,
     .camera_invert_x = 0, .camera_invert_y = 0, .camera_follow = 0, .dpad_deck = 1, .show_fps = 0, .volume = 100,
@@ -99,10 +99,14 @@ void config_save(void)
                "# keep up, back at render_scale when it can. 0 off (always render_scale), 1 on.\n"
                "dynamic_res = %d\n\n", kh_config.dynamic_res);
     fprintf(f, "# Experimental: in a story mission with a partner, touch the partner's HUD to\n"
-               "# play as the partner (Roxas's deck and his weapon's stats, its own HP and\n"
-               "# moves; the AI plays Roxas); touch it again, a scene that needs Roxas or the\n"
+               "# play as the partner (its own deck, HP and moves, with the stats of Roxas's\n"
+               "# weapon; the AI plays Roxas); touch it again, a scene that needs Roxas or the\n"
                "# partner falling gives him back. 0 off, 1 on.\n"
-               "partner_swap = %d\n\n", kh_config.partner_swap);
+               "partner_swap = %d\n"
+               "# Meanwhile Roxas, on the AI, may use the items and the magic of his own deck:\n"
+               "# 0 no (the default), 1 yes.\n"
+               "swap_roxas_items = %d\nswap_roxas_magic = %d\n\n", kh_config.partner_swap,
+               kh_config.swap_roxas_items, kh_config.swap_roxas_magic);
     fprintf(f, "# How the large screen fills the display: wide (the 3D drawn for 16:9 in the\n"
                "# field, true proportions), stretch (the DS picture stretched), 4:3 (as on the\n"
                "# DS, with borders).\n"
@@ -288,6 +292,10 @@ static void set(const char *k, const char *v, int version)
         kh_config.dynamic_res = atoi(v) != 0;
     else if (!strcmp(k, "partner_swap"))
         kh_config.partner_swap = atoi(v) != 0;
+    else if (!strcmp(k, "swap_roxas_items"))
+        kh_config.swap_roxas_items = atoi(v) != 0;
+    else if (!strcmp(k, "swap_roxas_magic"))
+        kh_config.swap_roxas_magic = atoi(v) != 0;
     else if (!strcmp(k, "single_screen"))
         kh_config.single_screen = atoi(v) != 0;
     else if (!strcmp(k, "panel_opacity"))

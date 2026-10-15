@@ -16,24 +16,27 @@
 #include "stb_image.h"
 #pragma GCC diagnostic pop
 
-/* The picture behind the title's menus in the single screen (config single_screen): the
- * player's own (ux0:data/khdays/menu_bg.png or .jpg; none comes with the port), scaled to cover
- * w x h and cropped in the middle. NULL when there is none. */
+/* The picture behind the title's menus in the single screen (config single_screen): the one
+ * packed with the port (the build's assets/titlescreen/bg.png, app0:), else the player's own
+ * (ux0:data/khdays/menu_bg.png or .jpg), scaled to cover w x h and cropped in the middle. NULL
+ * when there is none. stb_image tells PNG from JPEG by the contents, whatever the name. */
 uint32_t *menubg_load(int w, int h)
 {
-    static const char *const names[] = { KH_DATA_DIR "/menu_bg.png", KH_DATA_DIR "/menu_bg.jpg",
+    static const char *const names[] = { "app0:assets/titlescreen/bg.png",
+                                         KH_DATA_DIR "/menu_bg.png", KH_DATA_DIR "/menu_bg.jpg",
                                          KH_DATA_DIR "/menu_bg.jpeg" };
     unsigned char *img = NULL;
     int iw = 0, ih = 0, n, i, x, y;
     uint32_t *out;
     float s, ox, oy;
-    for (i = 0; i < 3 && !img; i++) {
+    for (i = 0; i < 4 && !img; i++) {
         img = stbi_load(names[i], &iw, &ih, &n, 4);
         if (img)
             LOG("video: menu background %s, %dx%d", names[i], iw, ih);
     }
     if (!img) {
-        LOG("video: no menu background (%s or .jpg): the title's menu over black", names[0]);
+        LOG("video: no menu background (%s, %s or .jpg): the title's menu over black", names[0],
+            names[1]);
         return NULL;
     }
     out = malloc((size_t)w * h * 4);
