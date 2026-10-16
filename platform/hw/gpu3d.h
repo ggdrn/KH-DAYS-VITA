@@ -23,6 +23,18 @@ void kh_gpu3d_forget_previous(void);
  * while the screens trade places frame by frame). */
 extern volatile int kh_gpu3d_direct;
 
+/* config single_screen 2 (hw/onescreen.c, a composition's `shape3d hud` / `hide3d hud`): the
+ * frame's flat polygons (KhGxPolygon flat: the HUD's 3D pieces) wholly inside the DS rectangle
+ * src (x0, y0, x1, y1, DS dots) are drawn moved, at NDC x = mx * px + cx, y = my * py + cy from
+ * their DS position (px, py); with hide, the flat ones smaller than a quarter of the screen are
+ * not drawn. NULL: as the game lays them out. */
+typedef struct {
+    int place, hide;
+    float src[4];
+    float mx, cx, my, cy;
+} KhGpu3dHudPlace;
+void kh_gpu3d_set_hud_place(const KhGpu3dHudPlace *p);
+
 /* Draw the frame; returns the GL texture holding the 3D layer (premultiplied RGBA, GL
  * orientation: row 0 is the bottom of the screen), 0 when there is nothing to show. */
 unsigned kh_gpu3d_render(const KhGxFrame *frame);

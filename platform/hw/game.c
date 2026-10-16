@@ -14,6 +14,7 @@
 #include "hw/textures.h"
 #include "hw/vram.h"
 #include "hw/io.h"
+#include "hw/onescreen.h"
 #include "hw/memmap.h"
 #include "hw/overlays.h"
 #include "hw/shared_area.h"
@@ -690,6 +691,12 @@ static void present(void)
      * (and B's) with every screen it draws for */
     kh_gpu2d_dispcnt_override[KH_ENGINE_A] = dual ? tr.dispcnt_a : 0;
     kh_gpu2d_dispcnt_override[KH_ENGINE_B] = dual ? tr.dispcnt_b : 0;
+    /* config single_screen 2: khdays-port's compositions, the situation decided each frame
+     * (hw/onescreen.c); a dual-3D scene shown on both screens keeps the layouts */
+    const int compose = kh_onescreen_frame(kh_config.single_screen == 2 && (!dual || dual_top_only), movie,
+                                           dual, s_top, s_bottom, s_vblanks);
+    /* config single_screen 1: the panels, and the single screen's own cases below */
+    const int panels_mode = kh_config.single_screen == 1;
     /* experimental single screen (config single_screen): in the field (ov022, its action code,
      * loaded; the same test as the widescreen 3D) with engine A on the top screen, the top
      * screen alone and the bottom one's map, target and mission gauge as panels over it */
@@ -699,23 +706,23 @@ static void present(void)
      * bottom screen beside it on the right */
     if (!kh_overlay_loaded(25) && !kh_overlay_loaded(8))
         kh_mission_select_pages = 0;
-    const int world_select = kh_config.single_screen && !dual &&
+    const int world_select = panels_mode && !dual &&
                        (kh_mission_select_pages != 0 ||
                         (kh_overlay_loaded(6) && !kh_overlay_loaded(22)));
     video_set_single_select(world_select);
-    const int single = kh_config.single_screen && (!dual || dual_top_only) && a_on_top &&
+    const int single = panels_mode && (!dual || dual_top_only) && a_on_top &&
                        kh_overlay_loaded(22) && !world_select;
     video_set_single_screen(single);
     /* and before the game (the title's overlay, ov000: the logos, the title, its menus): one
      * screen at a time, the title's menu over the player's picture */
-    const int menus = kh_config.single_screen && !dual && kh_overlay_loaded(0) &&
+    const int menus = panels_mode && !dual && kh_overlay_loaded(0) &&
                       !kh_overlay_loaded(22) && !world_select;
     video_set_single_menus(menus);
     /* a scene out of the field's action whose bottom screen stays black (a dialogue, an event
      * scene): the top screen alone over the display, its 3D widescreen; anything on the bottom
      * screen (sampled below, as for the small screen) gives the player's own layout back at
      * once. Half a second of black first, so that a fade does not switch it back and forth. */
-    video_set_single_scene(kh_config.single_screen && !dual && a_on_top &&
+    video_set_single_scene(panels_mode && !dual && a_on_top &&
                            !kh_overlay_loaded(22) && !world_select && !menus && s_bottom_dark >= 30);
     /* a tutorial page (Ov002_OpenTutorialPage leaves the sub engine with BG2 and BG3 alone,
      * which nothing else in the field does) is shown whole; while the game is paused the bottom
@@ -729,7 +736,7 @@ static void present(void)
      * hud_codes), which the composition leaves out and draws again smaller: no texture, no
      * upload and no pass over the screen more than without it (0.1.12-0.1.15 sorted the HUD
      * out with a layer map and a texture of its own, and lost up to 20 frames a second) */
-    const int hud_wanted = (!dual || dual_top_only) && a_on_top && kh_overlay_loaded(22) &&
+    const int hud_wanted = !compose && (!dual || dual_top_only) && a_on_top && kh_overlay_loaded(22) &&
                            PauseMenu_GetMode() == 0 &&
                            (kh_config.hud_size < 100 || video_hud_edges());
     const int hud_on = hud_wanted && !s_dialog_open;
@@ -870,10 +877,13 @@ static void present(void)
          * frame in three (every other one for a tutorial page) it was a third of the 2D time
          * at full rate (0.1.6) */
         static uint32_t single_parity;
-        const int skip_single_b = single && (tutorial ? (single_parity & 1) : (single_parity % 3));
+        /* compositions in the field (single_screen 2): the bottom screen only in small shapes
+         * (the map, the mission's panel), drawn every other 2D frame */
+        const int skip_single_b = (single && (tutorial ? (single_parity & 1) : (single_parity % 3))) ||
+                                  (compose && a_on_top && kh_overlay_loaded(22) && (single_parity & 1));
         f2d.neng = 0;
         if (draw2d) {
-            if (single)
+            if (single || compose)
                 single_parity++;
             for (i = 0; i < 2; i++)
                 if (i == KH_ENGINE_B && (skip_b || skip_single_b))
@@ -902,7 +912,7 @@ static void present(void)
         /* widescreen in the field (ov022, the field's action code, is loaded; menus over a
          * 3D model keep the DS's picture) when engine A's screen is drawn wider than 4:3 */
         const int wide_ok = kh_config.aspect == KH_ASPECT_WIDE &&
-                            (kh_overlay_loaded(22) || video_single_scene() || world_select);
+                            (kh_overlay_loaded(22) || video_single_scene() || world_select || compose);
         int k;
         for (k = 0; k < 2; k++) {
             const float aspect = video_screen_aspect(k);

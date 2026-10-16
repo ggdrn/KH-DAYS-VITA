@@ -60,6 +60,14 @@ void video_set_note_boxes(const int boxes[3][4]);
 
 int video_single_screen(void);
 int video_single_scene(void);
+/* config single_screen 2: the picture composed by a composition (ui/composition.h) in a picture
+ * `columns` DS dots wide across the display's height, the 3D across it when `widen` (else the
+ * DS's 4:3 in its middle); NULL turns it off (the layouts again). */
+struct KhComposition;
+void video_set_composition(const struct KhComposition *c, int columns, int widen);
+int video_composing(void);
+/* Where a screen (0 top, 1 bottom) is drawn on the display: a composition's ground for both. */
+ScreenRect video_screen_rect(int screen);
 /* Display pixel (960x544) -> DS touch-screen pixel; 0 when it is not on the touch screen. */
 int video_map_touch(int px, int py, int *x, int *y);
 /* The width/height of the display rectangle a screen (0 top, 1 bottom) is drawn into. */

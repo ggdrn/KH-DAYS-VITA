@@ -1,0 +1,361 @@
+# khdays-vita: khdays-port's own compositions (port/ui/compositions/port_days.txt, MIT,
+# commit efb49b8e2f1c), read by config single_screen 2 as
+# app0:layouts/compositions.txt; ux0:data/khdays/layouts/compositions.txt replaces it. The
+# shape3d lines (the HUD's 3D apart) are read and left out here. Vita changes are marked VITA.
+#
+# The port's compositions for the one-screen picture (docs/COMPOSITIONS.md: the
+# lines), a layout of its own for each of the game's screens, each made from
+# the game's pieces measured on its screens. The field's HUD on one screen, laid
+# out for the PC (asked for on 2026-10-08, after the maintainer's sketch):
+# the mission's panel at the top left with its chests and badges in small
+# boxes of their own in its right end, the map in the top right corner with
+# the enemy's health over it, the command deck at the bottom left, the party at the
+# bottom right, and the INFORMATION banner at the top left, above everything,
+# only for a few seconds after it changes. Every piece is the game's own,
+# taken from where the DS draws it (the regions measured on the screens of
+# missions 17 and 18, 2026-10-08).
+#
+# The pieces' black ground (the map's white, turned black) is seen through at
+# 0.65 (`see-through`, the port's effect), their text, edges and icons not.
+#
+# Units are the port's (`units port`): a margin of M is M picture dots and a
+# scale of S makes a DS dot S of them, both times the HUD's factor (1 at the
+# default HUD size; ui/composition.c's table for the others); `fixed(N)` does
+# not follow it. A piece of a box is placed by its margin: the box's margin
+# plus its offset in the box times the scale.
+
+# ----------------------------------------------------------------------------
+# The field. The situation gives the HUD only without a dialog or the upper
+# information; a dialog's own sections (below) stop the rest.
+units port
+
+[field]
+screens upper
+brightness default
+# without the HUD (a dialog, a menu over the field), its 3D is not shown
+[field if !hud]
+hide3d hud
+
+# The INFORMATION banner as the game draws it (its label and its line, the
+# lower screen's 0,0-232,24, short of the players' tags), against the
+# picture's left edge at the top, above everything, for a few seconds after a
+# message comes (info-new; not when the line empties). Its ground (8-bit 36 36
+# 36) not shown. The line runs on to the DS's edge with no end of its own, so
+# where it is cut it fades out.
+[field if hud info-new]
+shape lower 0 0 232 24 at top-left margin 0 5 0 0 scale 0.5 key 36 36 36 fade 0 0 16 0
+
+# The mission's information the upper screen shows at its start (the same
+# banner, the upper screen's 0,0-256,24, fading out at the DS's edge), in the
+# same place: the game takes it away after about five seconds.
+[field if info-upper mission-panel]
+shape upper 0 0 256 24 at top-left margin 0 5 0 0 scale 0.5 fade 0 0 16 0
+
+# The mission's panel (the lower screen's 4,152-252,192) at the top left,
+# scale 0.75; the backdrop around its bevelled corners (8-bit 36 36 36) made
+# transparent. The right end of its text row holds the chest icon and its
+# counter, and on one screen the badge and its found and total count left of
+# them (ui/badges.c), as the maintainer's sketch has them (2026-10-08). Its
+# lower edge, cut by the DS's screen, is its upper edge turned over. Shown
+# whenever the lower screen has it (mission-panel), with the HUD and at a
+# mission's start, before the game draws the rest of its HUD.
+[field if mission-panel !dialog !challenge]
+shape lower 4 152 248 40 at top-left margin 5 5 0 0 scale 0.5 key 36 36 36 see-through 0 0 0 0.65
+shape lower 4 152 248 4 at top-left margin 5 25 0 0 scale 0.5 mirror y key 36 36 36 see-through 0 0 0 0.65
+
+# The enemy's health first, above the map: at the top right, the map in the
+# same corner under it (as Kingdom Hearts II has them).
+[field if hud]
+shape upper 163 0 93 22 at top-right margin 0 5 5 0 scale 0.666667
+
+# The map, as Kingdom Hearts II has it: a window of 104 x 64 in the middle of
+# its box (112,64-216,128; the game keeps the map scrolled to the player
+# there), scale 0.9, drawn over the field -- its white ground not shown, its
+# floor (8-bit 239 239 247) seen through, its walls and markers as they are
+# -- with the panel's black, stretched, half seen through behind it, 3 larger
+# on each side, both fading out at their edges.
+[field if mission-panel !dialog !challenge]
+shape lower 112 64 104 64 at top-right margin 0 5 5 0 scale 0.6 key 248 248 248 see-through 232 232 240 0.55 fade 4 4 4 4
+shape lower 186 156 2 12 at top-right margin 0 3 3 0 scale 33.2 3.533333 see-through 0 0 0 0.5 fade 6 6 6 6
+
+[field if info-upper]
+stop
+
+# The upper screen's HUD.
+[field if hud]
+# the hearts counter's 3D (its heart, "CHAIN", its count, the timer and their
+# labels: the HUD's screen-space polygons at the top left) and the item
+# notifications and the timer (the 2D there, against the picture's left
+# edge): below the mission's panel. The 3D's rectangle starts 64 dots left of and
+# above the screen, its margins 64 less: a piece is placed only when it lies
+# wholly inside, and the heart's glow when hearts are picked up reaches
+# x -34.6 (mission 17, 2026-10-08), past the screen's edge. It ends at
+# x 127.5, short of the middle where the portal's countdown, also the HUD's
+# 3D, ends its digits (Ov002_SceneStepPanelHud draws them leftwards from it).
+# At the 2D shapes' scale, so that it stays under the panel at every HUD size.
+shape3d hud -64 -64 191.5 141 at top-left margin -37.666667 -13.666667 0 0 scale 0.666667
+shape upper 0 0 108 86 at top-left margin 0 29 0 0 scale 0.666667
+# the countdown and the lock-on, at the top in the middle
+shape upper 93 0 70 20 at top margin 0 5 0 0 scale 0.666667
+# the sigils and the death counter under the map
+shape upper 163 25 93 30 at top-right margin 0 47.333333 5 0 scale 0.666667
+# the command deck (with the reaction command above it) at the bottom left
+shape upper 0 84 112 108 at bottom-left margin 5 0 0 6 scale 0.833333
+# the player's health and the allies' (their rows from y 84, from y 64 with
+# four members), at the bottom right
+[field if hud !party-4]
+shape upper 128 84 128 107 at bottom-right margin 0 0 5 6 scale 0.766667
+[field if hud party-4]
+shape upper 128 64 128 127 at bottom-right margin 0 0 5 6 scale 0.766667
+
+# ----------------------------------------------------------------------------
+# The field with the 3D on both screens: the field's upper HUD and its
+# INFORMATION banner, in the same places (the lower screen's panels are not
+# there).
+[field-3d-both]
+screens upper
+brightness upper
+[field-3d-both if !hud]
+hide3d hud
+[field-3d-both if hud info-new]
+shape lower 0 0 232 24 at top-left margin 0 5 0 0 scale 0.5 key 36 36 36 fade 0 0 16 0
+[field-3d-both if hud]
+shape3d hud -64 -64 191.5 141 at top-left margin -37.666667 -13.666667 0 0 scale 0.666667
+[field-3d-both if info-upper]
+stop
+[field-3d-both if hud]
+shape upper 0 0 108 86 at top-left margin 0 29 0 0 scale 0.666667
+shape upper 93 0 70 20 at top margin 0 5 0 0 scale 0.666667
+shape upper 163 0 93 22 at top-right margin 0 5 5 0 scale 0.666667
+shape upper 163 25 93 30 at top-right margin 0 27 5 0 scale 0.666667
+shape upper 0 84 112 108 at bottom-left margin 5 0 0 6 scale 0.833333
+[field-3d-both if hud !party-4]
+shape upper 128 84 128 107 at bottom-right margin 0 0 5 6 scale 0.766667
+[field-3d-both if hud party-4]
+shape upper 128 64 128 127 at bottom-right margin 0 0 5 6 scale 0.766667
+
+# ----------------------------------------------------------------------------
+# The field's dialogs (an event's text, a person's words): the upper screen
+# whole over the 3D, at the HUD's size but never larger than the DS's, at the
+# bottom where the dialog box is (the maintainer's choices). A challenge in
+# play: its label (the upper screen's top left, rows 0-13) at the top under the
+# countdown, as small as the HUD's pieces.
+[field if dialog]
+shape upper at bottom scale 1 at-most fixed(1)
+stop
+[field-3d-both if dialog]
+shape upper at bottom scale 1 at-most fixed(1)
+stop
+[field if hud challenge]
+shape upper 0 0 132 14 at top margin 0 22 0 0 scale 0.666667
+[field-3d-both if hud challenge]
+shape upper 0 0 132 14 at top margin 0 22 0 0 scale 0.666667
+
+# ----------------------------------------------------------------------------
+# The pause: its menu (the upper screen's 72,64-184,140: PAUSA, its lines, the
+# question) at the DS's size in the middle over the 3D, the lower screen's
+# INFORMATION banner at the top left, the map at the top right and the
+# mission's panel at the bottom left, as the field's HUD has them (the
+# maintainer's choice from the pictures, 2026-10-14) -- but in an event's
+# pause (a cutscene's: "Continue", "Skip"), where the lower screen has none of
+# them (mission 77's cabin, the maintainer, 2026-10-15). The game darkens the
+# lower screen to half under its pause (each colour c - c x 8 / 16: the map's
+# white 31 to 16, its floor 29 to 15, the ground 4 to 2), so each piece's key
+# and see-through colours are the darkened ones too.
+[pause]
+screens upper
+brightness upper
+hide3d hud
+shape upper 72 64 112 76 at centre scale fixed(1)
+[pause if !event]
+shape lower 0 0 224 24 at top-left margin 0 5 0 0 scale 0.5 key 36 36 36 key 16 16 16
+shape lower 112 64 104 64 at top-right margin 0 5 5 0 scale 0.6 key 248 248 248 key 128 128 128 see-through 120 120 120 0.55 fade 4 4 4 4
+shape lower 4 152 248 40 at bottom-left margin 5 0 0 5 scale 0.5 key 36 36 36 key 16 16 16 see-through 0 0 0 0.65
+[pause]
+stop
+
+# ----------------------------------------------------------------------------
+# A tutorial's page (the lower screen) at the DS's size in the middle, the
+# field behind it dimmed -- its 2D and its 3D (`3d`) -- and the HUD's 3D not
+# drawn (the maintainer's choice from the pictures, 2026-10-14).
+[tutorial]
+screens upper
+brightness upper
+hide3d hud
+shape lower at centre scale fixed(1)
+shape upper at centre scale fixed(1) dim 0.35
+shape upper at centre scale cover 3d dim 0.35
+stop
+
+# ----------------------------------------------------------------------------
+# The title's menu as one animated picture of a mod's (asked for on
+# 2026-10-09: the title as the HD collection's 358/2 Days theater menu, with
+# the game's own options; tools/theater_title.py makes it from the player's
+# own copy of the collection). The picture for the level shown, its options
+# and the one selected, while the menu shows (its fade-in, its loop, its
+# levels' cross-fades, the fades its choices start; the inputs' title_shown)
+# and none in the screens after it; the game's two screens not shown, the
+# lower one's brightness kept, which the menu's fades drive. Without such a
+# mod (no picture for this frame) the section is not used and the title is
+# the port's own below, the two screens side by side. The picture fits inside the
+# window's (`fit`): at 4:3 or 16:10 the theater's 16:9 menu shows whole, its
+# ground above and below, instead of losing its sides.
+#
+# NEW GAME's dialogs come over the title as Dream Drop Distance's do (the
+# maintainer, 2026-10-09): the lower screen's fades on the way into them, in
+# their steps and on the way back are not shown (title-lit, host/render/onescreen.c)
+# -- the upper screen's brightness, still, which the start's fade through white
+# into the game takes too.
+[title if title-lit]
+backdrop title/{lang}/{menu}_{count}_{row}.txt at centre fit
+screens upper
+brightness upper
+hide3d all
+stop
+
+[title]
+backdrop title/{lang}/{menu}_{count}_{row}.txt at centre fit
+preload title/{lang}/newgame1_1_1.txt
+preload title/{lang}/newgame2_1_1.txt
+screens upper
+brightness lower
+hide3d all
+stop
+
+# The boot logos as the same mod's pictures (asked for on 2026-10-09: the
+# theater's own Disney, SQUARE ENIX and copyright screens in place of the
+# DS's three pairs), each in its screen's turn (logo_3_0 to logo_3_2), the
+# game's fades through white kept (the lower screen's brightness); then the
+# menu's white fade-in (intro_0_0). Without the mod, the port's own below: the
+# two screens side by side. NEW GAME's dialogs' pictures are read ahead from the
+# first logo on (their atlas took 110 ms to read, the title held still when
+# NEW GAME was chosen: the session log, 2026-10-09), and in the title for the
+# times it comes without the logos.
+[intro]
+backdrop title/{lang}/{menu}_{count}_{row}.txt at centre fit
+preload title/{lang}/newgame1_1_1.txt
+preload title/{lang}/newgame2_1_1.txt
+screens upper
+brightness lower
+hide3d all
+stop
+
+# ----------------------------------------------------------------------------
+# Without the HD pictures: the boot logos and the title's two screens side by
+# side, each with its own brightness (the maintainer's choice from the
+# pictures, 2026-10-14).
+[intro]
+screens side-by-side
+brightness halves
+stop
+[title]
+screens side-by-side
+brightness halves
+stop
+
+# ----------------------------------------------------------------------------
+# The lists: the title's save list (its files on the lower screen), the camp's
+# (on the upper) and the game's settings (the upper): the list's screen at the
+# DS's size in the middle, the other screen behind it covering the picture,
+# dimmed (the maintainer's choice from the pictures, 2026-10-14). The whole
+# screen keeps every line of it: the question, the help, the buttons.
+[load-menu]
+screens lower
+brightness lower
+shape lower at centre scale fixed(1)
+shape upper at centre scale cover dim 0.35
+stop
+[save-menu]
+screens upper
+brightness upper
+shape upper at centre scale fixed(1)
+shape lower at centre scale cover dim 0.35
+stop
+[settings]
+screens upper
+brightness upper
+shape upper at centre scale fixed(1)
+shape lower at centre scale cover dim 0.35
+stop
+
+# ----------------------------------------------------------------------------
+# Screens with something on both: the camp's (its menu and the status), the
+# shop's (the moogle and the money, the menu) and a mission's results (the
+# points, the rewards): the two screens side by side, each with its
+# brightness (the maintainer's choice from the pictures, 2026-10-14).
+[camp-menu]
+screens side-by-side
+brightness halves
+stop
+[shop]
+screens side-by-side
+brightness halves
+stop
+[mission-review]
+screens side-by-side
+brightness halves
+stop
+
+# ----------------------------------------------------------------------------
+# Screens of the upper screen alone (the lower one black): the day's card,
+# Roxas's thoughts and the game over -- the upper screen whole at the DS's
+# size in the middle, the game over's orb (the HUD's 3D) with its lines (the
+# maintainer's choice, 2026-10-14).
+[day-counter]
+screens upper
+brightness upper
+shape upper at centre scale fixed(1)
+stop
+[thoughts]
+screens upper
+brightness upper
+shape upper at centre scale fixed(1)
+stop
+[game-over]
+screens upper
+brightness upper
+shape upper at centre scale fixed(1)
+shape3d hud at centre scale fixed(1)
+stop
+
+# The credits (ov011's staff roll, which runs up both screens; its END picture
+# over both): the two screens side by side, each with its brightness (the
+# maintainer's choice from the pictures of the Theater's ending, 2026-10-15).
+[the-end]
+screens side-by-side
+brightness halves
+stop
+
+# ----------------------------------------------------------------------------
+# The world selector (Holo-Missions): its 3D (the worlds in space) over the
+# whole picture; the upper screen's header across the top -- its title at the
+# top left (0-127), its line of help at the top right (128-255), its plain
+# columns (120-123: black over the red line) repeated between; the world's
+# name and rank at the bottom left (rows 176-191), its corners rounded; the
+# lower screen at the right, whole -- its list or a mission's page, the L and
+# R of the worlds at its top corners, the buttons' help in its last rows --
+# its corners rounded, drawn whole (`force`: its black is the screen's
+# backdrop), smaller the narrower the picture so that the world stays seen
+# beside it. All at the HUD's scale (the maintainer's choices from the
+# pictures, 2026-10-14 and 2026-10-15).
+[world-selector]
+screens upper
+brightness upper
+[world-selector if wide]
+shape lower at right margin 0 0 6 0 scale 0.52 round 8 force
+[world-selector if !wide !narrow]
+shape lower at right margin 0 0 5 0 scale 0.45 round 8 force
+[world-selector if narrow]
+shape lower at right margin 0 0 4 0 scale 0.38 round 8 force
+[world-selector]
+shape upper 0 0 128 16 at top-left scale 0.55
+shape upper 128 0 128 16 at top-right scale 0.55
+shape upper 120 0 4 16 at top-left scale 0.55 repeat x
+shape upper 0 176 256 16 at bottom-left margin 4 0 0 4 scale 0.55 round 6
+stop
+
+# ----------------------------------------------------------------------------
+# A screen no section names: the port's common rule, the screens that show
+# something, whole, as large as the picture allows.
+[unknown]
+menu

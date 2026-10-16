@@ -1031,6 +1031,68 @@ void kh_gpu3d_prepare(const KhGxFrame *f)
     s_njobs = 0;
 }
 
+/* config single_screen 2: the HUD's flat 3D placed by the composition (kh_gpu3d_set_hud_place) */
+static KhGpu3dHudPlace s_hud;
+static int s_hud_on;
+
+void kh_gpu3d_set_hud_place(const KhGpu3dHudPlace *p)
+{
+    s_hud_on = p && (p->place || p->hide);
+    if (s_hud_on)
+        s_hud = *p;
+}
+
+/* The vertices with the HUD's flat polygons moved or hidden: a copy, the frame's own untouched
+ * (a frame can be drawn again, and mixed with the next one) */
+static const KhGxVertex *hud_placed(const KhGxFrame *f, const KhGxVertex *vtx)
+{
+    static KhGxVertex moved[KH_GX_MAX_VERTICES];
+    static uint8_t done[KH_GX_MAX_VERTICES];
+    int i, k, copied = 0;
+    if (!s_hud_on || !f)
+        return vtx;
+    for (i = 0; i < f->npoly; i++) {
+        const KhGxPolygon *p = &f->poly[i];
+        float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
+        int inside = 1, hide;
+        if (!p->flat)
+            continue;
+        for (k = 0; k < p->count; k++) {
+            const KhGxVertex *v = &vtx[p->v[k]];
+            const float w = v->w != 0.0f ? v->w : 1.0f;
+            const float px = (v->x / w + 1.0f) * 128.0f, py = (1.0f - v->y / w) * 96.0f;
+            x0 = px < x0 ? px : x0, x1 = px > x1 ? px : x1;
+            y0 = py < y0 ? py : y0, y1 = py > y1 ? py : y1;
+        }
+        hide = s_hud.hide && (x1 - x0) * (y1 - y0) < 256.0f * 192.0f / 4.0f;
+        inside = s_hud.place && x0 >= s_hud.src[0] && y0 >= s_hud.src[1] && x1 <= s_hud.src[2] &&
+                 y1 <= s_hud.src[3];
+        if (!hide && !inside)
+            continue;
+        if (!copied) {
+            memcpy(moved, vtx, (size_t)f->nvtx * sizeof(KhGxVertex));
+            memset(done, 0, (size_t)f->nvtx);
+            copied = 1;
+        }
+        for (k = 0; k < p->count; k++) {
+            const int n = p->v[k];
+            KhGxVertex *v = &moved[n];
+            const float w = v->w != 0.0f ? v->w : 1.0f;
+            if (done[n])
+                continue;
+            done[n] = 1;
+            if (hide) {
+                v->x = -4.0f * fabsf(w); /* left of the view: clipped */
+            } else {
+                const float px = (v->x / w + 1.0f) * 128.0f, py = (1.0f - v->y / w) * 96.0f;
+                v->x = (s_hud.mx * px + s_hud.cx) * w;
+                v->y = (s_hud.my * py + s_hud.cy) * w;
+            }
+        }
+    }
+    return copied ? moved : vtx;
+}
+
 /* The frame's polygons drawn with the vertices vtx (the frame's own, or a mix of two). */
 static unsigned draw_frame(const KhGxFrame *f, const KhGxVertex *vtx)
 {
@@ -1088,6 +1150,7 @@ static unsigned draw_frame(const KhGxFrame *f, const KhGxVertex *vtx)
     glEnable(GL_DEPTH_TEST);
     glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
+    vtx = hud_placed(f, vtx);
     glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
     glBufferData(GL_ARRAY_BUFFER, f->nvtx * (int)sizeof(KhGxVertex), vtx, GL_DYNAMIC_DRAW);
     glEnableVertexAttribArray(A_POS);
