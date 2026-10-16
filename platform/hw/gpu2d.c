@@ -115,6 +115,9 @@ volatile uint8_t kh_gpu2d_zone_rows[3][192];
 volatile int kh_gpu2d_zone_lim[3][2] = { { 0, 60 }, { 60, 192 }, { 90, 192 } };
 volatile int32_t kh_gpu2d_hud_box[3][4] = { { 256, 192, 0, 0 }, { 256, 192, 0, 0 },
                                             { 256, 192, 0, 0 } };
+volatile int kh_gpu2d_note_edges;
+volatile int32_t kh_gpu2d_note_box[3][4] = { { 256, 192, 0, 0 }, { 256, 192, 0, 0 },
+                                             { 256, 192, 0, 0 } };
 
 static inline void amin(volatile int32_t *p, int32_t v)
 {
@@ -174,9 +177,13 @@ static void hud_codes(int line, const uint16_t *id0, uint8_t *code)
         return;
     for (z = 0; z < 3; z++) {
         int x0 = W, x1 = -1;
+        /* a notice standing apart from the corner's HUD (an item obtained, "BACKPACK FULL"):
+         * with the HUD at the display's edges (kh_gpu2d_note_edges), coded too and drawn again
+         * at its own size at that edge (kh_gpu2d_note_box); otherwise left where it is */
+        const int note = line < kh_gpu2d_zone_lim[z][0] || line >= kh_gpu2d_zone_lim[z][1];
         if (line < s_hud_zones[z][1] || line >= s_hud_zones[z][3])
             continue;
-        if (line < kh_gpu2d_zone_lim[z][0] || line >= kh_gpu2d_zone_lim[z][1])
+        if (note && !kh_gpu2d_note_edges)
             continue;
         if (z == 0 && (banner_line || kh_gpu2d_banner_last))
             continue;
@@ -198,10 +205,11 @@ static void hud_codes(int line, const uint16_t *id0, uint8_t *code)
         }
         /* the box the HUD really fills in this corner: only that is drawn again */
         if (x1 >= 0) {
-            amin(&kh_gpu2d_hud_box[z][0], x0);
-            amax(&kh_gpu2d_hud_box[z][2], x1 + 1);
-            amin(&kh_gpu2d_hud_box[z][1], line);
-            amax(&kh_gpu2d_hud_box[z][3], line + 1);
+            volatile int32_t *box = note ? kh_gpu2d_note_box[z] : kh_gpu2d_hud_box[z];
+            amin(&box[0], x0);
+            amax(&box[2], x1 + 1);
+            amin(&box[1], line);
+            amax(&box[3], line + 1);
         }
     }
 }

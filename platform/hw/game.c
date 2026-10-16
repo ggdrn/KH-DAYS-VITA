@@ -522,6 +522,13 @@ static void hud_after_2d(void)
         boxes[z][3] = __atomic_exchange_n(&kh_gpu2d_hud_box[z][3], 0, __ATOMIC_RELAXED);
     }
     video_set_hud_boxes(boxes);
+    for (z = 0; z < 3; z++) {
+        boxes[z][0] = __atomic_exchange_n(&kh_gpu2d_note_box[z][0], 256, __ATOMIC_RELAXED);
+        boxes[z][1] = __atomic_exchange_n(&kh_gpu2d_note_box[z][1], 192, __ATOMIC_RELAXED);
+        boxes[z][2] = __atomic_exchange_n(&kh_gpu2d_note_box[z][2], 0, __ATOMIC_RELAXED);
+        boxes[z][3] = __atomic_exchange_n(&kh_gpu2d_note_box[z][3], 0, __ATOMIC_RELAXED);
+    }
+    video_set_note_boxes(boxes);
 }
 
 /* The trace after an enemy's defeat: some enemies (the Possessor) flash the screen white as
@@ -748,6 +755,7 @@ static void present(void)
      * nothing); gpu2d marks the HUD (2) or only watches for a dialogue (1) */
     video_set_hud_shrink(hud_wanted);
     kh_gpu2d_hud_mode = hud_on ? 2 : hud_wanted ? 1 : 0;
+    kh_gpu2d_note_edges = hud_on && video_hud_edges();
     kh_gpu2d_plain[KH_ENGINE_B] = single && PauseMenu_GetMode() != 0;
     /* with the detailed log, once a second: this frame's GPU time measured alone */
     if (kh_config.debug == 3) {

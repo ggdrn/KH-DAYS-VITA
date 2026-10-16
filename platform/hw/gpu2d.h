@@ -66,6 +66,11 @@ extern volatile int kh_gpu2d_zone_lim[3][2];
 /* the box the marked HUD fills in each corner (top-left, bottom-left, bottom-right: x0 y0 x1
  * y1) in the pictures since it was last reset to { 256, 192, 0, 0 } */
 extern volatile int32_t kh_gpu2d_hud_box[3][4];
+/* config hud 2 (the HUD at the display's edges): the notices standing apart in the HUD's corners
+ * (an item obtained or refused) coded too, their boxes in kh_gpu2d_note_box, drawn at their
+ * edge at their own size */
+extern volatile int kh_gpu2d_note_edges;
+extern volatile int32_t kh_gpu2d_note_box[3][4];
 
 /* Diagnosis, with kh_gpu2d_profiling set: since the last call, per engine, the CPU time (us)
  * of the BGs, the sprites and whole lines, and the sprite lines drawn as tiles, bitmaps and

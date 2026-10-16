@@ -54,6 +54,9 @@ void video_set_hud_shrink(int on);
 /* the boxes (x0 y0 x1 y1, DS pixels) the HUD fills in its top-left, bottom-left and
  * bottom-right corners in the picture about to be shown (gpu2d kh_gpu2d_hud_box) */
 void video_set_hud_boxes(const int boxes[3][4]);
+/* the same corners' notices standing apart from the HUD (gpu2d kh_gpu2d_note_box), drawn at
+ * their own size at the display's edge with config hud 2 */
+void video_set_note_boxes(const int boxes[3][4]);
 
 int video_single_screen(void);
 int video_single_scene(void);

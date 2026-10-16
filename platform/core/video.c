@@ -566,6 +566,16 @@ static float screen_alpha(int screen)
 /* per s_hud_blocks entry: the box the HUD fills there (x1 <= x0: nothing) */
 static int s_hud_box[4][4];
 
+static int s_note_box[4][4];
+
+void video_set_note_boxes(const int boxes[3][4])
+{
+    static const int block_of[3] = { 0, 2, 3 };
+    int z;
+    for (z = 0; z < 3; z++)
+        memcpy(s_note_box[block_of[z]], boxes[z], sizeof(s_note_box[0]));
+}
+
 void video_set_hud_boxes(const int boxes[3][4])
 {
     static const int block_of[3] = { 0, 2, 3 }; /* gpu2d's corners -> s_hud_blocks */
@@ -592,11 +602,15 @@ static void draw_composed(int screen)
     if (shrink) {
         /* each block again, smaller, held to its corner of the screen */
         const ScreenRect *r = &s_rect[screen];
-        const float k = (float)kh_config.hud_size / 100.0f;
         int b;
-        for (b = 0; b < 4; b++) {
-            const float *q = s_hud_blocks[b];
-            const int *bx = s_hud_box[b];
+        /* the HUD's blocks at config hud_size, then (at the edges) the notices apart from
+         * them at their own size */
+        for (b = 0; b < 8; b++) {
+            const float *q = s_hud_blocks[b & 3];
+            const int *bx = b < 4 ? s_hud_box[b] : s_note_box[b & 3];
+            const float k = b < 4 ? (float)kh_config.hud_size / 100.0f : 1.0f;
+            if (b >= 4 && !edges)
+                break;
             if (q[2] <= q[0] || bx[2] <= bx[0] || bx[3] <= bx[1])
                 continue;
             /* the corner shrunk to its own edges, then only the box the HUD fills in it */
