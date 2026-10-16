@@ -60,13 +60,27 @@ void video_set_note_boxes(const int boxes[3][4]);
 
 int video_single_screen(void);
 int video_single_scene(void);
-/* config single_screen 2: the picture composed by a composition (ui/composition.h) in a picture
- * `columns` DS dots wide across the display's height, the 3D across it when `widen` (else the
- * DS's 4:3 in its middle); NULL turns it off (the layouts again). */
-struct KhComposition;
-void video_set_composition(const struct KhComposition *c, int columns, int widen);
-int video_composing(void);
-/* Where a screen (0 top, 1 bottom) is drawn on the display: a composition's ground for both. */
+/* Single screen in the field: khdays-port's HUD pieces (hw/fieldhud.c) drawn over the top screen
+ * and the panels, the first listed on top; the top screen's 2D left out in the holes (x0 y0 x1
+ * y1, DS pixels) where they come from; with hearts_moved, the hearts' corner not drawn again
+ * smaller (config hud_size); config panels with their bit in panels_off left out. count 0: none. */
+#define VIDEO_PIECE_KEYS 4
+#define VIDEO_PIECES 8
+#define VIDEO_HOLES 4
+typedef struct {
+    int lower;          /* from the bottom screen, else the top screen's 2D */
+    int mirror_y;       /* its source turned over top to bottom */
+    float src[4];       /* x, y, w, h: DS pixels of its screen */
+    float dst[4];       /* x0, y0, x1, y1: display pixels */
+    float fade[4];      /* left, top, right, bottom: display pixels over which it fades out, 0 none */
+    uint16_t keys[VIDEO_PIECE_KEYS]; /* BGR555 colours not drawn */
+    int key_count;
+    int see;            /* see_colour (BGR555) drawn at see_opacity over what is under it */
+    uint16_t see_colour;
+    float see_opacity;
+} VideoPiece;
+void video_set_field_hud(const VideoPiece *pieces, int count, const float holes[][4], int nholes,
+                         int hearts_moved, unsigned panels_off);
 ScreenRect video_screen_rect(int screen);
 /* Display pixel (960x544) -> DS touch-screen pixel; 0 when it is not on the touch screen. */
 int video_map_touch(int px, int py, int *x, int *y);

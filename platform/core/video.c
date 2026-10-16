@@ -5,7 +5,6 @@
 #include "menubg.h"
 #include "paths.h"
 #include "threadstat.h"
-#include "ui/composition.h"
 
 #include <math.h>
 #include <string.h>
@@ -73,7 +72,7 @@ static GLuint s_compose, s_compose_vbo, s_overlay_prog;
 enum { PROG_SCREEN, PROG_PANEL, PROG_CAP, PROGS };
 typedef struct {
     GLuint id;
-    GLint vs, c2d, c3d, bright, hofs, blend, backdrop, prev, cap, flip, fx, filt, panel, panel_rect;
+    GLint vs, c2d, c3d, bright, hofs, blend, backdrop, prev, cap, flip, fx, filt, panel, panel_rect, hole[VIDEO_HOLES];
 } ComposeProg;
 static ComposeProg s_progs[PROGS];
 /* config hud_size: the HUD's corners on the DS top screen (x0, y0, x1, y1), as gpu2d's
@@ -87,24 +86,20 @@ static int s_hud_shrink; /* the field's HUD corners are drawn smaller (gpu2d mar
 /* the panel being drawn (draw_panels): style, radius, width, height; its texture rectangle */
 static float s_panel[4], s_panel_rect[4];
 static float s_hud_scale = 1.0f; /* < 1: the 2D kept 4:3 over a widescreen 3D (config hud) */
-/* the pass draws the 3D alone over the backdrop, none of the 2D (a composition's ground) */
-static int s_3d_alone;
-
-/* config single_screen 2: the picture composed by the compositions (ui/composition.h). The
- * picture is C x 192 DS dots, k display pixels a dot, from s_comp_x0 across. */
-static int s_comp_on, s_comp_widen, s_comp_columns = 256;
-static KhComposition s_comp;
-static float s_comp_k = DISPLAY_H / 192.0f, s_comp_x0;
-/* the shapes' program (shape_init) */
+/* single screen in the field: khdays-port's HUD pieces over the top screen (video_set_field_hud),
+ * the top screen's 2D left out where they come from (holes, normalised x0 y0 x1 y1), the
+ * hearts' corner not drawn again smaller, config panels left out (a bit each) */
+static VideoPiece s_pieces[VIDEO_PIECES];
+static int s_npieces, s_hearts_moved;
+static unsigned s_panels_off;
+static float s_holes[VIDEO_HOLES][4];
+static int s_holes_on; /* the pass drawing the top screen leaves the holes out */
+/* the pieces' program (shape_init) */
 static struct {
     GLuint id;
-    GLint tex, rect, mode, key[KH_SHAPE_KEYS], see, fade, size, weight, bright, blend, filt;
+    GLint tex, rect, mode, key[VIDEO_PIECE_KEYS], see, fade, size, weight, bright, blend, filt;
 } s_shape;
 static GLuint s_shape_vbo;
-/* a composition's static backdrop (layouts/<name>), loaded when it is first shown */
-static GLuint s_bd_tex;
-static int s_bd_w, s_bd_h;
-static char s_bd_name[128];
 
 /* The display capture on the GPU (platform/hw/capture.c): two targets used in turn, the newest
  * one holding the last capture (GL orientation, row 0 the bottom); the graphics screen to
@@ -168,12 +163,18 @@ static const char s_compose_fs[] =
     "    return (a.rgb * wa + b.rgb * wb + c.rgb * wc + d.rgb * wd) / max(wa + wb + wc + wd, 0.0001);\n"
     "}\n"
     "\n"
+    "float inside(float2 p, float4 r)\n"
+    "{\n"
+    "    return step(r.x, p.x) * step(p.x, r.z) * step(r.y, p.y) * step(p.y, r.w);\n"
+    "}\n"
+    "\n"
     "float4 main(float2 vUv : TEXCOORD0, float2 v2d : TEXCOORD1, float2 v3d : TEXCOORD2,\n"
     "            uniform sampler2D u2d, uniform sampler2D u3d,\n"
     "            uniform float2 uBright, uniform float2 uBlend,\n"
     "            uniform float3 uBackdrop, uniform sampler2D uPrev, uniform float4 uCap,\n"
     "            uniform float4 uFx, uniform float2 uFilt,\n"
-    "            uniform float4 uPanel, uniform float4 uPanelRect) : COLOR\n"
+    "            uniform float4 uPanel, uniform float4 uPanelRect, uniform float4 uHole0,\n"
+    "            uniform float4 uHole1, uniform float4 uHole2, uniform float4 uHole3) : COLOR\n"
     "{\n"
     /* the 2D (HUD) kept 4:3 in the middle of a widescreen 3D: beside it, the 3D */
     "    float4 b = tex2D(u2d, v2d);\n"
@@ -182,9 +183,12 @@ static const char s_compose_fs[] =
     "        b = float4(0.0, 0.0, 0.0, 0.0);\n"
     "    else if (uFilt.x > 0.5 && b.a > 0.999)\n"
     "        b.rgb = smooth2d(u2d, v2d, uFilt);\n"
-    /* uFx.w: the 3D alone over the backdrop, none of the 2D (a composition's ground) */
-    "    if (uFx.w > 0.5)\n"
+    /* the single screen's field HUD drawn elsewhere (uHole0-3, the 2D's own coordinates): its
+     * 2D left out here, the 3D over the backdrop in its place */
+    "#ifndef PANEL\n"
+    "    if (inside(v2d, uHole0) + inside(v2d, uHole1) + inside(v2d, uHole2) + inside(v2d, uHole3) > 0.5)\n"
     "        b = float4(uBackdrop, 0.0);\n"
+    "#endif\n"
     /* the HUD size's codes (gpu2d hud_codes): left out here, drawn again smaller in the
      * corners (a PANEL pass); the 3D over the backdrop in their place */
     "#ifndef PANEL\n"
@@ -449,6 +453,12 @@ static void compose_init(void)
         g->filt = glGetUniformLocation(g->id, "uFilt");
         g->panel = glGetUniformLocation(g->id, "uPanel");
         g->panel_rect = glGetUniformLocation(g->id, "uPanelRect");
+        {
+            static const char *const holes[VIDEO_HOLES] = { "uHole0", "uHole1", "uHole2", "uHole3" };
+            int h;
+            for (h = 0; h < VIDEO_HOLES; h++)
+                g->hole[h] = glGetUniformLocation(g->id, holes[h]);
+        }
 
     }
     s_compose = s_progs[PROG_SCREEN].id;
@@ -478,11 +488,11 @@ static void compose_init(void)
     }
 }
 
-/* A composition's shape (config single_screen 2): a rectangle of a screen's 2D placed in the
- * picture, after khdays-port's one-screen pass (its gfx/onescreen.h). aSrc is the source
- * position in DS dots from the shape's own corner (beyond its size where it repeats), aDst the
- * display pixels from the shape's corner. The shapes are drawn last first, each over what is
- * under it, so the first one the file gives that shows a texel is the one seen. */
+/* A piece of the single screen's field HUD (video_set_field_hud): a rectangle of a screen's 2D
+ * placed on the display, after khdays-port's one-screen pass (its gfx/onescreen.h, MIT). aSrc is
+ * the source position in DS pixels from the piece's own corner, aDst the display pixels from
+ * it. The pieces are drawn last first, each over what is under it, so the first one listed that
+ * shows a pixel is the one seen. */
 static const char s_shape_vs[] =
     "void main(float2 aPos, float2 aSrc, float2 aDst,\n"
     "          out float4 vPos : POSITION, out float2 vSrc : TEXCOORD0, out float2 vDst : TEXCOORD1)\n"
@@ -518,9 +528,9 @@ static const char s_shape_fs[] =
     /* uRect: the source rectangle (DS dots); uMode: repeat x, repeat y, force, a capture (flipped,
      * no codes); uKey0-3: colours made transparent (5 bits a channel, w 1 when used); uSee: the
      * colour drawn see-through and its opacity (w < 0: none); uFade: left, top, right, bottom
-     * (display pixels); uSize: the shape's size, its corners' radius (display pixels), its dim;
+     * (display pixels); uSize: the piece's size, its corners' radius (display pixels), its dim;
      * uWeight: its opacity, mirror x, mirror y; uBright: its screen's master brightness when
-     * the composition applies it (mode, factor) */
+     * the 2D does not carry it (the 3D's screen: mode, factor) */
     "float4 main(float2 vSrc : TEXCOORD0, float2 vDst : TEXCOORD1,\n"
     "            uniform sampler2D u2d, uniform float4 uRect, uniform float4 uMode,\n"
     "            uniform float4 uKey0, uniform float4 uKey1, uniform float4 uKey2, uniform float4 uKey3,\n"
@@ -552,6 +562,9 @@ static const char s_shape_fs[] =
     "            a = uBlend.x;\n"
     "        else if (code >= 192.0)\n"
     "            a = (code - 192.0) / 16.0;\n"
+    /* the HUD size's codes (gpu2d hud_codes: its sprites blended over the 3D) */
+    "        else if (code > 160.5 && code < 176.5)\n"
+    "            a = (code - 160.0) / 16.0;\n"
     "        else\n"
     "            a = 0.0;\n"
     "    }\n"
@@ -582,17 +595,17 @@ static const char s_shape_fs[] =
 static void shape_init(void)
 {
     static const char *const attribs[] = { "aPos", "aSrc", "aDst" };
-    static const char *const keys[KH_SHAPE_KEYS] = { "uKey0", "uKey1", "uKey2", "uKey3" };
+    static const char *const keys[VIDEO_PIECE_KEYS] = { "uKey0", "uKey1", "uKey2", "uKey3" };
     int i;
     s_shape.id = video_build_program(s_shape_vs, s_shape_fs, attribs, 3);
     if (!s_shape.id) {
-        LOG("video: the compositions' shader did not build: single_screen 2 shows the screens whole");
+        LOG("video: the field HUD pieces' shader did not build: the panels only");
         return;
     }
     s_shape.tex = glGetUniformLocation(s_shape.id, "u2d");
     s_shape.rect = glGetUniformLocation(s_shape.id, "uRect");
     s_shape.mode = glGetUniformLocation(s_shape.id, "uMode");
-    for (i = 0; i < KH_SHAPE_KEYS; i++)
+    for (i = 0; i < VIDEO_PIECE_KEYS; i++)
         s_shape.key[i] = glGetUniformLocation(s_shape.id, keys[i]);
     s_shape.see = glGetUniformLocation(s_shape.id, "uSee");
     s_shape.fade = glGetUniformLocation(s_shape.id, "uFade");
@@ -653,8 +666,17 @@ static void compose_pass(const float *v, GLuint tex2d, int flip2d, GLuint tex3d,
     SET(g->c3d, glUniform1i(g->c3d, 1));
     SET(g->prev, glUniform1i(g->prev, 2));
     SET(g->vs, glUniform4f(g->vs, flip2d ? 1.0f : 0.0f, hud, s_3d_hofs, 0.0f));
-    SET(g->fx, glUniform4f(g->fx, cap ? 0.0f : (float)kh_config.screen_effect, hud, alpha,
-                           cap ? 0.0f : (float)s_3d_alone));
+    SET(g->fx, glUniform4f(g->fx, cap ? 0.0f : (float)kh_config.screen_effect, hud, alpha, 0.0f));
+    {
+        int h;
+        for (h = 0; h < VIDEO_HOLES; h++) {
+            const float *r = s_holes[h];
+            if (s_holes_on && h < VIDEO_HOLES)
+                SET(g->hole[h], glUniform4f(g->hole[h], r[0], r[1], r[2], r[3]));
+            else
+                SET(g->hole[h], glUniform4f(g->hole[h], 2.0f, 2.0f, 2.0f, 2.0f));
+        }
+    }
     /* Vita pixels per DS pixel, from the quad's height */
     SET(g->filt, glUniform2f(g->filt, filter == FILTER_2D && !(video_gpu_test & 1)
                                           ? (float)kh_config.filter_2d : 0.0f,
@@ -760,6 +782,8 @@ static void draw_composed(int screen)
             const float k = b < 4 ? (float)kh_config.hud_size / 100.0f : 1.0f;
             if (b >= 4 && !edges)
                 break;
+            if ((b & 3) == 0 && s_hearts_moved)
+                continue; /* the hearts' corner: a field HUD piece now */
             if (q[2] <= q[0] || bx[2] <= bx[0] || bx[3] <= bx[1])
                 continue;
             /* the corner shrunk to its own edges, then only the box the HUD fills in it */
@@ -943,8 +967,7 @@ void video_set_panel_visibility(int i, float vis)
 }
 
 static ScreenRect panel_rect(const int *p);
-static void comp_layout(void);
-static int comp_map(int screen, int px, int py, int *x, int *y);
+static int piece_map(int px, int py, int *x, int *y);
 
 /* where panel i is now: an autohide one slides in from the edge it is anchored to */
 static ScreenRect panel_rect_now(int i)
@@ -1038,8 +1061,6 @@ static void compute_layout(void)
                                : (ScreenRect){ 0, 0, 0, 0 };
         s_inset = -1;
     }
-    if (s_comp_on)
-        comp_layout();
 }
 
 void video_set_single_scene(int on)
@@ -1173,8 +1194,6 @@ int video_map_top(int px, int py, int *x, int *y)
 {
     const ScreenRect *r = &s_rect[0];
     float u;
-    if (s_comp_on && s_comp.screens != KH_SCREENS_SIDE_BY_SIDE && s_comp.screens != KH_SCREENS_STACKED)
-        return comp_map(0, px, py, x, y);
     if (!r->w || !r->h || px < r->x || px >= r->x + r->w || py < r->y || py >= r->y + r->h)
         return 0;
     if (s_inset == 0 && video_on_inset(px, py))
@@ -1206,16 +1225,18 @@ int video_on_inset(int px, int py)
 int video_map_touch(int px, int py, int *x, int *y)
 {
     const ScreenRect *r = &s_rect[1];
-    if (s_comp_on && s_comp.screens != KH_SCREENS_SIDE_BY_SIDE && s_comp.screens != KH_SCREENS_STACKED)
-        return comp_map(1, px, py, x, y); /* the lower screen where a shape shows it */
     if (s_single) {
         /* a panel is the bottom screen under it: a touch there is a touch on the DS's */
         int i;
+        if (!s_tutorial && piece_map(px, py, x, y))
+            return 1; /* the field HUD's pieces of the bottom screen */
         for (i = 0; i < KH_PANELS; i++) {
             const int *p = s_tutorial ? s_tutorial_panel : kh_config.panel[i];
             const ScreenRect q = s_tutorial ? panel_rect(p) : panel_rect_now(i);
             if (s_tutorial && i)
                 break;
+            if (!s_tutorial && (s_panels_off >> i & 1))
+                continue;
             if (!p[KH_PANEL_SW] || !q.w || !q.h || px < q.x || px >= q.x + q.w || py < q.y ||
                 py >= q.y + q.h)
                 continue;
@@ -1341,6 +1362,8 @@ static void draw_panels(void)
         float x0, x1, y0, y1, u0, u1, v0, v1;
         if (s_tutorial && i)
             break; /* the tutorial page alone */
+        if (!s_tutorial && (s_panels_off >> i & 1))
+            continue; /* replaced by the field HUD's pieces */
         if (!p[KH_PANEL_SW] || !p[KH_PANEL_SH] || q.w <= 0 || q.h <= 0)
             continue;
         x0 = q.x / (DISPLAY_W / 2.0f) - 1.0f, x1 = (q.x + q.w) / (DISPLAY_W / 2.0f) - 1.0f;
@@ -1359,7 +1382,7 @@ static void draw_panels(void)
     }
 }
 
-/* One screen in its rectangle (the layouts, and a composition's two screens whole) */
+/* One screen in its rectangle */
 static void draw_screen(int i)
 {
     glBindTexture(GL_TEXTURE_2D, s_tex_cur(i));
@@ -1401,93 +1424,24 @@ static void draw_screen(int i)
     }
 }
 
-/* ---- config single_screen 2: the compositions ------------------------------------------------ */
+/* ---- single screen in the field: khdays-port's HUD pieces -------------------------------------- */
 
-/* The picture: C x 192 DS dots across the display's height, in its middle. */
-static ScreenRect comp_picture(void)
+/* One piece: its rectangle of a screen's 2D at its place on the display, with its effects
+ * (s_shape_fs) */
+static void draw_piece(const VideoPiece *pc)
 {
-    return (ScreenRect){ (int)(s_comp_x0 + 0.5f), 0, (int)(s_comp_columns * s_comp_k + 0.5f), DISPLAY_H };
-}
-
-/* The screens' rectangles for the composition's ground: both whole (side by side, stacked), or
- * the 3D's: across the picture where it widens, else the DS's 4:3 in the middle. */
-static void comp_layout(void)
-{
-    switch (s_comp.screens) {
-    case KH_SCREENS_SIDE_BY_SIDE:
-        s_rect[0] = (ScreenRect){ 0, 92, 480, 360 };
-        s_rect[1] = (ScreenRect){ 480, 92, 480, 360 };
-        break;
-    case KH_SCREENS_STACKED: {
-        const int h = DISPLAY_H / 2, w = h * 4 / 3;
-        s_rect[0] = (ScreenRect){ (DISPLAY_W - w) / 2, 0, w, h };
-        s_rect[1] = (ScreenRect){ (DISPLAY_W - w) / 2, h, w, h };
-        break;
-    }
-    default: {
-        const ScreenRect pic = comp_picture();
-        const int w43 = DISPLAY_H * 4 / 3 < pic.w ? DISPLAY_H * 4 / 3 : pic.w;
-        s_rect[0] = s_comp_widen ? pic : (ScreenRect){ pic.x + (pic.w - w43) / 2, 0, w43, DISPLAY_H };
-        s_rect[1] = s_rect[0];
-        break;
-    }
-    }
-    s_inset = -1;
-}
-
-/* The 3D alone over the backdrop in the display rectangle x0..x1, y0..y1 (the 3D laid where the
- * 3D screen's rectangle is), at the master brightness given. */
-static void draw_3d_rect(float x0, float y0, float x1, float y1, int with_3d, uint16_t bright)
-{
-    const ScreenRect *r = &s_rect[s_3d_screen == 1 ? 1 : 0];
-    const float u0 = (x0 - r->x) / r->w, u1 = (x1 - r->x) / r->w;
-    const float v0 = (y0 - r->y) / r->h, v1 = (y1 - r->y) / r->h;
-    const float X0 = x0 / (DISPLAY_W / 2.0f) - 1.0f, X1 = x1 / (DISPLAY_W / 2.0f) - 1.0f;
-    const float Y0 = 1.0f - y0 / (DISPLAY_H / 2.0f), Y1 = 1.0f - y1 / (DISPLAY_H / 2.0f);
-    const float v[16] = { X0, Y0, u0, v0, X1, Y0, u1, v0, X0, Y1, u0, v1, X1, Y1, u1, v1 };
-    s_3d_alone = 1;
-    compose_pass(v, s_clear_tex, 0, with_3d && s_3d_screen >= 0 ? s_3d_tex : 0, bright, 0, 1.0f, 1.0f,
-                 FILTER_TEXEL);
-    s_3d_alone = 0;
-}
-
-/* A shape's place on the display: its rectangle (x0, y0, x1, y1) and display pixels per source
- * dot along each axis */
-static void shape_place(const KhShape *sh, float *x0, float *y0, float *x1, float *y1, float *sx, float *sy)
-{
-    *x0 = s_comp_x0 + sh->dst[0] * s_comp_k, *x1 = s_comp_x0 + sh->dst[2] * s_comp_k;
-    *y0 = sh->dst[1] * s_comp_k, *y1 = sh->dst[3] * s_comp_k;
-    *sx = (*x1 - *x0) / sh->src[2];
-    *sy = (*y1 - *y0) / sh->src[3];
-}
-
-static void draw_shape(const KhShape *sh)
-{
-    const int screen = (sh->flags & KH_SHAPE_LOWER) ? 1 : 0;
+    const int screen = pc->lower ? 1 : 0;
     const int bank = s_show_bank[screen];
     const int capture = bank >= 0;
-    float x0, y0, x1, y1, sx, sy, qx0, qy0, qx1, qy1, v[24];
+    const float x0 = pc->dst[0], y0 = pc->dst[1], x1 = pc->dst[2], y1 = pc->dst[3];
+    const float sx = (x1 - x0) / pc->src[2], sy = (y1 - y0) / pc->src[3];
+    float v[24];
     int i;
     uint16_t bright;
-    shape_place(sh, &x0, &y0, &x1, &y1, &sx, &sy);
-    if (sh->flags & KH_SHAPE_3D) {
-        /* the picture's 3D where the shape is (a field behind a page), dimmed with `dim` */
-        const int f = (sh->flags & KH_SHAPE_DIM) ? (int)((1.0f - sh->opacity) * 16.0f + 0.5f) : 0;
-        draw_3d_rect(x0, y0, x1, y1, !s_comp.hide3d_all, f ? (uint16_t)(2u << 14 | (unsigned)f) : s_3d_bright);
-        return;
-    }
     if (!s_shape.id || x1 <= x0 || y1 <= y0)
         return;
-    /* a repeated shape keeps its rows (repeat x) or its columns (repeat y), across the picture */
-    qx0 = x0, qx1 = x1, qy0 = y0, qy1 = y1;
-    if (sh->flags & KH_SHAPE_REPEAT_X) {
-        const ScreenRect pic = comp_picture();
-        qx0 = (float)pic.x, qx1 = (float)(pic.x + pic.w);
-    }
-    if (sh->flags & KH_SHAPE_REPEAT_Y)
-        qy0 = 0.0f, qy1 = (float)DISPLAY_H;
     {
-        const float xs[4] = { qx0, qx1, qx0, qx1 }, ys[4] = { qy0, qy0, qy1, qy1 };
+        const float xs[4] = { x0, x1, x0, x1 }, ys[4] = { y0, y0, y1, y1 };
         for (i = 0; i < 4; i++) {
             v[i * 6] = xs[i] / (DISPLAY_W / 2.0f) - 1.0f;
             v[i * 6 + 1] = 1.0f - ys[i] / (DISPLAY_H / 2.0f);
@@ -1506,32 +1460,26 @@ static void draw_shape(const KhShape *sh)
     if (s_shape.tex >= 0)
         glUniform1i(s_shape.tex, 0);
     if (s_shape.rect >= 0)
-        glUniform4f(s_shape.rect, sh->src[0], sh->src[1], sh->src[2], sh->src[3]);
+        glUniform4f(s_shape.rect, pc->src[0], pc->src[1], pc->src[2], pc->src[3]);
     if (s_shape.mode >= 0)
-        glUniform4f(s_shape.mode, (sh->flags & KH_SHAPE_REPEAT_X) ? 1.0f : 0.0f,
-                    (sh->flags & KH_SHAPE_REPEAT_Y) ? 1.0f : 0.0f, (sh->flags & KH_SHAPE_FORCE) ? 1.0f : 0.0f,
-                    capture ? 1.0f : 0.0f);
-    for (i = 0; i < KH_SHAPE_KEYS; i++) {
-        const unsigned c = sh->keys[i];
+        glUniform4f(s_shape.mode, 0.0f, 0.0f, 0.0f, capture ? 1.0f : 0.0f);
+    for (i = 0; i < VIDEO_PIECE_KEYS; i++) {
+        const unsigned c = pc->keys[i];
         if (s_shape.key[i] >= 0)
             glUniform4f(s_shape.key[i], (float)(c & 31), (float)((c >> 5) & 31), (float)((c >> 10) & 31),
-                        i < sh->key_count ? 1.0f : 0.0f);
+                        i < pc->key_count ? 1.0f : 0.0f);
     }
-    {
-        const unsigned c = sh->see_through;
-        if (s_shape.see >= 0)
-            glUniform4f(s_shape.see, (float)(c & 31), (float)((c >> 5) & 31), (float)((c >> 10) & 31),
-                        (sh->flags & KH_SHAPE_SEE_THROUGH) ? (float)((c >> 16) & 255) / 255.0f : -1.0f);
+    if (s_shape.see >= 0) {
+        const unsigned c = pc->see_colour;
+        glUniform4f(s_shape.see, (float)(c & 31), (float)((c >> 5) & 31), (float)((c >> 10) & 31),
+                    pc->see ? pc->see_opacity : -1.0f);
     }
     if (s_shape.fade >= 0)
-        glUniform4f(s_shape.fade, sh->fade[0] * s_comp_k, sh->fade[1] * s_comp_k, sh->fade[2] * s_comp_k,
-                    sh->fade[3] * s_comp_k);
+        glUniform4f(s_shape.fade, pc->fade[0], pc->fade[1], pc->fade[2], pc->fade[3]);
     if (s_shape.size >= 0)
-        glUniform4f(s_shape.size, x1 - x0, y1 - y0, (sh->flags & KH_SHAPE_ROUND) ? sh->round * sx : 0.0f,
-                    (sh->flags & KH_SHAPE_DIM) ? sh->opacity : 1.0f);
+        glUniform4f(s_shape.size, x1 - x0, y1 - y0, 0.0f, 1.0f);
     if (s_shape.weight >= 0)
-        glUniform4f(s_shape.weight, (sh->flags & KH_SHAPE_WEIGHT) ? sh->opacity : 1.0f,
-                    (sh->flags & KH_SHAPE_MIRROR_X) ? 1.0f : 0.0f, (sh->flags & KH_SHAPE_MIRROR_Y) ? 1.0f : 0.0f, 0.0f);
+        glUniform4f(s_shape.weight, 1.0f, 0.0f, pc->mirror_y ? 1.0f : 0.0f, 0.0f);
     {
         const int mode = (bright >> 14) & 3;
         const int f = (bright & 31) > 16 ? 16 : bright & 31;
@@ -1564,113 +1512,24 @@ static void draw_shape(const KhShape *sh)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 }
 
-extern unsigned char *stbi_load(const char *filename, int *x, int *y, int *comp, int req_comp);
-extern void stbi_image_free(void *retval_from_stbi_load);
-
-/* The composition's static backdrop (ux0:data/khdays/layouts/<name>), covering the picture (or
- * inside it, `fit`), its aspect kept, held at its anchor */
-static void draw_backdrop(void)
+void video_set_field_hud(const VideoPiece *pieces, int count, const float holes[][4], int nholes,
+                         int hearts_moved, unsigned panels_off)
 {
-    ScreenRect pic;
-    float s, w, h, x, y;
-    if (!s_comp.backdrop[0] || !s_overlay_prog)
-        return;
-    if (strcmp(s_bd_name, s_comp.backdrop) != 0) {
-        char path[192];
-        int n;
-        unsigned char *px;
-        snprintf(s_bd_name, sizeof(s_bd_name), "%s", s_comp.backdrop);
-        snprintf(path, sizeof(path), KH_DATA_DIR "/layouts/%s", s_comp.backdrop);
-        px = stbi_load(path, &s_bd_w, &s_bd_h, &n, 4);
-        if (!px || s_bd_w > 4096 || s_bd_h > 4096) {
-            LOG("video: the composition's backdrop %s cannot be read", path);
-            if (px)
-                stbi_image_free(px);
-            s_bd_w = s_bd_h = 0;
+    int h;
+    s_npieces = count < 0 ? 0 : count > VIDEO_PIECES ? VIDEO_PIECES : count;
+    if (s_npieces)
+        memcpy(s_pieces, pieces, sizeof(VideoPiece) * (size_t)s_npieces);
+    for (h = 0; h < VIDEO_HOLES; h++) {
+        /* the 2D's own coordinates (0-1); none: a rectangle nothing falls in */
+        if (h < nholes) {
+            s_holes[h][0] = holes[h][0] / DS_SCREEN_W, s_holes[h][1] = holes[h][1] / DS_SCREEN_H;
+            s_holes[h][2] = holes[h][2] / DS_SCREEN_W, s_holes[h][3] = holes[h][3] / DS_SCREEN_H;
         } else {
-            if (!s_bd_tex)
-                glGenTextures(1, &s_bd_tex);
-            glBindTexture(GL_TEXTURE_2D, s_bd_tex);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, s_bd_w, s_bd_h, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            stbi_image_free(px);
-            LOG("video: the composition's backdrop %s, %dx%d", path, s_bd_w, s_bd_h);
+            s_holes[h][0] = s_holes[h][1] = s_holes[h][2] = s_holes[h][3] = 2.0f;
         }
     }
-    if (!s_bd_w || !s_bd_h)
-        return;
-    pic = comp_picture();
-    s = (float)pic.w / s_bd_w, h = (float)pic.h / s_bd_h;
-    s = s_comp.backdrop_fit ? (s < h ? s : h) : (s > h ? s : h);
-    w = s_bd_w * s, h = s_bd_h * s;
-    x = pic.x + (pic.w - w) * s_comp.backdrop_ax, y = pic.y + (pic.h - h) * s_comp.backdrop_ay;
-    {
-        const float X0 = x / (DISPLAY_W / 2.0f) - 1.0f, X1 = (x + w) / (DISPLAY_W / 2.0f) - 1.0f;
-        const float Y0 = 1.0f - y / (DISPLAY_H / 2.0f), Y1 = 1.0f - (y + h) / (DISPLAY_H / 2.0f);
-        const float v[16] = { X0, Y0, 0, 0, X1, Y0, 1, 0, X0, Y1, 0, 1, X1, Y1, 1, 1 };
-        glBindTexture(GL_TEXTURE_2D, s_bd_tex);
-        glUseProgram(s_overlay_prog);
-        glBindBuffer(GL_ARRAY_BUFFER, s_compose_vbo);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(v), v, GL_DYNAMIC_DRAW);
-        glEnableVertexAttribArray(0);
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 16, (void *)0);
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 16, (void *)8);
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-        glDisableVertexAttribArray(0);
-        glDisableVertexAttribArray(1);
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
-        glUseProgram(0);
-    }
-}
-
-static void draw_composition(void)
-{
-    int i;
-    if (s_comp.screens == KH_SCREENS_SIDE_BY_SIDE || s_comp.screens == KH_SCREENS_STACKED) {
-        draw_backdrop();
-        draw_screen(0);
-        draw_screen(1);
-    } else {
-        /* the ground: the 3D over the backdrop across the picture, then the backdrop picture
-         * where one is given (the 3D's own backdrop colour gives way to it) */
-        const ScreenRect pic = comp_picture();
-        if (s_comp.backdrop[0])
-            draw_backdrop();
-        else
-            draw_3d_rect((float)pic.x, 0.0f, (float)(pic.x + pic.w), (float)DISPLAY_H, !s_comp.hide3d_all,
-                         s_3d_bright);
-    }
-    /* the first shape that shows a texel is seen: the last drawn first */
-    for (i = s_comp.shape_count - 1; i >= 0; i--)
-        draw_shape(&s_comp.shapes[i]);
-}
-
-void video_set_composition(const KhComposition *c, int columns, int widen)
-{
-    int changed;
-    if (!c) {
-        if (s_comp_on) {
-            s_comp_on = 0;
-            compute_layout();
-        }
-        return;
-    }
-    changed = !s_comp_on || c->screens != s_comp.screens || columns != s_comp_columns || widen != s_comp_widen;
-    s_comp = *c;
-    s_comp_on = 1;
-    s_comp_columns = columns;
-    s_comp_widen = widen;
-    s_comp_k = DISPLAY_H / 192.0f;
-    s_comp_x0 = (DISPLAY_W - columns * s_comp_k) / 2.0f;
-    if (changed)
-        compute_layout();
-}
-
-int video_composing(void)
-{
-    return s_comp_on;
+    s_hearts_moved = hearts_moved != 0;
+    s_panels_off = panels_off;
 }
 
 ScreenRect video_screen_rect(int screen)
@@ -1678,28 +1537,21 @@ ScreenRect video_screen_rect(int screen)
     return s_rect[screen & 1];
 }
 
-/* A display pixel on a composition's shape of `screen` -> that screen's DS pixel: the first shape
- * that holds it (the one seen there), else 0. */
-static int comp_map(int screen, int px, int py, int *x, int *y)
+/* A display pixel on a bottom-screen piece -> its DS pixel: the first piece that holds it (the
+ * one on top), else 0. */
+static int piece_map(int px, int py, int *x, int *y)
 {
     int i;
-    for (i = 0; i < s_comp.shape_count; i++) {
-        const KhShape *sh = &s_comp.shapes[i];
-        float x0, y0, x1, y1, sx, sy, fx, fy;
-        if ((sh->flags & KH_SHAPE_3D) || ((sh->flags & KH_SHAPE_LOWER) ? 1 : 0) != screen)
+    for (i = 0; i < s_npieces; i++) {
+        const VideoPiece *pc = &s_pieces[i];
+        float fx, fy;
+        if (!pc->lower || px < pc->dst[0] || px >= pc->dst[2] || py < pc->dst[1] || py >= pc->dst[3])
             continue;
-        shape_place(sh, &x0, &y0, &x1, &y1, &sx, &sy);
-        if (sh->flags & (KH_SHAPE_REPEAT_X | KH_SHAPE_REPEAT_Y))
-            continue; /* a strip repeated: nothing to touch */
-        if (px < x0 || px >= x1 || py < y0 || py >= y1)
-            continue;
-        fx = (px - x0) / sx, fy = (py - y0) / sy;
-        if (sh->flags & KH_SHAPE_MIRROR_X)
-            fx = sh->src[2] - fx;
-        if (sh->flags & KH_SHAPE_MIRROR_Y)
-            fy = sh->src[3] - fy;
-        *x = (int)(sh->src[0] + fx);
-        *y = (int)(sh->src[1] + fy);
+        fx = (px - pc->dst[0]) / (pc->dst[2] - pc->dst[0]) * pc->src[2];
+        fy = (py - pc->dst[1]) / (pc->dst[3] - pc->dst[1]) * pc->src[3];
+        if (pc->mirror_y)
+            fy = pc->src[3] - fy;
+        *x = (int)(pc->src[0] + fx), *y = (int)(pc->src[1] + fy);
         *x = *x < 0 ? 0 : *x > DS_SCREEN_W - 1 ? DS_SCREEN_W - 1 : *x;
         *y = *y < 0 ? 0 : *y > DS_SCREEN_H - 1 ? DS_SCREEN_H - 1 : *y;
         return 1;
@@ -1762,20 +1614,20 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
     if (s_menus && !s_single && s_menus_layout == 2)
         draw_menubg();
     seg_mark(1);
-    if (s_comp_on) {
-        /* config single_screen 2: the composition's picture */
-        for (k = 0; k < 2; k++)
-            if (src[k])
-                upload_screen(k, src[k]);
-        draw_composition();
-    } else {
-        for (k = 0; k < 2; k++) {
-            /* the large screen first, the inset over it */
-            const int i = s_inset == 0 ? 1 - k : k;
-            if (src[i])
-                upload_screen(i, src[i]);
-            draw_screen(i);
-        }
+    for (k = 0; k < 2; k++) {
+        /* the large screen first, the inset over it */
+        const int i = s_inset == 0 ? 1 - k : k;
+        if (src[i])
+            upload_screen(i, src[i]);
+        /* the single screen's field HUD: the top screen's 2D left out where its pieces come from */
+        s_holes_on = s_single && s_npieces && i == 0;
+        draw_screen(i);
+        s_holes_on = 0;
+    }
+    if (s_single && s_compose) {
+        /* the field HUD's pieces, over the top screen and the panels: the first on top */
+        for (k = s_npieces - 1; k >= 0; k--)
+            draw_piece(&s_pieces[k]);
     }
     seg_mark(2);
     if (s_overlay) {

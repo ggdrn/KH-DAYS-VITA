@@ -64,7 +64,7 @@ static const Item s_screen[] = {
     { IT_CORNER, 0, "Small screen corner", NULL },
     { IT_OPACITY, 0, "Small screen opacity", "See the game through the small screen." },
     { IT_HUDSIZE, 0, "HUD size", "Commands, HP, chain (and map, target) in the field." },
-    { IT_SINGLE, 0, "Single screen (beta)", "Panels: missions with panels. Compositions: every screen, as the PC port." },
+    { IT_SINGLE, 0, "Single screen (beta)", "One screen: missions with panels; title menu over its picture." },
     { IT_PANELOP, 0, "Panel opacity", "Single screen: see the game through the panels." },
 };
 static const Item s_controls[] = {
@@ -204,9 +204,7 @@ static void value(const Item *it, char *out, size_t n)
     case IT_INSET: snprintf(out, n, "%d", kh_config.inset_width); break;
     case IT_CORNER: snprintf(out, n, "%s", corners[kh_config.inset_corner & 3]); break;
     case IT_OPACITY: snprintf(out, n, "%d%%", kh_config.inset_opacity); break;
-    case IT_SINGLE:
-        snprintf(out, n, "%s", kh_config.single_screen == 2 ? "Compositions" : kh_config.single_screen ? "Panels" : "Off");
-        break;
+    case IT_SINGLE: snprintf(out, n, "%s", kh_config.single_screen ? "On" : "Off"); break;
     case IT_HUDSIZE: snprintf(out, n, "%d%%", kh_config.hud_size); break;
     case IT_PANELOP: snprintf(out, n, "%d%%", kh_config.panel_opacity); break;
     case IT_CAMERA: snprintf(out, n, "%s", kh_config.camera_stick ? "On" : "Off"); break;
@@ -303,7 +301,7 @@ static void change(const Item *it, int d)
     case IT_OPACITY:
         kh_config.inset_opacity = wrap(kh_config.inset_opacity, 50, 100, d * 25);
         break;
-    case IT_SINGLE: kh_config.single_screen = wrap(kh_config.single_screen, 0, 2, d); break;
+    case IT_SINGLE: kh_config.single_screen ^= 1; break;
     case IT_HUDSIZE: kh_config.hud_size = wrap(kh_config.hud_size, 60, 100, d * 10); break;
     case IT_PANELOP:
         kh_config.panel_opacity = wrap(kh_config.panel_opacity, 50, 100, d * 10);

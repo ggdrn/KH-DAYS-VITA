@@ -23,7 +23,7 @@ void kh_gpu3d_forget_previous(void);
  * while the screens trade places frame by frame). */
 extern volatile int kh_gpu3d_direct;
 
-/* config single_screen 2 (hw/onescreen.c, a composition's `shape3d hud` / `hide3d hud`): the
+/* The single screen's field HUD (hw/fieldhud.c, khdays-port's `shape3d hud`): the
  * frame's flat polygons (KhGxPolygon flat: the HUD's 3D pieces) wholly inside the DS rectangle
  * src (x0, y0, x1, y1, DS dots) are drawn moved, at NDC x = mx * px + cx, y = my * py + cy from
  * their DS position (px, py); with hide, the flat ones smaller than a quarter of the screen are

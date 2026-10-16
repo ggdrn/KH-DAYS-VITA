@@ -156,11 +156,8 @@ def main():
     # art_src/): packed as app0:assets/titlescreen/bg.png when it is there (menubg.c)
     title_bg = "assets/titlescreen/bg.png"
     title_bg_on = (ROOT / title_bg).is_file()
-    # config single_screen 2: khdays-port's compositions, packed as app0:layouts/compositions.txt
-    compositions = "platform/ui/compositions/port_days.txt"
     w(f"rule vpk\n  command = {BIN / 'vita-pack-vpk'} -s build/param.sfo -b build/eboot.bin"
       + (f" -a {title_bg}={title_bg}" if title_bg_on else "") +
-      f" -a {compositions}=layouts/compositions.txt" +
       f" -a {art_dir}/icon0.png=sce_sys/icon0.png"
       f" -a {art_dir}/livearea/contents/bg.png=sce_sys/livearea/contents/bg.png"
       f" -a {art_dir}/livearea/contents/startup.png=sce_sys/livearea/contents/startup.png"
@@ -217,8 +214,7 @@ def main():
     w("build build/param.sfo: sfo | VERSION")
     w(f"build {' '.join(art)}: livearea" + (f" | {art_deps}" if art_deps else ""))
     w(f"build {vpk}: vpk build/eboot.bin build/param.sfo {' '.join(art)}"
-      " sce_sys/livearea/contents/template.xml" + (f" {title_bg}" if title_bg_on else "") +
-      f" {compositions}")
+      " sce_sys/livearea/contents/template.xml" + (f" {title_bg}" if title_bg_on else ""))
     w(f"default {vpk}")
     (ROOT / "build.ninja").write_text("\n".join(out) + "\n")
     print(f"build.ninja: {len(port_srcs)} port + {len(game_srcs)} game sources -> {vpk}")

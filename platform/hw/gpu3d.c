@@ -1031,7 +1031,7 @@ void kh_gpu3d_prepare(const KhGxFrame *f)
     s_njobs = 0;
 }
 
-/* config single_screen 2: the HUD's flat 3D placed by the composition (kh_gpu3d_set_hud_place) */
+/* the single screen's field HUD: the HUD's flat 3D placed (kh_gpu3d_set_hud_place) */
 static KhGpu3dHudPlace s_hud;
 static int s_hud_on;
 

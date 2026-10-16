@@ -82,9 +82,9 @@ void *OS_GetInitArenaHi(int id)
     }
 }
 
-/* Whether `a` points into the arenas the game's heaps are carved from, n bytes of it: what the
- * one-screen situation follows from the game's own pointers (hw/situation_take.c) before it
- * reads through them from another thread. */
+/* Whether `a` points into the arenas the game's heaps are carved from, n bytes of it: the single
+ * screen's field HUD (hw/fieldhud.c) checks the game's own pointers so before it reads through
+ * them from another thread. */
 int kh_is_game_heap(unsigned long a, unsigned long n)
 {
     const uintptr_t m = (uintptr_t)main_arena(), i = (uintptr_t)s_itcm_arena;
