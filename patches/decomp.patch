@@ -9068,10 +9068,10 @@ index 7241b50d8..8a8872ba7 100644
      packed |= Ov105_GetStatusLow();
      Heap_SetCurrent(0);
 diff --git a/src/engine/GetPlayerSlotTableEntry.c b/src/engine/GetPlayerSlotTableEntry.c
-index 4b7ab6feb..68e4a6bde 100644
+index 4b7ab6feb..3e308b7c0 100644
 --- a/src/engine/GetPlayerSlotTableEntry.c
 +++ b/src/engine/GetPlayerSlotTableEntry.c
-@@ -2,7 +2,71 @@
+@@ -2,7 +2,50 @@
   * outside [0,2). */
  
  extern char data_0204c500[];
@@ -9081,46 +9081,25 @@ index 4b7ab6feb..68e4a6bde 100644
 + * does not run then). The engine's own calls ask with member - 1 = -1 for Roxas: unchanged. */
 +extern volatile int kh_partner_swap_index, kh_partner_swap_slot;
 +
-+/* The panels swapped (0.7.15): the two party members' records (gPartyMembers, 0x104 bytes:
-+ * level, weapon panel, stats, resistances, abilities, the deck's shortcuts and counts, the
-+ * items) traded in place, all but each one's identity (bytes 0, 1 and 3: member id, kind).
-+ * Remapped query by query (0.7.5 to 0.7.14), some reads went to the wrong one -- a magic or
-+ * an item used by the partner was not spent. kh_swap_member is the identity now: every read
-+ * by a member id finds the swapped record. Called again to trade them back. Each one keeps its
-+ * own weapon (byte 4, the row of its character's weapon table its build was made from): the
-+ * played partner fights with its own (0.7.11 to 0.7.24 rebuilt both actors' weapons at each
-+ * swap, and the builds put back faulted on the way back to Roxas, or left the partner with
-+ * none). */
++/* The panels: traded between the two records from 0.7.15 to 0.7.41; each one keeps its own
++ * now (Ov022_RefreshSlotRows), and a read by member id finds that member's own record. */
 +extern volatile int kh_partner_swap_member;
-+extern unsigned char gPartyMembers[];
-+void kh_swap_records(int p)
-+{
-+    unsigned char *a = gPartyMembers, *b = gPartyMembers + p * 0x104;
-+    int k;
-+    for (k = 0; k < 0x104; k++) {
-+        unsigned char t;
-+        if (k == 0 || k == 1 || k == 3 || k == 4)
-+            continue;
-+        t = a[k];
-+        a[k] = b[k];
-+        b[k] = t;
-+    }
-+}
-+
 +int kh_swap_member(int id)
 +{
 +    return id;
 +}
 +
 +/* The deck (each shortcut's magic or item, and its count): the HUD reads and spends it as the
-+ * session's local player, member 0, whose record is the partner's while the two are traded.
-+ * Member 0 is the one holding Roxas's record then, so that the deck shown, the one the partner
-+ * played uses and the one spent are all Roxas's (0.7.15 to 0.7.28: the HUD's read the
-+ * partner's record). */
++ * session's local player, member 0. While the partner is played that is the partner's own
++ * record (0.7.42: the records are no longer traded, each one keeps its own panels), but not
++ * for Roxas's own actor on the AI (kh_swap_actor, Ov022_RefreshSlotRows), whose magic and items
++ * stay his. */
++extern volatile int kh_swap_actor; /* the port's (platform/core/input.c) */
++
 +int kh_swap_deck_member(int id)
 +{
 +    const int p = kh_partner_swap_member;
-+    return p > 0 && id == 0 ? p : id;
++    return p > 0 && id == 0 && kh_swap_actor != 0 ? p : id;
 +}
 +
 +/* Who a pickup (munny, mission tally, inventory) is credited to: the partner's are Roxas's */
@@ -10033,20 +10012,33 @@ index f0ec5e085..210b1cda2 100644
 +}
 +#endif
 diff --git a/src/engine/Slot_EvalPackedParam.c b/src/engine/Slot_EvalPackedParam.c
-index 89376fcd5..5b964138b 100644
+index 89376fcd5..74eb2d50f 100644
 --- a/src/engine/Slot_EvalPackedParam.c
 +++ b/src/engine/Slot_EvalPackedParam.c
-@@ -14,7 +14,13 @@ extern struct Params data_0204c590[];
+@@ -14,7 +14,26 @@ extern struct Params data_0204c590[];
  extern unsigned char gPartyMembers[];
  extern int BitArray_GetField(unsigned char *p, int hi, int lo);
  
 +#ifdef PLATFORM_VITA
-+extern int kh_swap_deck_member(int id); /* config partner_swap: the deck as Roxas's */
++extern int kh_swap_deck_member(int id); /* config partner_swap: the deck shown, the partner's */
++extern int kh_swap_shares_abilities(int id);
++/* parameters 1 to 15 are the deck's (each magic's charges: Ov022_BuildSlotPool), the rest the
++ * panels' abilities and rules (dodge roll, glide, the combo's, the guard's...) */
++#define KH_FIRST_ABILITY 0x10
 +#endif
  int Slot_EvalPackedParam(int a, int b) {
      struct Params *v = &data_0204c590[b - 1];
 +#ifdef PLATFORM_VITA
 +    a = kh_swap_deck_member(a);
++    if (b >= KH_FIRST_ABILITY && kh_swap_shares_abilities(a)) {
++        /* config partner_swap: in a mission set up for the swap the partner has Roxas's
++         * abilities as well as its own (the higher of the two), for the whole mission; its
++         * deck stays its own */
++        const int own = (unsigned char)BitArray_GetField(gPartyMembers + a * 260 + 0x28, v->hi,
++                                                         v->lo);
++        const int roxas = (unsigned char)BitArray_GetField(gPartyMembers + 0x28, v->hi, v->lo);
++        return own > roxas ? own : roxas;
++    }
 +#endif
      return (unsigned char)BitArray_GetField(gPartyMembers + a * 260 + 0x28, v->hi, v->lo);
  }
@@ -11122,6 +11114,94 @@ index 8239df45c..6e606ffe0 100644
  
      s = *(struct Sub **)(((char *)a->field4) + 0x2c);
  
+diff --git a/src/overlays/enemies/ov228_enemy_dual_blade/Ov228_SyncEffectNodesToJoints.c b/src/overlays/enemies/ov228_enemy_dual_blade/Ov228_SyncEffectNodesToJoints.c
+index 2f17a6603..fae4c69e6 100644
+--- a/src/overlays/enemies/ov228_enemy_dual_blade/Ov228_SyncEffectNodesToJoints.c
++++ b/src/overlays/enemies/ov228_enemy_dual_blade/Ov228_SyncEffectNodesToJoints.c
+@@ -19,8 +19,17 @@ struct B {
+ };
+ 
+ void Ov228_SyncEffectNodesToJoints(struct A *a0, struct B *sl) {
++#ifdef PLATFORM_VITA
++    /* PLATFORM_VITA: func_02016320 writes a whole MtxFx43 (12 words) into loc, and the joint's
++     * translation (its last 3) is what buf4 is read as. On the DS buf4 sat right after loc[9];
++     * GCC put the saved registers there instead, and the dual blade's arena faulted with r4
++     * overwritten (mission 54) */
++    int loc[12];
++    int *const buf4 = &loc[9];
++#else
+     int buf4[3];
+     int loc[9];
++#endif
+     int work[3];
+     int i;
+ 
+diff --git a/src/overlays/enemies/ov229_enemy_dual_blade_2/Ov229_SyncEffectNodesToJoints.c b/src/overlays/enemies/ov229_enemy_dual_blade_2/Ov229_SyncEffectNodesToJoints.c
+index 0da89428f..36d829d52 100644
+--- a/src/overlays/enemies/ov229_enemy_dual_blade_2/Ov229_SyncEffectNodesToJoints.c
++++ b/src/overlays/enemies/ov229_enemy_dual_blade_2/Ov229_SyncEffectNodesToJoints.c
+@@ -19,8 +19,17 @@ struct B {
+ };
+ 
+ void Ov229_SyncEffectNodesToJoints(struct A *a0, struct B *sl) {
++#ifdef PLATFORM_VITA
++    /* PLATFORM_VITA: func_02016320 writes a whole MtxFx43 (12 words) into loc, and the joint's
++     * translation (its last 3) is what buf4 is read as. On the DS buf4 sat right after loc[9];
++     * GCC put the saved registers there instead, and the dual blade's arena faulted with r4
++     * overwritten (mission 54) */
++    int loc[12];
++    int *const buf4 = &loc[9];
++#else
+     int buf4[3];
+     int loc[9];
++#endif
+     int work[3];
+     int i;
+ 
+diff --git a/src/overlays/enemies/ov230_enemy_blitz_spear/Ov230_SyncEffectNodesToJoints.c b/src/overlays/enemies/ov230_enemy_blitz_spear/Ov230_SyncEffectNodesToJoints.c
+index e9ede964b..e66153824 100644
+--- a/src/overlays/enemies/ov230_enemy_blitz_spear/Ov230_SyncEffectNodesToJoints.c
++++ b/src/overlays/enemies/ov230_enemy_blitz_spear/Ov230_SyncEffectNodesToJoints.c
+@@ -19,8 +19,17 @@ struct B {
+ };
+ 
+ void Ov230_SyncEffectNodesToJoints(struct A *a0, struct B *sl) {
++#ifdef PLATFORM_VITA
++    /* PLATFORM_VITA: func_02016320 writes a whole MtxFx43 (12 words) into loc, and the joint's
++     * translation (its last 3) is what buf4 is read as. On the DS buf4 sat right after loc[9];
++     * GCC put the saved registers there instead, and the dual blade's arena faulted with r4
++     * overwritten (mission 54) */
++    int loc[12];
++    int *const buf4 = &loc[9];
++#else
+     int buf4[3];
+     int loc[9];
++#endif
+     int work[3];
+     int i;
+ 
+diff --git a/src/overlays/enemies/ov233_enemy_stalwart_blade/Ov233_SyncEffectNodesToJoints.c b/src/overlays/enemies/ov233_enemy_stalwart_blade/Ov233_SyncEffectNodesToJoints.c
+index 68f7d00bd..f73529e02 100644
+--- a/src/overlays/enemies/ov233_enemy_stalwart_blade/Ov233_SyncEffectNodesToJoints.c
++++ b/src/overlays/enemies/ov233_enemy_stalwart_blade/Ov233_SyncEffectNodesToJoints.c
+@@ -19,8 +19,17 @@ struct B {
+ };
+ 
+ void Ov233_SyncEffectNodesToJoints(struct A *a0, struct B *sl) {
++#ifdef PLATFORM_VITA
++    /* PLATFORM_VITA: func_02016320 writes a whole MtxFx43 (12 words) into loc, and the joint's
++     * translation (its last 3) is what buf4 is read as. On the DS buf4 sat right after loc[9];
++     * GCC put the saved registers there instead, and the dual blade's arena faulted with r4
++     * overwritten (mission 54) */
++    int loc[12];
++    int *const buf4 = &loc[9];
++#else
+     int buf4[3];
+     int loc[9];
++#endif
+     int work[3];
+     int i;
+ 
 diff --git a/src/overlays/enemies/ov238_enemy_pete_41/Ov238_ChargeSweepTick.c b/src/overlays/enemies/ov238_enemy_pete_41/Ov238_ChargeSweepTick.c
 index 2d139dd65..7f177fb22 100644
 --- a/src/overlays/enemies/ov238_enemy_pete_41/Ov238_ChargeSweepTick.c
@@ -11150,6 +11230,50 @@ index 5ee41e7ca..827121b74 100644
  /* Ov245_EnterReaction -- reaction enter, gated on bit 0 of the actor's hw60 flags.
   * Seeds the reaction timer (node[0xb] = 0x4000) and the step size (node[0xd] = 0x1000),
   * clears the actor's pending-reaction word at +0x4c4 and its two per-node counters, marks
+diff --git a/src/overlays/enemies/ov248_enemy_chill_ripper/Ov248_SyncEffectNodesToJoints.c b/src/overlays/enemies/ov248_enemy_chill_ripper/Ov248_SyncEffectNodesToJoints.c
+index d901f580c..9eecb0a58 100644
+--- a/src/overlays/enemies/ov248_enemy_chill_ripper/Ov248_SyncEffectNodesToJoints.c
++++ b/src/overlays/enemies/ov248_enemy_chill_ripper/Ov248_SyncEffectNodesToJoints.c
+@@ -19,8 +19,17 @@ struct B {
+ };
+ 
+ void Ov248_SyncEffectNodesToJoints(struct A *a0, struct B *sl) {
++#ifdef PLATFORM_VITA
++    /* PLATFORM_VITA: func_02016320 writes a whole MtxFx43 (12 words) into loc, and the joint's
++     * translation (its last 3) is what buf4 is read as. On the DS buf4 sat right after loc[9];
++     * GCC put the saved registers there instead, and the dual blade's arena faulted with r4
++     * overwritten (mission 54) */
++    int loc[12];
++    int *const buf4 = &loc[9];
++#else
+     int buf4[3];
+     int loc[9];
++#endif
+     int work[3];
+     int i;
+ 
+diff --git a/src/overlays/enemies/ov249_enemy_heat_saber/Ov249_SyncEffectNodesToJoints.c b/src/overlays/enemies/ov249_enemy_heat_saber/Ov249_SyncEffectNodesToJoints.c
+index 59de22185..6e0af716c 100644
+--- a/src/overlays/enemies/ov249_enemy_heat_saber/Ov249_SyncEffectNodesToJoints.c
++++ b/src/overlays/enemies/ov249_enemy_heat_saber/Ov249_SyncEffectNodesToJoints.c
+@@ -19,8 +19,17 @@ struct B {
+ };
+ 
+ void Ov249_SyncEffectNodesToJoints(struct A *a0, struct B *sl) {
++#ifdef PLATFORM_VITA
++    /* PLATFORM_VITA: func_02016320 writes a whole MtxFx43 (12 words) into loc, and the joint's
++     * translation (its last 3) is what buf4 is read as. On the DS buf4 sat right after loc[9];
++     * GCC put the saved registers there instead, and the dual blade's arena faulted with r4
++     * overwritten (mission 54) */
++    int loc[12];
++    int *const buf4 = &loc[9];
++#else
+     int buf4[3];
+     int loc[9];
++#endif
+     int work[3];
+     int i;
+ 
 diff --git a/src/overlays/enemies/ov252_enemy_ruler_of_the_sky/Ov252_PlaceBodyParts.c b/src/overlays/enemies/ov252_enemy_ruler_of_the_sky/Ov252_PlaceBodyParts.c
 index e201c905f..dd031b5c8 100644
 --- a/src/overlays/enemies/ov252_enemy_ruler_of_the_sky/Ov252_PlaceBodyParts.c
@@ -12123,7 +12247,7 @@ index e43f5318f..60c3f4296 100644
      } else if (Ov002_IsObjectFlag2000Set(object) == 0) {
          if ((pressed & 0x100) != 0) {
 diff --git a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
-index f3055d4ba..bfa1ba9de 100644
+index f3055d4ba..29fbf440c 100644
 --- a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 +++ b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 @@ -1,7 +1,11 @@
@@ -12147,7 +12271,7 @@ index f3055d4ba..bfa1ba9de 100644
  } Ov022FlagsView;
  
  typedef struct Ov022NodeOwner {
-@@ -90,6 +94,301 @@ extern void func_ov022_0208a1a4(void);
+@@ -90,6 +94,304 @@ extern void func_ov022_0208a1a4(void);
  extern unsigned short gPadPressed;
  extern unsigned short gPadHeld;
  
@@ -12160,7 +12284,8 @@ index f3055d4ba..bfa1ba9de 100644
 + * camera, HUD, commands) is the partner's. Roxas's panels stay the party's. Back to Roxas on
 + * another touch, and whenever a scene needs him: a dialogue or movie (the port's
 + * kh_partner_swap_hold), either of them down or gone, the field stopped, the option off. Each one
-+ * keeps its own weapon; the panels (records) are traded. */
++ * keeps its own weapon type and its own panels (records; traded from 0.7.15 to 0.7.41), the
++ * partner with the stats of Roxas's weapon. */
 +extern volatile int kh_partner_swap_index, kh_partner_swap_slot, kh_partner_swap_hold;
 +extern volatile int kh_partner_swap_member;
 +extern volatile unsigned int kh_partner_swap_requests;
@@ -12218,7 +12343,7 @@ index f3055d4ba..bfa1ba9de 100644
 +    KH_TRACE_ALWAYS("swap: %s: Roxas HP %u/%u, partner HP %u/%u", when, r[9], r[0xb], p[9], p[0xb]);
 +}
 +
-+extern void kh_swap_records(int p);
++extern volatile int kh_swap_actor; /* the actor being stepped (kh_swap_deck_member) */
 +
 +/* The weapon of Roxas's panels for the partner played, as its stats only: the 0x20-byte row its
 + * action table holds at +8 (Ov022_BuildActionTable: Ov002_LoadCharacterWeapon, the
@@ -12233,17 +12358,23 @@ index f3055d4ba..bfa1ba9de 100644
 +extern int Slot_EvalPackedParam(int nId, int nWhat);
 +extern unsigned char gPartyMembers[];
 +static unsigned char s_swap_row[SWAP_WEAPON_ROW_SIZE]; /* the partner's own, while played */
++static unsigned char s_roxas_row[SWAP_WEAPON_ROW_SIZE]; /* Roxas's own, while on the AI */
 +static int s_swap_row_kept;
 +
-+static void swap_weapon_row(Ov022Node *partner, int give)
++/* Roxas on the AI while the partner is played fights as the partner did: the partner's own
++ * weapon row (its damage) with his own weapon type (byte 0, his moves' animations), so that the
++ * pair hits no harder than the mission's own pair; his row back with him. */
++static void swap_weapon_row(Ov022Node *partner, Ov022Node *roxas, int give)
 +{
 +    unsigned char *row = (unsigned char *)partner + SWAP_WEAPON_ROW;
++    unsigned char *rrow = (unsigned char *)roxas + SWAP_WEAPON_ROW;
 +    if (give) {
 +        /* byte 4 of a record is its weapon (not traded: GetPlayerSlotTableEntry.c) */
 +        const int w = gPartyMembers[4];
 +        const int kind = *(int *)((char *)partner + SWAP_ACTOR_KIND);
 +        unsigned char built[SWAP_WEAPON_ROW_SIZE];
 +        memcpy(s_swap_row, row, sizeof(s_swap_row));
++        memcpy(s_roxas_row, rrow, sizeof(s_roxas_row));
 +        s_swap_row_kept = 1;
 +        Ov002_LoadCharacterWeapon(built, kind, w);
 +        if (Slot_EvalPackedParam(((unsigned char *)partner)[9], 0x59) != 0)
@@ -12254,10 +12385,12 @@ index f3055d4ba..bfa1ba9de 100644
 +         * Roxas's (0.7.31 to 0.7.33) its attacks had no animation */
 +        built[0] = row[0];
 +        memcpy(row, built, sizeof(built));
-+        KH_TRACE_ALWAYS("swap: partner (kind %d) fights with Roxas's weapon %d (its stats)", kind,
-+                        w);
++        memcpy(rrow + 1, s_swap_row + 1, sizeof(s_swap_row) - 1);
++        KH_TRACE_ALWAYS("swap: partner (kind %d) fights with Roxas's weapon %d (its stats), "
++                        "Roxas with the partner's", kind, w);
 +    } else if (s_swap_row_kept) {
 +        memcpy(row, s_swap_row, sizeof(s_swap_row));
++        memcpy(rrow, s_roxas_row, sizeof(s_roxas_row));
 +        s_swap_row_kept = 0;
 +    }
 +}
@@ -12282,22 +12415,17 @@ index f3055d4ba..bfa1ba9de 100644
 +         * (0.7.5 to 0.7.25 traded the HP, and Roxas came back at 0 when the partner fell) */
 +        swap_log_hp("to the partner", roxas, swap_node(root, to));
 +        {
-+            /* the panels: the two records traded (engine/GetPlayerSlotTableEntry.c); each
-+             * actor keeps the weapon the field's set-up built for it */
++            /* the panels: each one keeps its own record, the deck shown and spent is the
++             * partner's (engine/GetPlayerSlotTableEntry.c: kh_swap_deck_member) */
 +            const int id = ((unsigned char *)swap_node(root, to))[9];
-+            kh_swap_records(id);
 +            kh_partner_swap_member = id;
-+            swap_weapon_row(swap_node(root, to), 1);
++            swap_weapon_row(swap_node(root, to), roxas, 1);
 +        }
 +    } else if (from > 0 && from < root->count) {
 +        swap_log_hp("back", roxas, swap_node(root, from));
-+        swap_weapon_row(swap_node(root, from), 0);
-+        if (kh_partner_swap_member > 0)
-+            kh_swap_records(kh_partner_swap_member);
++        swap_weapon_row(swap_node(root, from), roxas, 0);
 +        kh_partner_swap_member = 0;
 +    } else {
-+        if (kh_partner_swap_member > 0)
-+            kh_swap_records(kh_partner_swap_member);
 +        kh_partner_swap_member = 0;
 +    }
 +    if (to > 0)
@@ -12338,12 +12466,11 @@ index f3055d4ba..bfa1ba9de 100644
 +    extern volatile int kh_partner_swap_member, kh_partner_swap_slot;
 +    if (kh_partner_swap_root != (void *)root) {
 +        /* another field (an area, a boss's arena): nothing of a swap is carried into it --
-+         * the records traded back, Roxas's borrowed AI slot and the indices gone (0.7.18: the
-+         * slot left over from the last area answered a query in a boss area's set-up, and
-+         * the game faulted in its event scene) */
-+        if (kh_partner_swap_member > 0)
-+            kh_swap_records(kh_partner_swap_member);
++         * Roxas's borrowed AI slot and the indices gone (0.7.18: the slot left over from the
++         * last area answered a query in a boss area's set-up, and the game faulted in its
++         * event scene); the partner's weapon row is the old field's */
 +        kh_partner_swap_member = 0;
++        s_swap_row_kept = 0;
 +        kh_partner_swap_index = 0;
 +        kh_partner_swap_slot = -1;
 +        kh_partner_swap_root = root;
@@ -12449,7 +12576,7 @@ index f3055d4ba..bfa1ba9de 100644
  void Ov022_RefreshSlotRows(int unused)
  {
      Ov022Root *root = NNSi_FndGetCurrentRootHeap();
-@@ -119,6 +418,9 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -119,6 +421,9 @@ void Ov022_RefreshSlotRows(int unused)
          gPadHeld |= root->savedMask1;
          func_ov022_02087a70();
      }
@@ -12459,7 +12586,17 @@ index f3055d4ba..bfa1ba9de 100644
      primaryNode = root->firstOwner->node;
      primaryField66 = primaryNode->field066;
      resourceBase = Ov022_GetGlobalPlus14();
-@@ -143,7 +445,16 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -135,6 +440,9 @@ void Ov022_RefreshSlotRows(int unused)
+ 
+         do {
+             node = cursor->owner->node;
++#ifdef PLATFORM_VITA
++            kh_swap_actor = ((unsigned char *)node)[9];
++#endif
+             short oldField66 = node->field066;
+             unsigned int flags = node->flagsLow;
+             row = &rowBase[cursor->rowIndex];
+@@ -143,7 +451,16 @@ void Ov022_RefreshSlotRows(int unused)
              if ((int)(*(long long *)node & 0x10000LL) == 0) {
                  Ov022_LoadNodeFromResource(node, cursor->rowIndex);
              } else {
@@ -12476,6 +12613,16 @@ index f3055d4ba..bfa1ba9de 100644
              }
              if ((root->flags & 4) == 0) {
                  func_ov022_020ad474(node);
+@@ -192,6 +509,9 @@ void Ov022_RefreshSlotRows(int unused)
+             index++;
+         } while (index < root->count);
+     }
++#ifdef PLATFORM_VITA
++    kh_swap_actor = -1;
++#endif
+     func_ov022_0208a1a4();
+ }
+ 
 diff --git a/src/overlays/field/ov022_battle/Ov022_ResetCameraState.c b/src/overlays/field/ov022_battle/Ov022_ResetCameraState.c
 index d18086d57..dfe59829f 100644
 --- a/src/overlays/field/ov022_battle/Ov022_ResetCameraState.c
@@ -12864,7 +13011,7 @@ index cd1deb4fa..8a7ea3279 100644
      short nAngleBias;            /* 0x478 */
      u8 pad47a[0x1e7e];
 diff --git a/src/overlays/field/ov022_battle/Ov022_TranslateCommandToAction.c b/src/overlays/field/ov022_battle/Ov022_TranslateCommandToAction.c
-index e5550fed5..f16c1b38c 100644
+index e5550fed5..3ff9b9593 100644
 --- a/src/overlays/field/ov022_battle/Ov022_TranslateCommandToAction.c
 +++ b/src/overlays/field/ov022_battle/Ov022_TranslateCommandToAction.c
 @@ -1,3 +1,4 @@
@@ -12890,19 +13037,25 @@ index e5550fed5..f16c1b38c 100644
      u8 pad46c[0x6a];
      signed char nCommandKind;    /* 0x4d6 */
      u8 pad4d7[1];
-@@ -88,6 +89,17 @@ void Ov022_TranslateCommandToAction(struct Actor *pActor)
+@@ -88,6 +89,23 @@ void Ov022_TranslateCommandToAction(struct Actor *pActor)
      int bLocked;
      int nAim;
  
 +#ifdef PLATFORM_VITA
 +    {
 +        /* config partner_swap: Roxas on the partner AI (the partner played) takes no command of
-+         * the deck -- its slots, keys, items, which are what the player spends meanwhile (his
-+         * Limit is held off in Ov022_StepRun) */
++         * his deck unless the port menu lets him: his magic (8, the slots with charges the AI
++         * picks: Ov022_StepPartnerSlot's COMMAND_SLOT) with swap_roxas_magic, his items (0xb,
++         * the counted keys: COMMAND_KEY) with swap_roxas_items, never 0xc / 0xd (his Limit is
++         * held off in Ov022_StepRun). His deck stays his own (kh_swap_deck_member). */
 +        extern volatile int kh_partner_swap_member;
-+        if (kh_partner_swap_member > 0 && pActor->nId == 0 &&
-+            (pActor->nCommandKind == 8 || (pActor->nCommandKind >= 0xb && pActor->nCommandKind <= 0xd)))
-+            pActor->nCommandKind = 7;
++        extern int kh_partner_swap_roxas_items(void), kh_partner_swap_roxas_magic(void);
++        if (kh_partner_swap_member > 0 && pActor->nId == 0) {
++            const int k = pActor->nCommandKind;
++            if ((k == 8 && !kh_partner_swap_roxas_magic()) ||
++                (k == 0xb && !kh_partner_swap_roxas_items()) || k == 0xc || k == 0xd)
++                pActor->nCommandKind = 7;
++        }
 +    }
 +#endif
      bTrigger = 0;
@@ -20126,7 +20279,7 @@ index d213af974..b9798ca48 100644
      if (Ov008_Link_GetField4F0() != 0) {
          packed = (u32)-1;
 diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_MissionListDestroy.c b/src/overlays/scenes/ov008_camp_menu/Ov008_MissionListDestroy.c
-index 9156ba248..cbc2c0c32 100644
+index 9156ba248..758911b60 100644
 --- a/src/overlays/scenes/ov008_camp_menu/Ov008_MissionListDestroy.c
 +++ b/src/overlays/scenes/ov008_camp_menu/Ov008_MissionListDestroy.c
 @@ -1,3 +1,4 @@
@@ -20134,7 +20287,19 @@ index 9156ba248..cbc2c0c32 100644
  /* Ov008_MissionListDestroy -- Ov008_MissionListDestroy: tear the mission list
   * down.  Mode (+0x504) becomes 1, the list node (+0x80) is removed and
   * freed, the global int array c22c cleared while the entry gate (+0x40) is
-@@ -59,7 +60,7 @@ void Ov008_MissionListDestroy(Ov008MissionList *pList)
+@@ -55,11 +56,19 @@ extern int  Ov008_GetCtxBlock4a80(void);                                    /* O
+ 
+ void Ov008_MissionListDestroy(Ov008MissionList *pList)
+ {
++#ifdef PLATFORM_VITA
++    {
++        /* config single_screen: the mission list gone (game.c, the world full screen with
++         * the list beside it) */
++        extern volatile int kh_mission_list_open;
++        kh_mission_list_open = 0;
++    }
++#endif
+     Ov008TagTable tags;
      int i;
      int nOwner;
      int nCtx;
@@ -20143,6 +20308,25 @@ index 9156ba248..cbc2c0c32 100644
  
      pList->nMode = 1;
      Ov008_ListRemoveAndFree(pList->pListNode);
+diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_MissionListInitStep.c b/src/overlays/scenes/ov008_camp_menu/Ov008_MissionListInitStep.c
+index 366a346bb..cdf4e3dd5 100644
+--- a/src/overlays/scenes/ov008_camp_menu/Ov008_MissionListInitStep.c
++++ b/src/overlays/scenes/ov008_camp_menu/Ov008_MissionListInitStep.c
+@@ -85,6 +85,14 @@ extern void Ov008_FadeMasterBrightnessBothEngines(int nArg);
+ 
+ int Ov008_MissionListInitStep(Ov008MissionList *pList)
+ {
++#ifdef PLATFORM_VITA
++    {
++        /* config single_screen: the mission list (and its world) on screen (game.c, the world full screen with
++         * the list beside it) */
++        extern volatile int kh_mission_list_open;
++        kh_mission_list_open = 1;
++    }
++#endif
+     int bDone;
+     Ov008MissionResourceDescriptor descriptorA;
+     Ov008MissionResourceDescriptor descriptorB;
 diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_MissionMenuDestroy.c b/src/overlays/scenes/ov008_camp_menu/Ov008_MissionMenuDestroy.c
 index ddd4af5e8..8506b6e63 100644
 --- a/src/overlays/scenes/ov008_camp_menu/Ov008_MissionMenuDestroy.c
@@ -22082,7 +22266,7 @@ index 3d1cc7993..2d3e16514 100644
  void Ov025_MainMenu_SetupDisplay(void)
  {
 diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionListDestroy.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionListDestroy.c
-index 368324f66..47fc4ff6b 100644
+index 368324f66..391b6974b 100644
 --- a/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionListDestroy.c
 +++ b/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionListDestroy.c
 @@ -1,3 +1,4 @@
@@ -22090,7 +22274,19 @@ index 368324f66..47fc4ff6b 100644
  /* Ov025_MissionListDestroy -- Ov008_MissionListDestroy: tear the mission list
   * down.  Mode (+0x504) becomes 1, the list node (+0x80) is removed and
   * freed, the global int array c22c cleared while the entry gate (+0x40) is
-@@ -59,7 +60,7 @@ void Ov025_MissionListDestroy(Ov008MissionList *pList)
+@@ -55,11 +56,19 @@ extern int  Ov025_GetBlock4a80(void);                                    /* Ov00
+ 
+ void Ov025_MissionListDestroy(Ov008MissionList *pList)
+ {
++#ifdef PLATFORM_VITA
++    {
++        /* config single_screen: the mission list gone (game.c, the world full screen with
++         * the list beside it) */
++        extern volatile int kh_mission_list_open;
++        kh_mission_list_open = 0;
++    }
++#endif
+     Ov008TagTable tags;
      int i;
      int nOwner;
      int nCtx;
@@ -22099,6 +22295,25 @@ index 368324f66..47fc4ff6b 100644
  
      pList->nMode = 1;
      Ov025_ListRemoveAndFree(pList->pListNode);
+diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionListInitStep.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionListInitStep.c
+index 841cc9f8d..2819e7230 100644
+--- a/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionListInitStep.c
++++ b/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionListInitStep.c
+@@ -85,6 +85,14 @@ extern void Ov025_FadeMasterBrightnessBothEngines(int nArg);
+ 
+ int Ov025_MissionListInitStep(Ov008MissionList *pList)
+ {
++#ifdef PLATFORM_VITA
++    {
++        /* config single_screen: the mission list (and its world) on screen (game.c, the world full screen with
++         * the list beside it) */
++        extern volatile int kh_mission_list_open;
++        kh_mission_list_open = 1;
++    }
++#endif
+     int bDone;
+     Ov008MissionResourceDescriptor descriptorA;
+     Ov008MissionResourceDescriptor descriptorB;
 diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionMenuDestroy.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionMenuDestroy.c
 index 57382e449..43b645b35 100644
 --- a/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionMenuDestroy.c

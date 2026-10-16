@@ -32,8 +32,18 @@ or No$GBA, and DeSmuME `.dsv` files, can be copied there.
 Settings: `ux0:data/khdays/config.ini`, or in game with **L+R+Select**.
 
 Single screen (port menu, beta): before the game, the title's menu is shown on the left over a
-picture of your own, `ux0:data/khdays/menu_bg.png` (or `.jpg`); none comes with the port.
-Characters on the right half of the picture stay clear of the menu.
+picture: `assets/titlescreen/bg.png` when the VPK was built with one (packed as
+`app0:assets/titlescreen/bg.png`; the folder is not in the repository), else your own,
+`ux0:data/khdays/menu_bg.png` (or `.jpg`). Characters on the right half of the picture stay
+clear of the menu. Out of the field, a scene whose bottom screen stays black (a dialogue) shows
+the top screen alone, widescreen; anything on the bottom screen brings your own layout back.
+The world / mission selection shows the world over the whole display and the list beside it.
+
+Partner swap (port menu, PARTNER tab, experimental): touch the partner's HUD in a story mission
+to play as the partner, with its own deck, the stats of Roxas's weapon and his abilities (dodge
+roll, glide, scan...). Roxas, on the AI meanwhile, fights with the partner's weapon stats and
+can be allowed to use his own items and magic (off by default). The swap is turned on or off
+out of a mission only.
 
 ## Controls
 

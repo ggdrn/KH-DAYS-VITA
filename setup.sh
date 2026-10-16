@@ -28,11 +28,17 @@ tree_diff() {
 
 if [ -d "$tree/.git" ]; then
     if [ -n "$(git -C "$tree" status --porcelain)" ]; then
-        if [ -f "$applied" ] && tree_diff | cmp -s - "$applied"; then
-            echo "setup: $tree holds the last applied patch only; updating it"
+        diff_now=$(mktemp)
+        tree_diff > "$diff_now"
+        # the last applied patch, or the current one (export_patch.sh just run on it)
+        if { [ -f "$applied" ] && cmp -s "$diff_now" "$applied"; } ||
+           cmp -s "$diff_now" patches/decomp.patch; then
+            rm -f "$diff_now"
+            echo "setup: $tree holds the last applied or the current patch only; updating it"
             git -C "$tree" reset --quiet --hard
             git -C "$tree" clean -fdq
         else
+            rm -f "$diff_now"
             echo "setup: $tree has changes of its own; run ./export_patch.sh first, or remove" >&2
             echo "       $tree to start over" >&2
             exit 1

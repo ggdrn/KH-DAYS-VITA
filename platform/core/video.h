@@ -36,6 +36,11 @@ void video_set_single_screen(int on);
 /* config single_screen before the game (the title's overlay): one screen at a time, the
  * title's menu on the left over the player's picture (ux0:data/khdays/menu_bg.png). */
 void video_set_single_menus(int on);
+/* config single_screen out of the field's action: a scene whose bottom screen is black (a
+ * dialogue) shown as the top screen alone over the display; the world / mission selection as
+ * the top screen over the display and the bottom one (the list) beside it, on the right. */
+void video_set_single_scene(int on);
+void video_set_single_select(int on);
 /* The bottom screen's picture is all black: as the small screen it is left out (a black box in
  * the corner during the field's conversations looked like a fault). */
 void video_set_inset_blank(int blank);
@@ -51,6 +56,7 @@ void video_set_hud_shrink(int on);
 void video_set_hud_boxes(const int boxes[3][4]);
 
 int video_single_screen(void);
+int video_single_scene(void);
 /* Display pixel (960x544) -> DS touch-screen pixel; 0 when it is not on the touch screen. */
 int video_map_touch(int px, int py, int *x, int *y);
 /* The width/height of the display rectangle a screen (0 top, 1 bottom) is drawn into. */

@@ -24,10 +24,33 @@ void *volatile kh_swap_pickup_owner; /* the played partner's pickup (the log's d
 void *volatile kh_partner_swap_root;         /* the field the swap state belongs to */
 volatile int kh_partner_swap_fresh = 1; /* set out of the field: earlier touches are no requests */
 volatile unsigned int kh_partner_swap_requests;
+/* the party member whose actor the field is stepping, -1 outside (Ov022_RefreshSlotRows): the
+ * deck read for member 0 is the partner's while it is played, but Roxas's own for his actor */
+volatile int kh_swap_actor = -1;
 
 int kh_partner_swap_enabled(void)
 {
     return kh_config.partner_swap && kh_overlay_loaded(22);
+}
+
+/* config swap_roxas_items / swap_roxas_magic: Roxas on the partner AI takes the items or the
+ * magic of his own deck (Ov022_TranslateCommandToAction) */
+/* config partner_swap: in a mission started with the swap on (the option is set out of
+ * missions only), the partners (members 1 and 2) have Roxas's abilities too, swapped or not
+ * (engine/Slot_EvalPackedParam.c) */
+int kh_swap_shares_abilities(int id)
+{
+    return id >= 1 && id <= 2 && kh_partner_swap_enabled();
+}
+
+int kh_partner_swap_roxas_items(void)
+{
+    return kh_config.swap_roxas_items;
+}
+
+int kh_partner_swap_roxas_magic(void)
+{
+    return kh_config.swap_roxas_magic;
 }
 /* config r_toggle in the field: R does not turn the camera (Ov002_Camera_UpdateFollow) */
 volatile int kh_r_one_click;

@@ -750,6 +750,14 @@ static int s_single;
  * (menubg.c), the whole time */
 static int s_menus;
 static int s_menus_layout = -1; /* 2: the menu over the picture */
+/* config single_screen out of the field's action (game.c decides when): a scene whose bottom
+ * screen stays black (a dialogue) with the top screen alone over the display (s_scene), and
+ * the world / mission selection with the top screen over the display and the bottom one (the
+ * list) beside the world, on the right (s_select) */
+static int s_scene, s_select;
+#define SELECT_W 320
+#define SELECT_H 240
+#define SELECT_MARGIN 16
 static GLuint s_menubg_tex;
 static int s_menubg_tried;
 /* the bottom screen is all black (the field's conversations): as the small screen, not shown */
@@ -853,14 +861,40 @@ static void compute_layout(void)
         s_inset = -1;
         break;
     }
-    if (s_single) {
-        /* the top screen as in the top-main layout; the bottom one only through its panels */
+    if (s_single || s_scene || s_select) {
+        /* the top screen as in the top-main layout; the bottom one only through its panels
+         * (s_single), not at all (s_scene), or as the list beside the world (s_select) */
         s_rect[0] = kh_config.aspect == KH_ASPECT_4_3
                         ? (ScreenRect){ (DISPLAY_W - 725) / 2, 0, 725, 544 }
                         : (ScreenRect){ 0, 0, DISPLAY_W, DISPLAY_H };
-        s_rect[1] = (ScreenRect){ 0, 0, DISPLAY_W, DISPLAY_H };
+        s_rect[1] = s_single ? (ScreenRect){ 0, 0, DISPLAY_W, DISPLAY_H }
+                    : s_select ? (ScreenRect){ DISPLAY_W - SELECT_W - SELECT_MARGIN,
+                                               (DISPLAY_H - SELECT_H) / 2, SELECT_W, SELECT_H }
+                               : (ScreenRect){ 0, 0, 0, 0 };
         s_inset = -1;
     }
+}
+
+void video_set_single_scene(int on)
+{
+    on = on != 0;
+    if (on == s_scene)
+        return;
+    s_scene = on;
+    LOG("video: single screen, %s", on ? "a scene's top screen alone (its bottom one black)"
+                                       : "the scene's own layout back");
+    compute_layout();
+}
+
+void video_set_single_select(int on)
+{
+    on = on != 0;
+    if (on == s_select)
+        return;
+    s_select = on;
+    LOG("video: single screen, %s", on ? "the world over the display, the list beside it"
+                                       : "the selection over");
+    compute_layout();
 }
 
 void video_set_single_menus(int on)
@@ -931,6 +965,11 @@ void video_set_single_screen(int on)
 int video_single_screen(void)
 {
     return s_single;
+}
+
+int video_single_scene(void)
+{
+    return s_scene;
 }
 
 void video_relayout(void)
@@ -1216,6 +1255,8 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
                 draw_panels();
             continue;
         }
+        if (i == 1 && s_scene && !s_select)
+            continue; /* a scene's black bottom screen: not shown */
         if (video_gpu_test & 2) {
             draw_quad(&s_rect[i]); /* the GPU test's plain screens */
         } else if (s_show_bank[i] >= 0 && s_compose) {
@@ -1231,8 +1272,9 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
             /* a plain 2D screen, through the same pass for the effect and the opacity */
             float v[16];
             screen_quad(i, v);
-            if (s_menus && !s_single && s_menus_layout == 2) {
-                /* the title's menu over the picture: a window with rounded corners */
+            if ((s_menus && !s_single && s_menus_layout == 2) || (s_select && i == 1)) {
+                /* the title's menu over the picture, the mission list beside the world: a
+                 * window with rounded corners */
                 s_panel[1] = 10.0f;
                 s_panel[2] = (float)s_rect[i].w, s_panel[3] = (float)s_rect[i].h;
                 s_panel_rect[0] = 0, s_panel_rect[1] = 0, s_panel_rect[2] = 1, s_panel_rect[3] = 1;

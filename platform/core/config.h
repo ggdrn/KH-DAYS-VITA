@@ -37,6 +37,8 @@ typedef struct {
     int dynamic_res;    /* 60 fps: the 3D drawn smaller (to 2x) while the GPU falls behind: 0/1 */
     int partner_swap;   /* experimental: touching the partner's HUD in a story mission with a
                          * partner gives player 1 the partner, Roxas played by the AI: 0/1 */
+    int swap_roxas_items; /* the partner played: Roxas on the AI may use his items: 0/1 */
+    int swap_roxas_magic; /* the partner played: Roxas on the AI may cast his magic: 0/1 */
     int texture_filter; /* 3D textures: 0 sharp as on the DS, 1 smoothed (bilinear) */
     int filter_2d;      /* the 2D (sprites, text, menus) scaled up: 0 pixels as they are,
                          * 1 sharp (square pixels, smoothed edges), 2 smooth (bilinear,

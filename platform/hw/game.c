@@ -282,6 +282,11 @@ static volatile int s_dump_2d; /* L+R+Triangle: the 2D side of the frame too */
 static volatile int s_fast_forward; /* L+R+Square */
 static void dump_2d(int a_on_top);
 static void dynamic_resolution(int late);
+static void dual_resolution(void);
+static void auto30_step(int late);
+/* config fps 60 shown at 30 for a while: the display could not keep up (auto30_step) */
+static int s_auto30;
+static uint32_t s_auto30_until, s_auto30_hold = 600;
 
 /* the last screen toggle of a dual-3D scene (kh_dual3d_toggled), with the display registers
  * as the game set them for that frame: read later, they were sometimes the next frame's */
@@ -362,6 +367,11 @@ static int camera_look(uint64_t now)
 }
 /* HUD size: a dialogue box on the top screen (seen in the layer map) */
 static int s_dialog_open;
+/* config single_screen: the bottom screen's pictures black in a row (video_set_single_scene) */
+static int s_bottom_dark;
+/* config single_screen: a camp menu's mission list is up (Ov025/Ov008_MissionListInitStep to
+ * its Destroy) */
+volatile int kh_mission_list_open;
 extern int PauseMenu_GetMode(void); /* the game's pause state: 0 running */
 
 /* MASTER_BRIGHT brightening or darkening by a non-zero factor */
@@ -649,7 +659,11 @@ static void present(void)
         movie_vb = s_vblanks;
     }
     const int movie = s_vblanks - movie_vb < 30;
-    const int lock30 = (!kh_config.frame_interpolation || movie) &&
+    if (s_auto30 && (int32_t)(s_vblanks - s_auto30_until) >= 0) {
+        s_auto30 = 0;
+        LOG("display: 60 fps tried again");
+    }
+    const int lock30 = (!kh_config.frame_interpolation || movie || s_auto30) &&
                        (!dual || (dual_field && !dual_top_only)) && !portmenu_is_open();
     /* config confirm_cross (input.c): the fonts' A and B drawn to match */
     kh_button_glyphs_menu(kh_config.confirm_cross);
@@ -670,13 +684,28 @@ static void present(void)
     /* experimental single screen (config single_screen): in the field (ov022, its action code,
      * loaded; the same test as the widescreen 3D) with engine A on the top screen, the top
      * screen alone and the bottom one's map, target and mission gauge as panels over it */
+    /* the world / mission selection (the camp menus' mission list, ov025 in the field and
+     * ov008, from its page's start-up to its tear-down; Mission Mode's selection, ov006): the
+     * world over the whole display, the list (the bottom screen) beside it on the right */
+    if (!kh_overlay_loaded(25) && !kh_overlay_loaded(8))
+        kh_mission_list_open = 0;
+    const int world_select = kh_config.single_screen && !dual &&
+                       (kh_mission_list_open || (kh_overlay_loaded(6) && !kh_overlay_loaded(22)));
+    video_set_single_select(world_select);
     const int single = kh_config.single_screen && (!dual || dual_top_only) && a_on_top &&
-                       kh_overlay_loaded(22);
+                       kh_overlay_loaded(22) && !world_select;
     video_set_single_screen(single);
     /* and before the game (the title's overlay, ov000: the logos, the title, its menus): one
      * screen at a time, the title's menu over the player's picture */
-    video_set_single_menus(kh_config.single_screen && !dual && kh_overlay_loaded(0) &&
-                           !kh_overlay_loaded(22));
+    const int menus = kh_config.single_screen && !dual && kh_overlay_loaded(0) &&
+                      !kh_overlay_loaded(22) && !world_select;
+    video_set_single_menus(menus);
+    /* a scene out of the field's action whose bottom screen stays black (a dialogue, an event
+     * scene): the top screen alone over the display, its 3D widescreen; anything on the bottom
+     * screen (sampled below, as for the small screen) gives the player's own layout back at
+     * once. Half a second of black first, so that a fade does not switch it back and forth. */
+    video_set_single_scene(kh_config.single_screen && !dual && a_on_top &&
+                           !kh_overlay_loaded(22) && !world_select && !menus && s_bottom_dark >= 30);
     /* a tutorial page (Ov002_OpenTutorialPage leaves the sub engine with BG2 and BG3 alone,
      * which nothing else in the field does) is shown whole; while the game is paused the bottom
      * screen is drawn without the fade it gets behind the pause menu, the panels being part of
@@ -701,11 +730,7 @@ static void present(void)
         kh_partner_swap_hold = s_dialog_open || movie;
         if (!kh_overlay_loaded(22)) {
             extern volatile int kh_partner_swap_slot;
-            extern void kh_swap_records(int p);
-            /* out of the field still swapped: the two party records traded back before
-             * anything (the results, a save) reads them */
-            if (kh_partner_swap_member > 0)
-                kh_swap_records(kh_partner_swap_member);
+            /* each one keeps its own party record (0.7.42), nothing to give back */
             kh_partner_swap_index = kh_partner_swap_member = 0;
             kh_partner_swap_slot = -1;
             kh_partner_swap_fresh = 1;
@@ -864,7 +889,8 @@ static void present(void)
     {
         /* widescreen in the field (ov022, the field's action code, is loaded; menus over a
          * 3D model keep the DS's picture) when engine A's screen is drawn wider than 4:3 */
-        const int wide_ok = kh_config.aspect == KH_ASPECT_WIDE && kh_overlay_loaded(22);
+        const int wide_ok = kh_config.aspect == KH_ASPECT_WIDE &&
+                            (kh_overlay_loaded(22) || video_single_scene() || world_select);
         int k;
         for (k = 0; k < 2; k++) {
             const float aspect = video_screen_aspect(k);
@@ -875,7 +901,10 @@ static void present(void)
         kh_gx3d_wide_x = kh_gx3d_wide_screen[a_on_top ? 0 : 1];
         /* config hud: the 2D kept 4:3 in the middle while the 3D is wide (1), its HUD's
          * corners then drawn at the display's edges (2) */
-        video_set_hud_scale(kh_config.hud && kh_gx3d_wide_x < 0.999f ? kh_gx3d_wide_x : 1.0f);
+        /* (not the mission selection: its 2D, the starry sky and the banners, across the
+         * display with the world) */
+        video_set_hud_scale(kh_config.hud && !world_select && kh_gx3d_wide_x < 0.999f ? kh_gx3d_wide_x
+                                                                                 : 1.0f);
     }
     {
         const KhGxFrame *frame3d = NULL;
@@ -1049,6 +1078,7 @@ static void present(void)
         for (k = 0; k < 256 * 192 && !lit; k += 7)
             lit = (s_bottom[k] & 0xe0e0e0u) != 0;
         video_set_inset_blank(a_on_top && !lit);
+        s_bottom_dark = lit ? 0 : s_bottom_dark + (s_bottom_dark < 1000);
     }
     s_stage = "present";
     {
@@ -1120,9 +1150,13 @@ static void present(void)
                     s_late60_cpu += total - (sw < total ? sw : total) + s_help_wall > 14000;
                 }
             }
-            if (last_vc && !gpu_probe && kh_config.debug != 3)
+            if (last_vc && !gpu_probe && kh_config.debug != 3) {
                 dynamic_resolution(vc - last_vc >= 2);
+                auto30_step(vc - last_vc >= 2);
+            }
             last_vc = vc;
+        } else if (dual && kh_config.debug != 3) {
+            dual_resolution();
         } else if (lock30 && kh_config.debug != 3) {
             /* 30 fps: the configured size (two VBlanks a frame leave the GPU room) */
             const int top = kh_config.render_scale * 4;
@@ -1198,6 +1232,85 @@ static void dynamic_resolution(int late)
         calm = 0;
     }
     swaps = lates = 0;
+}
+
+/* 60 fps that the display cannot keep (a heavy fight at 4x, dynamic_res off or already at its
+ * floor: 0.7.43's log, 97 of 590 swaps late, the display at some 50 a second): the frames mixed
+ * in between then come unevenly, and the game, still at its own 30 frames a second, looked slow
+ * and jerky. Over two windows of 120 swaps in a row with more than 10% late, the display goes to
+ * the steady 30 fps of the 30 fps mode (each game frame shown for two VBlanks) for 10 s, then
+ * tries 60 again; each failed try doubles the wait (to a minute), a window on time at 60 takes it
+ * back to 10 s. */
+static void auto30_step(int late)
+{
+    static uint32_t swaps, lates, bad;
+    const int top = kh_config.render_scale * 4, floor_q = top < 8 ? top : 8;
+    swaps++;
+    lates += (uint32_t)late;
+    if (swaps < 120)
+        return;
+    if (lates > 12 && (!kh_config.dynamic_res || kh_gpu3d_scale_quarters() <= floor_q)) {
+        if (++bad >= 2) {
+            s_auto30 = 1;
+            s_auto30_until = s_vblanks + s_auto30_hold;
+            LOG("display: 60 fps behind (%u of 120 swaps late): steady 30 fps for %u s",
+                (unsigned)lates, (unsigned)(s_auto30_hold / 60));
+            s_auto30_hold = s_auto30_hold * 2 > 3600 ? 3600 : s_auto30_hold * 2;
+            bad = 0;
+        }
+    } else {
+        bad = 0;
+        if (lates <= 2)
+            s_auto30_hold = 600;
+    }
+    swaps = lates = 0;
+}
+
+/* Dual 3D (a scene with 3D on both screens, one frame each in turn): every toggle is a whole 3D
+ * frame, two for each picture of the scene, and the game waits for each. At the configured 4x
+ * the GPU took some 28 ms a frame and the scene ran at 40 game frames a second, its characters
+ * slowed down (0.7.42's log, a scene on both screens); nothing lowered the 3D there, the 60 fps
+ * step-down only watches single frames. Here: 2.5x at most as the scene starts (render_scale if
+ * lower), then each second, fewer toggles than 90% of the VBlanks (the DS toggles at every one): 0.5x down (to 1.5x at least);
+ * three seconds at 98% or more: 0.5x back up, to that start at most. Out of the scene the usual
+ * policies (30 fps: render_scale; 60 fps: dynamic_resolution) take it back. */
+static void dual_resolution(void)
+{
+    static uint32_t vb0, serial0, calm, was_vb = 0x80000000u;
+    const int top = kh_config.render_scale * 4, start = top < 10 ? top : 10;
+    const int floor_q = start < 6 ? start : 6;
+    const int q = kh_gpu3d_scale_quarters();
+    const uint32_t vb = s_vblanks, serial = kh_gx3d_serial();
+    if (vb - was_vb > 120) {
+        /* a new dual-3D scene */
+        if (q > start) {
+            kh_gpu3d_set_scale_quarters(start);
+            LOG("display: dual 3D scene: 3D at %d.%02dx", start / 4, start % 4 * 25);
+        }
+        vb0 = vb, serial0 = serial, calm = 0;
+    }
+    was_vb = vb;
+    if (vb - vb0 < 60)
+        return;
+    {
+        const uint32_t toggles = serial - serial0, vbs = vb - vb0;
+        if (toggles * 100 < vbs * 90 && q > floor_q) {
+            kh_gpu3d_set_scale_quarters(q - 2);
+            calm = 0;
+            LOG("display: dual 3D: %u toggles in %u VBlanks, 3D down to %d.%02dx",
+                (unsigned)toggles, (unsigned)vbs, (q - 2) / 4, (q - 2) % 4 * 25);
+        } else if (toggles * 100 >= vbs * 98) {
+            if (++calm >= 3 && q < start) {
+                kh_gpu3d_set_scale_quarters(q + 2);
+                calm = 0;
+                LOG("display: dual 3D: on time for 3 s, 3D up to %d.%02dx", (q + 2) / 4,
+                    (q + 2) % 4 * 25);
+            }
+        } else {
+            calm = 0;
+        }
+    }
+    vb0 = vb, serial0 = serial;
 }
 
 /* The 60 fps mix's clock: the display's own VBlank count. s_vblanks comes from the VBlank

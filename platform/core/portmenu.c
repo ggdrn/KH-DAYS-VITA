@@ -7,6 +7,7 @@
 #include "config.h"
 #include "font8x8.h"
 #include "video.h"
+#include "nitro/overlay.h"
 
 #include <psp2/ctrl.h>
 #include <stdio.h>
@@ -32,7 +33,7 @@ static int s_repeat_dir;
 static char s_note[64]; /* feedback after an action ("Defaults restored.") */
 
 enum {
-    IT_PRESET, IT_SCALE, IT_FPS, IT_DYNRES, IT_SWAP, IT_TEXFILTER, IT_FILTER2D, IT_EFFECT, IT_SHOWFPS,
+    IT_PRESET, IT_SCALE, IT_FPS, IT_DYNRES, IT_SWAP, IT_SWAP_ITEMS, IT_SWAP_MAGIC, IT_TEXFILTER, IT_FILTER2D, IT_EFFECT, IT_SHOWFPS,
     IT_ASPECT, IT_HUD, IT_LAYOUT, IT_INSET, IT_CORNER, IT_OPACITY, IT_SINGLE, IT_PANELOP, IT_HUDSIZE,
     IT_CAMERA, IT_CAMSPEED, IT_CAMFOLLOW, IT_INVX, IT_INVY, IT_DEADZONE, IT_DPAD, IT_RMODE, IT_REAR,
     IT_BUTTON, /* + the DS button index */
@@ -63,7 +64,7 @@ static const Item s_screen[] = {
     { IT_CORNER, 0, "Small screen corner", NULL },
     { IT_OPACITY, 0, "Small screen opacity", "See the game through the small screen." },
     { IT_HUDSIZE, 0, "HUD size", "Commands, HP, chain (and map, target) in the field." },
-    { IT_SINGLE, 0, "Single screen (beta)", "One screen: missions with panels; title menu over menu_bg.png." },
+    { IT_SINGLE, 0, "Single screen (beta)", "One screen: missions with panels; title menu over its picture." },
     { IT_PANELOP, 0, "Panel opacity", "Single screen: see the game through the panels." },
 };
 static const Item s_controls[] = {
@@ -90,9 +91,14 @@ static const Item s_system[] = {
     { IT_ICONS, 0, "Button icons", "A B X Y in the text, or the Vita's symbols. Restart." },
     { IT_CONFIRM, 0, "Confirm button", "Cross: A on Cross, B on Circle. HUD: next area." },
     { IT_MISSION, 0, "Mission balance", "Story: enemy HP and damage taken as in the story." },
-    { IT_SWAP, 0, "Partner swap (experimental)", "Touch the partner's HUD to play as the partner." },
     { IT_DEFAULTS, 0, "Restore defaults", "Press Cross to set every option to its default." },
     { IT_CLOSE, 0, "Save and return", "Press Cross (or L+R+Select) to save and go back." },
+};
+
+static const Item s_partner[] = {
+    { IT_SWAP, 0, "Partner swap (experimental)", "Touch the partner's HUD. Set out of a mission." },
+    { IT_SWAP_ITEMS, 0, "Roxas uses items", "Swapped: Roxas on the AI may use his own items." },
+    { IT_SWAP_MAGIC, 0, "Roxas uses magic", "Swapped: Roxas on the AI may cast his own magic." },
 };
 
 static const struct {
@@ -104,6 +110,7 @@ static const struct {
     { "SCREEN", s_screen, sizeof(s_screen) / sizeof(s_screen[0]) },
     { "CONTROLS", s_controls, sizeof(s_controls) / sizeof(s_controls[0]) },
     { "BUTTONS", s_buttons, sizeof(s_buttons) / sizeof(s_buttons[0]) },
+    { "PARTNER", s_partner, sizeof(s_partner) / sizeof(s_partner[0]) },
     { "SYSTEM", s_system, sizeof(s_system) / sizeof(s_system[0]) },
 };
 #define NTABS ((int)(sizeof(s_tabs) / sizeof(s_tabs[0])))
@@ -179,7 +186,14 @@ static void value(const Item *it, char *out, size_t n)
     case IT_EFFECT: snprintf(out, n, "%s", effects[kh_config.screen_effect % 3]); break;
     case IT_SHOWFPS: snprintf(out, n, "%s", kh_config.show_fps ? "On" : "Off"); break;
     case IT_DYNRES: snprintf(out, n, "%s", kh_config.dynamic_res ? "On" : "Off"); break;
-    case IT_SWAP: snprintf(out, n, "%s", kh_config.partner_swap ? "On" : "Off"); break;
+    case IT_SWAP:
+        /* config partner_swap is set out of a mission only (the field, ov022, not loaded): a
+         * mission is set up for the swap or not from its start (Ov022_RefreshSlotRows) */
+        snprintf(out, n, "%s%s", kh_config.partner_swap ? "On" : "Off",
+                 kh_overlay_loaded(22) ? " (locked)" : "");
+        break;
+    case IT_SWAP_ITEMS: snprintf(out, n, "%s", kh_config.swap_roxas_items ? "On" : "Off"); break;
+    case IT_SWAP_MAGIC: snprintf(out, n, "%s", kh_config.swap_roxas_magic ? "On" : "Off"); break;
     case IT_ASPECT: snprintf(out, n, "%s", aspects[kh_config.aspect % 3]); break;
     case IT_HUD: {
         static const char *const huds[] = { "Stretched", "Centered 4:3", "4:3 at the edges" };
@@ -252,7 +266,14 @@ static void change(const Item *it, int d)
     case IT_EFFECT: kh_config.screen_effect = wrap(kh_config.screen_effect, 0, 2, d); break;
     case IT_SHOWFPS: kh_config.show_fps ^= 1; break;
     case IT_DYNRES: kh_config.dynamic_res ^= 1; break;
-    case IT_SWAP: kh_config.partner_swap ^= 1; break;
+    case IT_SWAP:
+        if (kh_overlay_loaded(22))
+            snprintf(s_note, sizeof(s_note), "Partner swap: change it out of a mission.");
+        else
+            kh_config.partner_swap ^= 1;
+        break;
+    case IT_SWAP_ITEMS: kh_config.swap_roxas_items ^= 1; break;
+    case IT_SWAP_MAGIC: kh_config.swap_roxas_magic ^= 1; break;
     case IT_ASPECT:
         kh_config.aspect = wrap(kh_config.aspect, 0, 2, d);
         video_relayout();
