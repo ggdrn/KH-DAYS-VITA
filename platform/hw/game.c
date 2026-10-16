@@ -369,9 +369,11 @@ static int camera_look(uint64_t now)
 static int s_dialog_open;
 /* config single_screen: the bottom screen's pictures black in a row (video_set_single_scene) */
 static int s_bottom_dark;
-/* config single_screen: a camp menu's mission list is up (Ov025/Ov008_MissionListInitStep to
- * its Destroy) */
-volatile int kh_mission_list_open;
+/* config single_screen: the camp menus' selection pages up, one bit each from its start-up to
+ * its tear-down: 1 the mission list (Ov025/Ov008_MissionList*), 2 the mission's confirmation
+ * (Ov025/Ov008_MissionMenu*: its challenges too), 4 the day list (Ov025_ScrollList_*:
+ * Holo-Missions) */
+volatile unsigned int kh_mission_select_pages;
 extern int PauseMenu_GetMode(void); /* the game's pause state: 0 running */
 
 /* MASTER_BRIGHT brightening or darkening by a non-zero factor */
@@ -684,13 +686,15 @@ static void present(void)
     /* experimental single screen (config single_screen): in the field (ov022, its action code,
      * loaded; the same test as the widescreen 3D) with engine A on the top screen, the top
      * screen alone and the bottom one's map, target and mission gauge as panels over it */
-    /* the world / mission selection (the camp menus' mission list, ov025 in the field and
-     * ov008, from its page's start-up to its tear-down; Mission Mode's selection, ov006): the
-     * world over the whole display, the list (the bottom screen) beside it on the right */
+    /* the world / mission selection (the camp menus' mission list, the mission's confirmation
+     * and the day list, ov025 in the field and ov008, from each page's start-up to its
+     * tear-down; Mission Mode's selection, ov006): the world over the whole display, the
+     * bottom screen beside it on the right */
     if (!kh_overlay_loaded(25) && !kh_overlay_loaded(8))
-        kh_mission_list_open = 0;
+        kh_mission_select_pages = 0;
     const int world_select = kh_config.single_screen && !dual &&
-                       (kh_mission_list_open || (kh_overlay_loaded(6) && !kh_overlay_loaded(22)));
+                       (kh_mission_select_pages != 0 ||
+                        (kh_overlay_loaded(6) && !kh_overlay_loaded(22)));
     video_set_single_select(world_select);
     const int single = kh_config.single_screen && (!dual || dual_top_only) && a_on_top &&
                        kh_overlay_loaded(22) && !world_select;

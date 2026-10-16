@@ -97,5 +97,6 @@ uint32_t config_vita_button_mask(int i);
 int config_vita_button_index(uint32_t mask);
 /* config mission_balance, for the game's code (decomp, PLATFORM_VITA) */
 int kh_vita_mission_balance(void);
+int kh_vita_mission_hp_tenths(void);
 
 #endif

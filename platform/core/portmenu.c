@@ -90,7 +90,7 @@ static const Item s_system[] = {
     { IT_FFWD, 0, "Fast-forward speed", "L+R+Square turns fast-forward on and off." },
     { IT_ICONS, 0, "Button icons", "A B X Y in the text, or the Vita's symbols. Restart." },
     { IT_CONFIRM, 0, "Confirm button", "Cross: A on Cross, B on Circle. HUD: next area." },
-    { IT_MISSION, 0, "Mission balance", "Story: enemy HP and damage taken as in the story." },
+    { IT_MISSION, 0, "Mission balance", "Mission Mode enemy HP (Story: hits too). Not in a mission." },
     { IT_DEFAULTS, 0, "Restore defaults", "Press Cross to set every option to its default." },
     { IT_CLOSE, 0, "Save and return", "Press Cross (or L+R+Select) to save and go back." },
 };
@@ -231,7 +231,13 @@ static void value(const Item *it, char *out, size_t n)
     case IT_FFWD: snprintf(out, n, "%dx", kh_config.fast_forward); break;
     case IT_ICONS: snprintf(out, n, "%s", kh_config.button_icons ? "PS Vita" : "DS"); break;
     case IT_CONFIRM: snprintf(out, n, "%s", kh_config.confirm_cross ? "Cross" : "Circle"); break;
-    case IT_MISSION: snprintf(out, n, "%s", kh_config.mission_balance ? "Story" : "Original"); break;
+    case IT_MISSION: {
+        static const char *const bal[] = { "Original (3x HP)", "Story", "2.5x HP", "2x HP",
+                                           "1.5x HP" };
+        snprintf(out, n, "%s%s", bal[kh_config.mission_balance % 5],
+                 kh_overlay_loaded(22) ? " (locked)" : "");
+        break;
+    }
     default: out[0] = 0; break;
     }
 }
@@ -324,7 +330,19 @@ static void change(const Item *it, int d)
     case IT_FFWD: kh_config.fast_forward = wrap(kh_config.fast_forward, 2, 3, d); break;
     case IT_ICONS: kh_config.button_icons ^= 1; break;
     case IT_CONFIRM: kh_config.confirm_cross ^= 1; break;
-    case IT_MISSION: kh_config.mission_balance ^= 1; break;
+    case IT_MISSION:
+        /* the order shown: Original, 2.5x, 2x, 1.5x, Story; set out of a mission only (its
+         * enemies' HP is set as they come out) */
+        if (kh_overlay_loaded(22)) {
+            snprintf(s_note, sizeof(s_note), "Mission balance: change it out of a mission.");
+        } else {
+            static const int order[5] = { 0, 2, 3, 4, 1 };
+            int i;
+            for (i = 0; i < 5 && order[i] != kh_config.mission_balance; i++)
+                ;
+            kh_config.mission_balance = order[wrap(i < 5 ? i : 0, 0, 4, d)];
+        }
+        break;
     default: break;
     }
 }

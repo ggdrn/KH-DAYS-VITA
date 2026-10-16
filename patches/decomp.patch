@@ -11804,7 +11804,7 @@ index 12a5ecebd..4d29162fa 100644
      unsigned char kind009;
      unsigned char pad00a[8];
 diff --git a/src/overlays/field/ov022_battle/Ov022_ComputeDamageTaken.c b/src/overlays/field/ov022_battle/Ov022_ComputeDamageTaken.c
-index 22c8a41b8..5e4fdecd5 100644
+index 22c8a41b8..ee2d6f6b0 100644
 --- a/src/overlays/field/ov022_battle/Ov022_ComputeDamageTaken.c
 +++ b/src/overlays/field/ov022_battle/Ov022_ComputeDamageTaken.c
 @@ -129,6 +129,12 @@ extern int GameState_GetField(int nField, int nWidth);
@@ -11827,7 +11827,7 @@ index 22c8a41b8..5e4fdecd5 100644
 +#ifdef PLATFORM_VITA
 +    /* the port's mission balance: a mission's hits as the story's, by the save's difficulty
 +     * (no mission rules' percent and floor, no session's half again for an enemy's hit) */
-+    const int bBalanced = kh_vita_mission_balance() && (data_0204c240 & MODE_FLAG_BIT1) != 0;
++    const int bBalanced = kh_vita_mission_balance() == 1 && (data_0204c240 & MODE_FLAG_BIT1) != 0;
 +#endif
      nFlags = pReq->nFlags;
      nResult = 0;
@@ -20279,7 +20279,7 @@ index d213af974..b9798ca48 100644
      if (Ov008_Link_GetField4F0() != 0) {
          packed = (u32)-1;
 diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_MissionListDestroy.c b/src/overlays/scenes/ov008_camp_menu/Ov008_MissionListDestroy.c
-index 9156ba248..758911b60 100644
+index 9156ba248..d4cc45c6b 100644
 --- a/src/overlays/scenes/ov008_camp_menu/Ov008_MissionListDestroy.c
 +++ b/src/overlays/scenes/ov008_camp_menu/Ov008_MissionListDestroy.c
 @@ -1,3 +1,4 @@
@@ -20295,8 +20295,8 @@ index 9156ba248..758911b60 100644
 +    {
 +        /* config single_screen: the mission list gone (game.c, the world full screen with
 +         * the list beside it) */
-+        extern volatile int kh_mission_list_open;
-+        kh_mission_list_open = 0;
++        extern volatile unsigned int kh_mission_select_pages;
++        kh_mission_select_pages &= ~1u;
 +    }
 +#endif
      Ov008TagTable tags;
@@ -20309,7 +20309,7 @@ index 9156ba248..758911b60 100644
      pList->nMode = 1;
      Ov008_ListRemoveAndFree(pList->pListNode);
 diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_MissionListInitStep.c b/src/overlays/scenes/ov008_camp_menu/Ov008_MissionListInitStep.c
-index 366a346bb..cdf4e3dd5 100644
+index 366a346bb..76ee3bdcb 100644
 --- a/src/overlays/scenes/ov008_camp_menu/Ov008_MissionListInitStep.c
 +++ b/src/overlays/scenes/ov008_camp_menu/Ov008_MissionListInitStep.c
 @@ -85,6 +85,14 @@ extern void Ov008_FadeMasterBrightnessBothEngines(int nArg);
@@ -20320,15 +20320,15 @@ index 366a346bb..cdf4e3dd5 100644
 +    {
 +        /* config single_screen: the mission list (and its world) on screen (game.c, the world full screen with
 +         * the list beside it) */
-+        extern volatile int kh_mission_list_open;
-+        kh_mission_list_open = 1;
++        extern volatile unsigned int kh_mission_select_pages;
++        kh_mission_select_pages |= 1u;
 +    }
 +#endif
      int bDone;
      Ov008MissionResourceDescriptor descriptorA;
      Ov008MissionResourceDescriptor descriptorB;
 diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_MissionMenuDestroy.c b/src/overlays/scenes/ov008_camp_menu/Ov008_MissionMenuDestroy.c
-index ddd4af5e8..8506b6e63 100644
+index ddd4af5e8..5f1dd9fd0 100644
 --- a/src/overlays/scenes/ov008_camp_menu/Ov008_MissionMenuDestroy.c
 +++ b/src/overlays/scenes/ov008_camp_menu/Ov008_MissionMenuDestroy.c
 @@ -1,3 +1,4 @@
@@ -20336,7 +20336,19 @@ index ddd4af5e8..8506b6e63 100644
  /* Ov008_MissionMenuDestroy -- Ov008_MissionMenuDestroy: tear the mission menu
   * down.  During a transfer the global int array c22c is cleared first.  The
   * mission list (+0x548) is destroyed, the two text caches (+0x530, +0x53c)
-@@ -59,7 +60,7 @@ void Ov008_MissionMenuDestroy(Ov008MissionMenu *pMenu)
+@@ -55,11 +56,19 @@ extern void Ov008_ListRemoveAndFree(void *pNode);                           /* O
+ 
+ void Ov008_MissionMenuDestroy(Ov008MissionMenu *pMenu)
+ {
++#ifdef PLATFORM_VITA
++    {
++        /* config single_screen: the mission's confirmation gone (game.c: the world full screen with the
++         * bottom screen beside it) */
++        extern volatile unsigned int kh_mission_select_pages;
++        kh_mission_select_pages &= ~2u;
++    }
++#endif
+     Ov008TagTable tags;
      int i;
      int nOwner;
      int nCtx;
@@ -20345,6 +20357,25 @@ index ddd4af5e8..8506b6e63 100644
  
      if (pMenu->bTransfer != 0) {
          ClearGlobalArrayInt(0);
+diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_MissionMenuInitStep.c b/src/overlays/scenes/ov008_camp_menu/Ov008_MissionMenuInitStep.c
+index 01cdbab40..dbc6fee42 100644
+--- a/src/overlays/scenes/ov008_camp_menu/Ov008_MissionMenuInitStep.c
++++ b/src/overlays/scenes/ov008_camp_menu/Ov008_MissionMenuInitStep.c
+@@ -86,6 +86,14 @@ extern void Ov008_DrawMissionSummaryHeading(int nHeadingMode);
+ 
+ int Ov008_MissionMenuInitStep(Ov008MissionMenu *pMenu)
+ {
++#ifdef PLATFORM_VITA
++    {
++        /* config single_screen: the mission's confirmation (its menu, the challenges' tab too) (game.c: the world full screen with the
++         * bottom screen beside it) */
++        extern volatile unsigned int kh_mission_select_pages;
++        kh_mission_select_pages |= 2u;
++    }
++#endif
+     int bDone;
+     Ov008MissionResourceDescriptor descriptorA;
+     Ov008MissionResourceDescriptor descriptorB;
 diff --git a/src/overlays/scenes/ov008_camp_menu/Ov008_MissionRebuildLayers.c b/src/overlays/scenes/ov008_camp_menu/Ov008_MissionRebuildLayers.c
 index 8359399c5..a7603de6c 100644
 --- a/src/overlays/scenes/ov008_camp_menu/Ov008_MissionRebuildLayers.c
@@ -22266,7 +22297,7 @@ index 3d1cc7993..2d3e16514 100644
  void Ov025_MainMenu_SetupDisplay(void)
  {
 diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionListDestroy.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionListDestroy.c
-index 368324f66..391b6974b 100644
+index 368324f66..030ff1656 100644
 --- a/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionListDestroy.c
 +++ b/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionListDestroy.c
 @@ -1,3 +1,4 @@
@@ -22282,8 +22313,8 @@ index 368324f66..391b6974b 100644
 +    {
 +        /* config single_screen: the mission list gone (game.c, the world full screen with
 +         * the list beside it) */
-+        extern volatile int kh_mission_list_open;
-+        kh_mission_list_open = 0;
++        extern volatile unsigned int kh_mission_select_pages;
++        kh_mission_select_pages &= ~1u;
 +    }
 +#endif
      Ov008TagTable tags;
@@ -22296,7 +22327,7 @@ index 368324f66..391b6974b 100644
      pList->nMode = 1;
      Ov025_ListRemoveAndFree(pList->pListNode);
 diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionListInitStep.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionListInitStep.c
-index 841cc9f8d..2819e7230 100644
+index 841cc9f8d..339997520 100644
 --- a/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionListInitStep.c
 +++ b/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionListInitStep.c
 @@ -85,6 +85,14 @@ extern void Ov025_FadeMasterBrightnessBothEngines(int nArg);
@@ -22307,15 +22338,15 @@ index 841cc9f8d..2819e7230 100644
 +    {
 +        /* config single_screen: the mission list (and its world) on screen (game.c, the world full screen with
 +         * the list beside it) */
-+        extern volatile int kh_mission_list_open;
-+        kh_mission_list_open = 1;
++        extern volatile unsigned int kh_mission_select_pages;
++        kh_mission_select_pages |= 1u;
 +    }
 +#endif
      int bDone;
      Ov008MissionResourceDescriptor descriptorA;
      Ov008MissionResourceDescriptor descriptorB;
 diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionMenuDestroy.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionMenuDestroy.c
-index 57382e449..43b645b35 100644
+index 57382e449..73ced9491 100644
 --- a/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionMenuDestroy.c
 +++ b/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionMenuDestroy.c
 @@ -1,3 +1,4 @@
@@ -22323,7 +22354,19 @@ index 57382e449..43b645b35 100644
  /* Ov025_MissionMenuDestroy -- Ov008_MissionMenuDestroy: tear the mission menu
   * down.  During a transfer the global int array c22c is cleared first.  The
   * mission list (+0x548) is destroyed, the two text caches (+0x530, +0x53c)
-@@ -59,7 +60,7 @@ void Ov025_MissionMenuDestroy(Ov008MissionMenu *pMenu)
+@@ -55,11 +56,19 @@ extern void Ov025_ListRemoveAndFree(void *pNode);                           /* O
+ 
+ void Ov025_MissionMenuDestroy(Ov008MissionMenu *pMenu)
+ {
++#ifdef PLATFORM_VITA
++    {
++        /* config single_screen: the mission's confirmation gone (game.c: the world full screen with the
++         * bottom screen beside it) */
++        extern volatile unsigned int kh_mission_select_pages;
++        kh_mission_select_pages &= ~2u;
++    }
++#endif
+     Ov008TagTable tags;
      int i;
      int nOwner;
      int nCtx;
@@ -22332,6 +22375,25 @@ index 57382e449..43b645b35 100644
  
      if (pMenu->bTransfer != 0) {
          ClearGlobalArrayInt(0);
+diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionMenuInitStep.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionMenuInitStep.c
+index 3a8bb3ff3..fc2fb7327 100644
+--- a/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionMenuInitStep.c
++++ b/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionMenuInitStep.c
+@@ -86,6 +86,14 @@ extern void Ov025_DrawMissionSummaryHeading(int nHeadingMode);
+ 
+ int Ov025_MissionMenuInitStep(Ov008MissionMenu *pMenu)
+ {
++#ifdef PLATFORM_VITA
++    {
++        /* config single_screen: the mission's confirmation (its menu, the challenges' tab too) (game.c: the world full screen with the
++         * bottom screen beside it) */
++        extern volatile unsigned int kh_mission_select_pages;
++        kh_mission_select_pages |= 2u;
++    }
++#endif
+     int bDone;
+     Ov008MissionResourceDescriptor descriptorA;
+     Ov008MissionResourceDescriptor descriptorB;
 diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_OpenTutorialPage.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_OpenTutorialPage.c
 index bfec75065..898e8386b 100644
 --- a/src/overlays/screens/ov025_camp_menu_2/Ov025_OpenTutorialPage.c
@@ -22461,8 +22523,27 @@ index 9b1268ffa..d28ca4a4f 100644
  
  extern Ov025ScrollList *Ov025_GetPageB(void);                  /* Ov025_GetPageB */
  extern int   Ov025_LookupEntry(int nSlot);                        /* Ov008_ResetEntry: slot handle */
+diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_ScrollList_Open.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_ScrollList_Open.c
+index 0dccc313b..0d007ac5a 100644
+--- a/src/overlays/screens/ov025_camp_menu_2/Ov025_ScrollList_Open.c
++++ b/src/overlays/screens/ov025_camp_menu_2/Ov025_ScrollList_Open.c
+@@ -68,6 +68,14 @@ extern const char gOv025UiCalTtlPath[];                            /* "UI/cal/tt
+ 
+ int Ov025_ScrollList_Open(Ov025ScrollList *pList)
+ {
++#ifdef PLATFORM_VITA
++    {
++        /* config single_screen: the day list (Holo-Missions) (game.c: the world full screen with the
++         * bottom screen beside it) */
++        extern volatile unsigned int kh_mission_select_pages;
++        kh_mission_select_pages |= 4u;
++    }
++#endif
+     int bDone;
+     int nTracker;
+     int nCtx;
 diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_ScrollList_Release.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_ScrollList_Release.c
-index 988a338da..9f28a32fc 100644
+index 988a338da..bc6a81e63 100644
 --- a/src/overlays/screens/ov025_camp_menu_2/Ov025_ScrollList_Release.c
 +++ b/src/overlays/screens/ov025_camp_menu_2/Ov025_ScrollList_Release.c
 @@ -1,3 +1,4 @@
@@ -22481,6 +22562,21 @@ index 988a338da..9f28a32fc 100644
  
  extern void  Ov025_ListRemoveAndFree(void *pNode);                      /* Ov008_ListRemoveAndFree */
  extern void  Ov025_ResetElevenEntries(Ov025ScrollList *pList);           /* Ov025_ScrollList_ResetSurfaces */
+@@ -67,6 +68,14 @@ extern void  Ov025_FreeResourceRecordBuffer(void *pStrings);                   /
+ 
+ void Ov025_ScrollList_Release(Ov025ScrollList *pList)
+ {
++#ifdef PLATFORM_VITA
++    {
++        /* config single_screen: the day list gone (game.c: the world full screen with the
++         * bottom screen beside it) */
++        extern volatile unsigned int kh_mission_select_pages;
++        kh_mission_select_pages &= ~4u;
++    }
++#endif
+     int nCtx;
+ 
+     Ov025_ListRemoveAndFree(pList->pNode);
 diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_ScrollMenu_SetupEntries.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_ScrollMenu_SetupEntries.c
 index 4d4b58c4d..41e83c122 100644
 --- a/src/overlays/screens/ov025_camp_menu_2/Ov025_ScrollMenu_SetupEntries.c
@@ -24093,16 +24189,17 @@ index 6eeedcf22..5d6df8e56 100644
  extern void *data_0204c024;                                      /* the heap the helper allocates from */
  #define WH_RAND_INIT(x) (sWh.nRand = (u32)(x))
 diff --git a/src/overlays/system/ov107_enemy_common/Ov107_AiState_LoadStats.c b/src/overlays/system/ov107_enemy_common/Ov107_AiState_LoadStats.c
-index cee9f6e28..08ee626bb 100644
+index cee9f6e28..fde5ecdef 100644
 --- a/src/overlays/system/ov107_enemy_common/Ov107_AiState_LoadStats.c
 +++ b/src/overlays/system/ov107_enemy_common/Ov107_AiState_LoadStats.c
-@@ -109,6 +109,13 @@ static inline s16 ReadRecord(const Record *record, u8 *byte3, u8 *byte4)
+@@ -109,6 +109,14 @@ static inline s16 ReadRecord(const Record *record, u8 *byte3, u8 *byte4)
      return scale;
  }
  
 +#ifdef PLATFORM_VITA
 +/* config mission_balance (platform/core/config.c) */
 +extern int kh_vita_mission_balance(void);
++extern int kh_vita_mission_hp_tenths(void);
 +#endif
 +
 +/* The enemy's HP by the mode flags: bit 2 (a mission's session, solo too) three times, without
@@ -24110,7 +24207,7 @@ index cee9f6e28..08ee626bb 100644
  static inline int ApplyFlags(u8 flags, int value)
  {
      int multiplier = flags & 4;
-@@ -171,6 +178,14 @@ void Ov107_AiState_LoadStats(AiState *self, int recordIndex)
+@@ -171,6 +179,17 @@ void Ov107_AiState_LoadStats(AiState *self, int recordIndex)
              }
          }
  
@@ -24118,8 +24215,11 @@ index cee9f6e28..08ee626bb 100644
 +        /* the port's mission balance: a mission's enemies with the story's HP (its 80 percent
 +         * in place of the session's three times; 1.5 and 2.35 times were tried, 0.4.14-0.4.17,
 +         * and the story's own kept) */
-+        if (kh_vita_mission_balance() && (data_0204c240.flags & 2) != 0) {
++        if (kh_vita_mission_balance() == 1 && (data_0204c240.flags & 2) != 0) {
 +            scale = ApplyFlags(0, scale);
++        } else if (kh_vita_mission_hp_tenths() > 0 && (data_0204c240.flags & 4) != 0) {
++            /* 2.5, 2 or 1.5 times in place of the session's three */
++            scale = ApplyFlags(data_0204c240.flags & ~4, scale) * kh_vita_mission_hp_tenths() / 10;
 +        } else
 +#endif
          scale = ApplyFlags(data_0204c240.flags, scale);

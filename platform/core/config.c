@@ -167,7 +167,9 @@ void config_save(void)
                "confirm_cross = %d\n\n", kh_config.confirm_cross);
     fprintf(f, "# Mission Mode's enemies: 0 as the game has them (made for up to four players,\n"
                "# solo too: three times the HP, harder hits), 1 as in the story (the HP, and\n"
-               "# the damage taken as in the story, by the save's difficulty; Standard for a guest).\n"
+               "# the damage taken as in the story, by the save's difficulty; Standard for a guest),\n"
+               "# 2, 3, 4: 2.5, 2 or 1.5 times the HP (the hits as the game has them). Set out of a\n"
+               "# mission only.\n"
                "mission_balance = %d\n\n", kh_config.mission_balance);
     fprintf(f, "# Field HUD size, 60 to 100 %%: the command deck, the HP gauge with the face and\n"
                "# the chain each drawn smaller in their corner (and the single screen's map and\n"
@@ -282,7 +284,7 @@ static void set(const char *k, const char *v, int version)
     else if (!strcmp(k, "button_icons"))
         kh_config.button_icons = atoi(v) != 0;
     else if (!strcmp(k, "mission_balance"))
-        kh_config.mission_balance = atoi(v) != 0;
+        kh_config.mission_balance = clampi(atoi(v), 0, 4);
     else if (!strcmp(k, "debug"))
         kh_config.debug = clampi(atoi(v), 0, 3);
     else if (!strcmp(k, "hud_size"))
@@ -394,4 +396,13 @@ void config_load(void)
 int kh_vita_mission_balance(void)
 {
     return kh_config.mission_balance;
+}
+
+/* config mission_balance 2-4: Mission Mode's enemy HP, in tenths of the story's (the game's own
+ * is 30); 0 for the game's own or the story's (kh_vita_mission_balance 0 or 1) */
+int kh_vita_mission_hp_tenths(void)
+{
+    static const int tenths[5] = { 0, 0, 25, 20, 15 };
+    return tenths[kh_config.mission_balance < 0 || kh_config.mission_balance > 4
+                      ? 0 : kh_config.mission_balance];
 }
