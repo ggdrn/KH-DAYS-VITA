@@ -1393,6 +1393,14 @@ static void auto30_step(int late)
 {
     static uint32_t swaps, lates, bad;
     const int top = kh_config.render_scale * 4, floor_q = top < 8 ? top : 8;
+    /* config fps_fallback 0 (the default since 0.8.4): never; the display as fast as the GPU
+     * lets it, 40 or 50 a second rather than 30 */
+    if (!kh_config.fps_fallback) {
+        swaps = lates = bad = 0;
+        s_auto30 = 0;
+        s_auto30_hold = 600;
+        return;
+    }
     swaps++;
     lates += (uint32_t)late;
     if (swaps < 120)

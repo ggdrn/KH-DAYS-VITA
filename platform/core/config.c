@@ -12,7 +12,7 @@
 
 static const KhConfig s_defaults = {
     .render_scale = 3, .layout = 0, .inset_width = 224, .aspect = KH_ASPECT_WIDE,
-    .frame_interpolation = 0, .dynamic_res = 1, .partner_swap = 0, .swap_roxas_items = 0, .swap_roxas_magic = 0, .texture_filter = 1, .filter_2d = 2, .hud = 0, .screen_effect = 0,
+    .frame_interpolation = 0, .dynamic_res = 1, .fps_fallback = 0, .partner_swap = 0, .swap_roxas_items = 0, .swap_roxas_magic = 0, .texture_filter = 1, .filter_2d = 2, .hud = 0, .screen_effect = 0,
     .inset_corner = 0, .inset_opacity = 100, .rear_touch = 0, .stick_deadzone = 2, .r_toggle = 0,
     .fast_forward = 2, .camera_stick = 1, .camera_speed = 2,
     .camera_invert_x = 0, .camera_invert_y = 0, .camera_follow = 0, .dpad_deck = 1, .show_fps = 0, .volume = 100,
@@ -98,6 +98,9 @@ void config_save(void)
     fprintf(f, "# 60 fps: the 3D drawn at a lower resolution (down to 2x) while the GPU cannot\n"
                "# keep up, back at render_scale when it can. 0 off (always render_scale), 1 on.\n"
                "dynamic_res = %d\n\n", kh_config.dynamic_res);
+    fprintf(f, "# 60 fps the GPU cannot keep (a heavy fight at 3x or 4x): 0 as fast as it can\n"
+               "# (40 or 50 a second, unevenly), 1 a steady 30 for 10 s to a minute, then 60 again.\n"
+               "fps_fallback = %d\n\n", kh_config.fps_fallback);
     fprintf(f, "# Experimental: in a story mission with a partner, touch the partner's HUD to\n"
                "# play as the partner (its own magic, items, HP and moves, with the stats of\n"
                "# Roxas's weapon and his abilities, and the HUD's big gauge; the AI plays Roxas,\n"
@@ -293,6 +296,8 @@ static void set(const char *k, const char *v, int version)
         kh_config.language = clampi(atoi(v), 1, 5);
     else if (!strcmp(k, "dynamic_res"))
         kh_config.dynamic_res = atoi(v) != 0;
+    else if (!strcmp(k, "fps_fallback"))
+        kh_config.fps_fallback = atoi(v) != 0;
     else if (!strcmp(k, "partner_swap"))
         kh_config.partner_swap = atoi(v) != 0;
     else if (!strcmp(k, "swap_roxas_items"))
@@ -383,13 +388,13 @@ void config_load(void)
     kh_log_verbose = kh_config.debug;
     LOG("config: render_scale %d, fps %d, aspect %d, layout %d, inset %d, texture_filter %d, "
         "camera %d/%d, camera_follow %d, dpad_deck %d, volume %d, debug %d, hud %d%% mode %d, "
-        "single %d, 2d filter %d",
+        "single %d, 2d filter %d, dynamic_res %d, fps_fallback %d",
         kh_config.render_scale,
         kh_config.frame_interpolation ? 60 : 30, kh_config.aspect, kh_config.layout,
         kh_config.inset_width, kh_config.texture_filter, kh_config.camera_stick,
         kh_config.camera_speed, kh_config.camera_follow, kh_config.dpad_deck, kh_config.volume,
         kh_config.debug, kh_config.hud_size, kh_config.hud, kh_config.single_screen,
-        kh_config.filter_2d);
+        kh_config.filter_2d, kh_config.dynamic_res, kh_config.fps_fallback);
 }
 
 /* For the game's code (decomp, PLATFORM_VITA): config mission_balance */

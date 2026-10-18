@@ -35,6 +35,8 @@ typedef struct {
     int aspect;         /* KH_ASPECT_*: widescreen 3D, the DS picture stretched, or 4:3 */
     int frame_interpolation; /* 3D at 60 fps with frames mixed in between: 0 off, 1 on */
     int dynamic_res;    /* 60 fps: the 3D drawn smaller (to 2x) while the GPU falls behind: 0/1 */
+    int fps_fallback;   /* 60 fps the display cannot keep: 1 a steady 30 for a while (game.c
+                         * auto30_step), 0 (default) as fast as it can, 40 or 50 a second */
     int partner_swap;   /* experimental: touching the partner's HUD in a story mission with a
                          * partner gives player 1 the partner, Roxas played by the AI: 0/1 */
     int swap_roxas_items; /* the partner played: Roxas on the AI may use his items: 0/1 */
