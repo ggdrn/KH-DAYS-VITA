@@ -32,3 +32,6 @@ int func_ov024_02087318_unk(void *track)
  * interrupt (kh_cpu_wait_irq) instead of spinning. */
 volatile int kh_mobiclip_progress;
 volatile unsigned int kh_mobiclip_passes; /* the loop's passes, for the log */
+/* movie frames put on screen, per engine (0 main, 1 sub), by Ov024_MobiClip_PresentOnVBlank:
+ * a movie's first frame and its last one, to the VBlank (game.c: the single screen's scenes) */
+volatile unsigned int kh_movie_presents[2];

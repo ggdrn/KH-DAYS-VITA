@@ -33,6 +33,8 @@ typedef struct {
     uint8_t count;     /* 3 or 4 */
     uint8_t translucent;
     int16_t ytop, ybottom; /* screen rows, for the translucent sort */
+    uint8_t flat;      /* built with an orthographic projection: laid out on the screen itself
+                        * (the HUD's 3D pieces), never widened */
     uint32_t attr;     /* POLYGON_ATTR latched at BEGIN_VTXS */
     uint32_t teximage; /* TEXIMAGE_PARAM */
     uint32_t pltt;     /* PLTT_BASE */

@@ -82,6 +82,15 @@ void *OS_GetInitArenaHi(int id)
     }
 }
 
+/* Whether `a` points into the arenas the game's heaps are carved from, n bytes of it: the single
+ * screen's field HUD (hw/fieldhud.c) checks the game's own pointers so before it reads through
+ * them from another thread. */
+int kh_is_game_heap(unsigned long a, unsigned long n)
+{
+    const uintptr_t m = (uintptr_t)main_arena(), i = (uintptr_t)s_itcm_arena;
+    return (a >= m && a + n <= m + DS_MAIN_ARENA_SIZE) || (a >= i && a + n <= i + DS_ITCM_ARENA_SIZE);
+}
+
 /* ---- packed pointers ----------------------------------------------------------------------------
  * KH_DS_PTR in the decomp (nitro/kh_hw.h). The game packs a pointer's low 24 bits, offset by
  * 0x8000, into archive handles and unpacks them as 0x01ff8000 + those bits: right on the DS,

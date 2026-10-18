@@ -99,10 +99,10 @@ void config_save(void)
                "# keep up, back at render_scale when it can. 0 off (always render_scale), 1 on.\n"
                "dynamic_res = %d\n\n", kh_config.dynamic_res);
     fprintf(f, "# Experimental: in a story mission with a partner, touch the partner's HUD to\n"
-               "# play as the partner (its own deck, HP and moves, with the stats of Roxas's\n"
-               "# weapon and his abilities; the AI plays Roxas, with the partner's weapon\n"
-               "# stats); touch it again, a scene that needs Roxas or the partner falling gives\n"
-               "# him back. Set out of a mission only. 0 off, 1 on.\n"
+               "# play as the partner (its own magic, items, HP and moves, with the stats of\n"
+               "# Roxas's weapon and his abilities, and the HUD's big gauge; the AI plays Roxas,\n"
+               "# with the partner's weapon stats); touch it again, a scene that needs Roxas or\n"
+               "# the partner falling gives him back. Set out of a mission only. 0 off, 1 on.\n"
                "partner_swap = %d\n"
                "# Meanwhile Roxas, on the AI, may use the items and the magic of his own deck:\n"
                "# 0 no (the default), 1 yes.\n"
@@ -383,13 +383,13 @@ void config_load(void)
     kh_log_verbose = kh_config.debug;
     LOG("config: render_scale %d, fps %d, aspect %d, layout %d, inset %d, texture_filter %d, "
         "camera %d/%d, camera_follow %d, dpad_deck %d, volume %d, debug %d, hud %d%% mode %d, "
-        "single %d, 2d filter %d",
+        "single %d, 2d filter %d, dynamic_res %d",
         kh_config.render_scale,
         kh_config.frame_interpolation ? 60 : 30, kh_config.aspect, kh_config.layout,
         kh_config.inset_width, kh_config.texture_filter, kh_config.camera_stick,
         kh_config.camera_speed, kh_config.camera_follow, kh_config.dpad_deck, kh_config.volume,
         kh_config.debug, kh_config.hud_size, kh_config.hud, kh_config.single_screen,
-        kh_config.filter_2d);
+        kh_config.filter_2d, kh_config.dynamic_res);
 }
 
 /* For the game's code (decomp, PLATFORM_VITA): config mission_balance */

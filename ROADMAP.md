@@ -94,6 +94,9 @@ Phases follow the generic "port a decompiled game to the Vita" plan. ✅ done ·
 - ✅ 30 fps locked, 60 fps (experimental) by frames mixed in between
 - ✅ The Vita's buttons in the game's text, HUD and menus; Cross confirms (port menu)
 - 🔶 Next steps: `docs/resumo_e_proximos_passos.md`
+- 🔶 Single screen in the field with khdays-port's HUD layout (`hw/fieldhud.c`): the mission's
+  panel top left with the hearts (their flat 3D moved, `gpu3d.c`) under it, the enemy's health,
+  the map and the sigils top right, a challenge's label at the top. ⬜ checked on the console
 
 ## 11. Distribution
 - ✅ Repository holds no game data, no decomp sources (patch only), no Sony modules

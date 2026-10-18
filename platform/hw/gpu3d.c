@@ -105,6 +105,11 @@ static Prog3d s_p3[2];
 static const Prog3d *s_cur3; /* the one in use while a frame is drawn */
 static uint32_t s_frame;
 static uint32_t s_last_serial;
+/* the two targets (kh_gpu3d_select_target): s_fbo, s_color, s_depth and s_last_serial are the
+ * chosen one's, the other one's kept here */
+static GLuint s_tgt_fbo[2], s_tgt_color[2], s_tgt_depth[2];
+static uint32_t s_tgt_serial[2];
+static int s_tgt_cur, s_tgt_made[2] = { 1, 0 };
 static KhGpu3dStats s_stats;
 volatile int kh_gpu3d_debug;
 volatile uint32_t kh_gpu3d_mixes;
@@ -415,6 +420,40 @@ int kh_gpu3d_scale_quarters(void)
     return s_scale;
 }
 
+void kh_gpu3d_drop_second_target(void)
+{
+    if (s_tgt_cur != 0 || !s_tgt_made[1])
+        return;
+    glDeleteFramebuffers(1, &s_tgt_fbo[1]);
+    glDeleteRenderbuffers(1, &s_tgt_depth[1]);
+    glDeleteTextures(1, &s_tgt_color[1]);
+    s_tgt_made[1] = 0;
+    LOG("gpu3d: second target given back");
+}
+
+void kh_gpu3d_select_target(int target)
+{
+    target &= 1;
+    if (target == s_tgt_cur || !s_prog)
+        return;
+    s_tgt_fbo[s_tgt_cur] = s_fbo;
+    s_tgt_color[s_tgt_cur] = s_color;
+    s_tgt_depth[s_tgt_cur] = s_depth;
+    s_tgt_serial[s_tgt_cur] = s_last_serial;
+    s_tgt_cur = target;
+    if (!s_tgt_made[target]) {
+        make_target();
+        s_tgt_made[target] = 1;
+        s_last_serial = 0;
+        LOG("gpu3d: second target, %dx%d", s_w, s_h);
+    } else {
+        s_fbo = s_tgt_fbo[target];
+        s_color = s_tgt_color[target];
+        s_depth = s_tgt_depth[target];
+        s_last_serial = s_tgt_serial[target];
+    }
+}
+
 void kh_gpu3d_reload_textures(void)
 {
     s_want_reload = 1;
@@ -426,6 +465,14 @@ static uint32_t s_batches_serial; /* below, with flush */
 static void apply_requests(void)
 {
     if (s_want_scale && s_want_scale != s_scale && s_prog) {
+        const int other = !s_tgt_cur;
+        if (s_tgt_made[other]) {
+            /* made again at the new size when next chosen */
+            glDeleteFramebuffers(1, &s_tgt_fbo[other]);
+            glDeleteRenderbuffers(1, &s_tgt_depth[other]);
+            glDeleteTextures(1, &s_tgt_color[other]);
+            s_tgt_made[other] = 0;
+        }
         glDeleteFramebuffers(1, &s_fbo);
         glDeleteRenderbuffers(1, &s_depth);
         glDeleteTextures(1, &s_color);
@@ -1031,6 +1078,68 @@ void kh_gpu3d_prepare(const KhGxFrame *f)
     s_njobs = 0;
 }
 
+/* the single screen's field HUD: the HUD's flat 3D placed (kh_gpu3d_set_hud_place) */
+static KhGpu3dHudPlace s_hud;
+static int s_hud_on;
+
+void kh_gpu3d_set_hud_place(const KhGpu3dHudPlace *p)
+{
+    s_hud_on = p && (p->place || p->hide);
+    if (s_hud_on)
+        s_hud = *p;
+}
+
+/* The vertices with the HUD's flat polygons moved or hidden: a copy, the frame's own untouched
+ * (a frame can be drawn again, and mixed with the next one) */
+static const KhGxVertex *hud_placed(const KhGxFrame *f, const KhGxVertex *vtx)
+{
+    static KhGxVertex moved[KH_GX_MAX_VERTICES];
+    static uint8_t done[KH_GX_MAX_VERTICES];
+    int i, k, copied = 0;
+    if (!s_hud_on || !f)
+        return vtx;
+    for (i = 0; i < f->npoly; i++) {
+        const KhGxPolygon *p = &f->poly[i];
+        float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
+        int inside = 1, hide;
+        if (!p->flat)
+            continue;
+        for (k = 0; k < p->count; k++) {
+            const KhGxVertex *v = &vtx[p->v[k]];
+            const float w = v->w != 0.0f ? v->w : 1.0f;
+            const float px = (v->x / w + 1.0f) * 128.0f, py = (1.0f - v->y / w) * 96.0f;
+            x0 = px < x0 ? px : x0, x1 = px > x1 ? px : x1;
+            y0 = py < y0 ? py : y0, y1 = py > y1 ? py : y1;
+        }
+        hide = s_hud.hide && (x1 - x0) * (y1 - y0) < 256.0f * 192.0f / 4.0f;
+        inside = s_hud.place && x0 >= s_hud.src[0] && y0 >= s_hud.src[1] && x1 <= s_hud.src[2] &&
+                 y1 <= s_hud.src[3];
+        if (!hide && !inside)
+            continue;
+        if (!copied) {
+            memcpy(moved, vtx, (size_t)f->nvtx * sizeof(KhGxVertex));
+            memset(done, 0, (size_t)f->nvtx);
+            copied = 1;
+        }
+        for (k = 0; k < p->count; k++) {
+            const int n = p->v[k];
+            KhGxVertex *v = &moved[n];
+            const float w = v->w != 0.0f ? v->w : 1.0f;
+            if (done[n])
+                continue;
+            done[n] = 1;
+            if (hide) {
+                v->x = -4.0f * fabsf(w); /* left of the view: clipped */
+            } else {
+                const float px = (v->x / w + 1.0f) * 128.0f, py = (1.0f - v->y / w) * 96.0f;
+                v->x = (s_hud.mx * px + s_hud.cx) * w;
+                v->y = (s_hud.my * py + s_hud.cy) * w;
+            }
+        }
+    }
+    return copied ? moved : vtx;
+}
+
 /* The frame's polygons drawn with the vertices vtx (the frame's own, or a mix of two). */
 static unsigned draw_frame(const KhGxFrame *f, const KhGxVertex *vtx)
 {
@@ -1088,6 +1197,7 @@ static unsigned draw_frame(const KhGxFrame *f, const KhGxVertex *vtx)
     glEnable(GL_DEPTH_TEST);
     glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
+    vtx = hud_placed(f, vtx);
     glBindBuffer(GL_ARRAY_BUFFER, s_vbo);
     glBufferData(GL_ARRAY_BUFFER, f->nvtx * (int)sizeof(KhGxVertex), vtx, GL_DYNAMIC_DRAW);
     glEnableVertexAttribArray(A_POS);

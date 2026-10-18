@@ -493,6 +493,7 @@ static void emit_polygon(const int *idx, int n, int odd)
     for (i = 0; i < n; i++)
         poly->v[i] = (uint16_t)idx[i];
     poly->count = (uint8_t)n;
+    poly->flat = s_proj[11] == 0;
     poly->attr = s_attr;
     poly->teximage = s_teximage;
     poly->pltt = s_pltt;

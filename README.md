@@ -40,10 +40,13 @@ the top screen alone, widescreen; anything on the bottom screen brings your own 
 The world / mission selection shows the world over the whole display and the list beside it.
 
 Partner swap (port menu, PARTNER tab, experimental): touch the partner's HUD in a story mission
-to play as the partner, with its own deck, the stats of Roxas's weapon and his abilities (dodge
-roll, glide, scan...). Roxas, on the AI meanwhile, fights with the partner's weapon stats and
-can be allowed to use his own items and magic (off by default). The swap is turned on or off
-out of a mission only.
+to play as the partner, with its own magic and items, the stats of Roxas's weapon and his
+abilities (dodge roll, glide, scan...). The weapon is prepared when the mission's actors are
+set up; while the partner is not played its stats are its own, as it came into the mission. The
+partner played takes the big gauge of the HUD (portrait and HP) and Roxas the small one; both
+layouts are prepared with the HUD. Roxas, on the AI meanwhile, fights with the partner's weapon
+stats and can be allowed to use his own items and magic (off by default). The swap is turned on
+or off out of a mission only.
 
 ## Controls
 

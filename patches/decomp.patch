@@ -11770,6 +11770,26 @@ index c77ecd174..24eb1d7e8 100644
      u8 pad0008[0xa];
      u16 nHp;                     /* 0x12 */
  };
+diff --git a/src/overlays/field/ov022_battle/Ov022_BuildActionTable.c b/src/overlays/field/ov022_battle/Ov022_BuildActionTable.c
+index 1e471013f..d70b4812a 100644
+--- a/src/overlays/field/ov022_battle/Ov022_BuildActionTable.c
++++ b/src/overlays/field/ov022_battle/Ov022_BuildActionTable.c
+@@ -80,6 +80,15 @@ void Ov022_BuildActionTable(struct ActionTable *pTable, struct Actor *pActor,
+     if (Slot_EvalPackedParam(pActor->nId, REACH_QUERY) != 0) {
+         pTable->nAngle = pTable->nAngleAlt;
+     }
++#ifdef PLATFORM_VITA
++    {
++        /* config partner_swap: the partner's row with Roxas's weapon, built here with the
++         * mission's actors (Ov022_RefreshSlotRows: kh_swap_weapon_row), not read from the card
++         * in the middle of the fight when the partner is first played */
++        extern void kh_swap_prebuild_weapon(void *pActor, int nId, int nKind, const void *pOwnRow);
++        kh_swap_prebuild_weapon(pActor, pActor->nId, nKind, &pTable->blkMove);
++    }
++#endif
+     OS_SPrintf(szTableName, gOv022CiPathFmt, gOv022BaChPath,
+                data_02042a70[nKind]);
+     pFile = Archive_LoadFile(szTableName, ARCHIVE_HEAP);
 diff --git a/src/overlays/field/ov022_battle/Ov022_CanTriggerFinisher.c b/src/overlays/field/ov022_battle/Ov022_CanTriggerFinisher.c
 index 81c579bea..da196af79 100644
 --- a/src/overlays/field/ov022_battle/Ov022_CanTriggerFinisher.c
@@ -12247,7 +12267,7 @@ index e43f5318f..60c3f4296 100644
      } else if (Ov002_IsObjectFlag2000Set(object) == 0) {
          if ((pressed & 0x100) != 0) {
 diff --git a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
-index f3055d4ba..29fbf440c 100644
+index f3055d4ba..4d7166404 100644
 --- a/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 +++ b/src/overlays/field/ov022_battle/Ov022_RefreshSlotRows.c
 @@ -1,7 +1,11 @@
@@ -12271,7 +12291,7 @@ index f3055d4ba..29fbf440c 100644
  } Ov022FlagsView;
  
  typedef struct Ov022NodeOwner {
-@@ -90,6 +94,304 @@ extern void func_ov022_0208a1a4(void);
+@@ -90,6 +94,342 @@ extern void func_ov022_0208a1a4(void);
  extern unsigned short gPadPressed;
  extern unsigned short gPadHeld;
  
@@ -12285,12 +12305,14 @@ index f3055d4ba..29fbf440c 100644
 + * another touch, and whenever a scene needs him: a dialogue or movie (the port's
 + * kh_partner_swap_hold), either of them down or gone, the field stopped, the option off. Each one
 + * keeps its own weapon type and its own panels (records; traded from 0.7.15 to 0.7.41), the
-+ * partner with the stats of Roxas's weapon. */
++ * partner with the stats of Roxas's weapon (prebuilt with the mission's actors: 0.8.3), and the
++ * one played is in the HUD's big gauge (both layouts prebuilt with the HUD: 0.8.3). */
 +extern volatile int kh_partner_swap_index, kh_partner_swap_slot, kh_partner_swap_hold;
 +extern volatile int kh_partner_swap_member;
 +extern volatile unsigned int kh_partner_swap_requests;
 +extern int kh_partner_swap_enabled(void);
 +extern int Ov022_IsInputAllowedForActiveSlot(void);
++extern int kh_hud_swap_show(int nWant);
 +
 +#define SWAP_AI_BIT 0x10000u
 +
@@ -12361,6 +12383,41 @@ index f3055d4ba..29fbf440c 100644
 +static unsigned char s_roxas_row[SWAP_WEAPON_ROW_SIZE]; /* Roxas's own, while on the AI */
 +static int s_swap_row_kept;
 +
++/* The partner's row with Roxas's weapon, built with the mission's actors (Ov022_BuildActionTable,
++ * the swap on): up to 0.8.2 it was read from the card (Ov002_LoadCharacterWeapon) at the first
++ * swap, in the middle of the fight. One per partner id (1, 2), kept with the actor it was built
++ * for: an actor of another field is not given it. The partner's own row stays its own while it
++ * is not played: no weapon of Roxas's, as it came into the mission. */
++static struct {
++    void *pActor;
++    int nKind;
++    unsigned char row[SWAP_WEAPON_ROW_SIZE];
++} s_prebuilt[3];
++
++void kh_swap_prebuild_weapon(void *pActor, int nId, int nKind, const void *pOwnRow)
++{
++    /* byte 4 of a record is its weapon (not traded: GetPlayerSlotTableEntry.c) */
++    const int w = gPartyMembers[4];
++    unsigned char *built;
++    if (nId < 1 || nId > 2)
++        return;
++    s_prebuilt[nId].pActor = 0;
++    if (!kh_partner_swap_enabled())
++        return;
++    built = s_prebuilt[nId].row;
++    Ov002_LoadCharacterWeapon(built, nKind, w);
++    if (Slot_EvalPackedParam(nId, 0x59) != 0)
++        memcpy(built + 2, built + 0xe, 2);
++    /* byte 0 is the weapon's type, which picks the animations of the moves (the player
++     * overlays' slot-kind maps, e.g. Ov034_MapSlotKindToAnim); only the build's own are
++     * loaded (pfnSetup: Ov002_LoadAnimTables), so the partner keeps its own type -- with
++     * Roxas's (0.7.31 to 0.7.33) its attacks had no animation */
++    built[0] = ((const unsigned char *)pOwnRow)[0];
++    s_prebuilt[nId].nKind = nKind;
++    s_prebuilt[nId].pActor = pActor;
++    KH_TRACE_ALWAYS("swap: partner id %d (kind %d): Roxas's weapon %d prebuilt", nId, nKind, w);
++}
++
 +/* Roxas on the AI while the partner is played fights as the partner did: the partner's own
 + * weapon row (its damage) with his own weapon type (byte 0, his moves' animations), so that the
 + * pair hits no harder than the mission's own pair; his row back with him. */
@@ -12369,25 +12426,22 @@ index f3055d4ba..29fbf440c 100644
 +    unsigned char *row = (unsigned char *)partner + SWAP_WEAPON_ROW;
 +    unsigned char *rrow = (unsigned char *)roxas + SWAP_WEAPON_ROW;
 +    if (give) {
-+        /* byte 4 of a record is its weapon (not traded: GetPlayerSlotTableEntry.c) */
-+        const int w = gPartyMembers[4];
++        const int id = ((unsigned char *)partner)[9];
 +        const int kind = *(int *)((char *)partner + SWAP_ACTOR_KIND);
-+        unsigned char built[SWAP_WEAPON_ROW_SIZE];
++        if (id < 1 || id > 2 || s_prebuilt[id].pActor != (void *)partner ||
++            s_prebuilt[id].nKind != kind) {
++            /* nothing built for this actor: each one keeps its own row (no card read here) */
++            KH_TRACE_ALWAYS("swap: no prebuilt weapon for partner id %d (kind %d): rows kept",
++                            id, kind);
++            return;
++        }
 +        memcpy(s_swap_row, row, sizeof(s_swap_row));
 +        memcpy(s_roxas_row, rrow, sizeof(s_roxas_row));
 +        s_swap_row_kept = 1;
-+        Ov002_LoadCharacterWeapon(built, kind, w);
-+        if (Slot_EvalPackedParam(((unsigned char *)partner)[9], 0x59) != 0)
-+            memcpy(built + 2, built + 0xe, 2);
-+        /* byte 0 is the weapon's type, which picks the animations of the moves (the player
-+         * overlays' slot-kind maps, e.g. Ov034_MapSlotKindToAnim); only the build's own are
-+         * loaded (pfnSetup: Ov002_LoadAnimTables), so the partner keeps its own type -- with
-+         * Roxas's (0.7.31 to 0.7.33) its attacks had no animation */
-+        built[0] = row[0];
-+        memcpy(row, built, sizeof(built));
++        memcpy(row, s_prebuilt[id].row, SWAP_WEAPON_ROW_SIZE);
 +        memcpy(rrow + 1, s_swap_row + 1, sizeof(s_swap_row) - 1);
 +        KH_TRACE_ALWAYS("swap: partner (kind %d) fights with Roxas's weapon %d (its stats), "
-+                        "Roxas with the partner's", kind, w);
++                        "Roxas with the partner's", kind, gPartyMembers[4]);
 +    } else if (s_swap_row_kept) {
 +        memcpy(row, s_swap_row, sizeof(s_swap_row));
 +        memcpy(rrow, s_roxas_row, sizeof(s_roxas_row));
@@ -12475,6 +12529,7 @@ index f3055d4ba..29fbf440c 100644
 +        kh_partner_swap_slot = -1;
 +        kh_partner_swap_root = root;
 +        kh_partner_swap_seen = req;
++        kh_hud_swap_show(0);
 +        return;
 +    }
 +    if (kh_partner_swap_fresh) {
@@ -12550,6 +12605,9 @@ index f3055d4ba..29fbf440c 100644
 +    }
 +    if (want != cur)
 +        swap_apply(root, cur, want);
++    /* the HUD: the one played in the big gauge (both layouts prebuilt with the HUD:
++     * ov002_field/Ov002_LoadPanelSlots.c); again after the game rebuilds the HUD */
++    kh_hud_swap_show(kh_partner_swap_member);
 +    {
 +        /* diagnostics: the commands held for long (Ov022_IsInputAllowedForActiveSlot: the
 +         * active actor's own move at +0x2668, or the field's hold) -- 0.7.34's log, a Limit
@@ -12576,7 +12634,7 @@ index f3055d4ba..29fbf440c 100644
  void Ov022_RefreshSlotRows(int unused)
  {
      Ov022Root *root = NNSi_FndGetCurrentRootHeap();
-@@ -119,6 +421,9 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -119,6 +459,9 @@ void Ov022_RefreshSlotRows(int unused)
          gPadHeld |= root->savedMask1;
          func_ov022_02087a70();
      }
@@ -12586,7 +12644,7 @@ index f3055d4ba..29fbf440c 100644
      primaryNode = root->firstOwner->node;
      primaryField66 = primaryNode->field066;
      resourceBase = Ov022_GetGlobalPlus14();
-@@ -135,6 +440,9 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -135,6 +478,9 @@ void Ov022_RefreshSlotRows(int unused)
  
          do {
              node = cursor->owner->node;
@@ -12596,7 +12654,7 @@ index f3055d4ba..29fbf440c 100644
              short oldField66 = node->field066;
              unsigned int flags = node->flagsLow;
              row = &rowBase[cursor->rowIndex];
-@@ -143,7 +451,16 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -143,7 +489,16 @@ void Ov022_RefreshSlotRows(int unused)
              if ((int)(*(long long *)node & 0x10000LL) == 0) {
                  Ov022_LoadNodeFromResource(node, cursor->rowIndex);
              } else {
@@ -12613,7 +12671,7 @@ index f3055d4ba..29fbf440c 100644
              }
              if ((root->flags & 4) == 0) {
                  func_ov022_020ad474(node);
-@@ -192,6 +509,9 @@ void Ov022_RefreshSlotRows(int unused)
+@@ -192,6 +547,9 @@ void Ov022_RefreshSlotRows(int unused)
              index++;
          } while (index < root->count);
      }
@@ -13011,7 +13069,7 @@ index cd1deb4fa..8a7ea3279 100644
      short nAngleBias;            /* 0x478 */
      u8 pad47a[0x1e7e];
 diff --git a/src/overlays/field/ov022_battle/Ov022_TranslateCommandToAction.c b/src/overlays/field/ov022_battle/Ov022_TranslateCommandToAction.c
-index e5550fed5..3ff9b9593 100644
+index e5550fed5..2de37a710 100644
 --- a/src/overlays/field/ov022_battle/Ov022_TranslateCommandToAction.c
 +++ b/src/overlays/field/ov022_battle/Ov022_TranslateCommandToAction.c
 @@ -1,3 +1,4 @@
@@ -13037,7 +13095,7 @@ index e5550fed5..3ff9b9593 100644
      u8 pad46c[0x6a];
      signed char nCommandKind;    /* 0x4d6 */
      u8 pad4d7[1];
-@@ -88,6 +89,23 @@ void Ov022_TranslateCommandToAction(struct Actor *pActor)
+@@ -88,6 +89,44 @@ void Ov022_TranslateCommandToAction(struct Actor *pActor)
      int bLocked;
      int nAim;
  
@@ -13055,6 +13113,27 @@ index e5550fed5..3ff9b9593 100644
 +            if ((k == 8 && !kh_partner_swap_roxas_magic()) ||
 +                (k == 0xb && !kh_partner_swap_roxas_items()) || k == 0xc || k == 0xd)
 +                pActor->nCommandKind = 7;
++        }
++        /* The partner played takes the magic and items it came into the mission with, its own
++         * record's (the ones its AI casts and uses: Ov022_StepPartnerSlot, with the moves and
++         * effects its build has loaded). Its magic already is: the deck shows only the slots of
++         * its own actor's mask, with its own charges (Ov022_UpdateCommandInput). Its items are
++         * not: the HUD's item list is built with the HUD, from Roxas's record when the swap
++         * came later, so an item its own record does not hold is dropped (none of Roxas's goes
++         * through the partner's actor; the count spent would not be found). */
++        if (kh_partner_swap_member > 0 && pActor->nId == kh_partner_swap_member &&
++            pActor->nCommandKind == 0xb) {
++            extern unsigned short *Table_FindKey(int nId, unsigned int nKey);
++            const unsigned short *e = Table_FindKey(pActor->nId, pActor->nCommandArg);
++            if (e == 0 || (short)e[1] <= 0) {
++                static int logged;
++                if (logged < 20) {
++                    logged++;
++                    KH_TRACE_ALWAYS("swap: partner %d holds no item %d: dropped", pActor->nId,
++                                    pActor->nCommandArg);
++                }
++                pActor->nCommandKind = 7;
++            }
 +        }
 +    }
 +#endif
@@ -13293,6 +13372,24 @@ index 1edf6e250..46f352ec1 100644
  
  typedef struct Ov023Scene {
      u8   pad_00000[0x1d6dc];
+diff --git a/src/overlays/field/ov023_event_script/Ov023_BuildEventTextPath.c b/src/overlays/field/ov023_event_script/Ov023_BuildEventTextPath.c
+index 349afb8c6..6bf59e2cb 100644
+--- a/src/overlays/field/ov023_event_script/Ov023_BuildEventTextPath.c
++++ b/src/overlays/field/ov023_event_script/Ov023_BuildEventTextPath.c
+@@ -15,7 +15,13 @@ extern const char gOv023P2Name[];                            /* ".p2" */
+ 
+ char *Ov023_BuildEventTextPath(const char *pszCode)
+ {
++#ifdef PLATFORM_VITA
++    /* PLATFORM_VITA: static, not on the stack (GCC returns NULL for a dead stack buffer's
++     * address; see Ov023_FormatIndex) */
++    static char szPath[0x40];
++#else
+     char szPath[0x40];
++#endif
+ 
+     {
+         u32 nRemaining;
 diff --git a/src/overlays/field/ov023_event_script/Ov023_CmdResetStage.c b/src/overlays/field/ov023_event_script/Ov023_CmdResetStage.c
 index 8a6ecf100..082baa9de 100644
 --- a/src/overlays/field/ov023_event_script/Ov023_CmdResetStage.c
@@ -13347,6 +13444,25 @@ index 37140c8e0..5a0dd8d62 100644
      unsigned int mode = (*reg & 0x1f00) >> 8;
      *reg = (*reg & 0xffffe0ff) | ((mode | 0x10) << 8);
      G2x_SetBlendAlpha_((void *)((char *)reg + 0x50), 8, 0x21, 0xd, 3);
+diff --git a/src/overlays/field/ov023_event_script/Ov023_FormatIndex.c b/src/overlays/field/ov023_event_script/Ov023_FormatIndex.c
+index 82cc71366..5a44baf12 100644
+--- a/src/overlays/field/ov023_event_script/Ov023_FormatIndex.c
++++ b/src/overlays/field/ov023_event_script/Ov023_FormatIndex.c
+@@ -10,7 +10,14 @@ extern char gOv023Chair0Fmt[];
+ extern char gOv023ChairFmt[];
+ 
+ char *Ov023_FormatIndex(int index) {
++#ifdef PLATFORM_VITA
++    /* PLATFORM_VITA: static, not on the stack. GCC makes the dead stack buffer's address NULL
++     * (undefined behaviour, -Wreturn-local-addr), and Ov023_CmdSeatMembers' strcpy of it
++     * faulted: the crash on day 255 (0.8.4). The callers copy it at once, as on the DS. */
++    static char buf[0x40];
++#else
+     char buf[0x40];
++#endif
+     if (index + 1 < 10) {
+         OS_SPrintf(buf, gOv023Chair0Fmt, index + 1);
+     } else {
 diff --git a/src/overlays/field/ov023_event_script/Ov023_OpenDialog.c b/src/overlays/field/ov023_event_script/Ov023_OpenDialog.c
 index 34a4dce8e..928462399 100644
 --- a/src/overlays/field/ov023_event_script/Ov023_OpenDialog.c
@@ -17513,6 +17629,218 @@ index 487c9600e..585d22c86 100644
      pState->nLastTick=OS_GetTick();
      pState->nPhase=0;
      RegisterNamedTask(1,gOv002UinowldtaskfuncName,Ov002_TickBlink);
+diff --git a/src/overlays/scenes/ov002_field/Ov002_LoadPanelSlots.c b/src/overlays/scenes/ov002_field/Ov002_LoadPanelSlots.c
+index 779ed8c9a..7539556e4 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_LoadPanelSlots.c
++++ b/src/overlays/scenes/ov002_field/Ov002_LoadPanelSlots.c
+@@ -84,6 +84,197 @@ extern u16 data_ov002_0207db8c[];
+ extern int data_ov002_0207dba8[];
+ extern int data_ov002_0207dbb8[];
+ 
++#ifdef PLATFORM_VITA
++#include <string.h>
++#include "nitro/kh_hw.h"
++
++/* Partner swap (config partner_swap; Ov022_RefreshSlotRows): the party's HUD, the big gauge
++ * (slot 0) and the small ones, with the one played in the big one. The HUD fixes each slot's
++ * portrait, palette, label and HP maximum when it is built (anSlotForId, id -> slot); a swap
++ * rebuilt in the middle of the mission is what faulted before. So both layouts are made here,
++ * with the HUD, from the icon archive it reads anyway: every member's portrait in the big
++ * gauge's shape and in a small one's, and its palette. A swap then only trades the two slots
++ * (kh_hud_swap_show): the portraits written over the HUD's own BG3 characters (as
++ * Ov002_UploadHudTileRow does every blink), the palettes through the VRAM queue (as
++ * Ov002_UploadSlotIconPalette does), the gauges' HP maximum and HP redrawn as the gauges'
++ * set-up draws them (Ov002_InitGauges), and anSlotForId traded, so that the game's own HP and
++ * low-HP calls by member id (Ov002_GetPanelWord0220) land in the new slots. The HUD is rebuilt
++ * by the game (a scene, the pause): this runs again, the layout starts as built and the swap
++ * puts it back on the next frame. */
++#define HUD_IDS 4
++#define HUD_BIG_ROWS 6
++#define HUD_BIG_ROW 0xc0
++#define HUD_SMALL_ROWS 3
++#define HUD_SMALL_ROW 0x60
++#define HUD_SLOTS 0x130 /* the panel's four slots (id, icon, values), 0x10 each */
++#define HUD_HELD 0x1b0  /* the panel held (palettes go to a saved copy) */
++
++static struct {
++    Ov002PanelCtx *ctx;     /* the HUD these belong to */
++    int ready;
++    int homeId;             /* the id the HUD was built with in the big gauge */
++    int bigId;              /* the id in the big gauge now */
++    int have[HUD_IDS];
++    u32 big[HUD_IDS][HUD_BIG_ROWS * HUD_BIG_ROW / 4];
++    u32 small[HUD_IDS][HUD_SMALL_ROWS * HUD_SMALL_ROW / 4];
++    u16 plt[HUD_IDS][16];
++} s_hud;
++
++extern int kh_partner_swap_enabled(void);
++extern void GX_LoadBG3Char(const void *src, unsigned int offset, unsigned int size);
++extern int GFXi_EnqueueCommand(int nKind, int nDest, int nSource, int nSize);
++extern void Ov002_SetGaugeValue(int nIndex, unsigned int nValue, int nFlags, int bImmediate,
++                                int bRebuild);
++extern void Ov002_SetGaugeSlotShown(int nIndex, unsigned int bOn);
++extern void Ov002_UploadSlotIconPalette(int nSlot, int nMode);
++extern void Ov002_RepaintPanelRows(void);
++extern char *data_ov002_0207f618; /* the gauges (Ov002_InitGaugeScene) */
++
++static void hud_prebuild(Ov002PanelSlot *pSlots, SpriteResSet *pLow, SpriteResSet *pHigh)
++{
++    int i, k;
++    s_hud.ready = 0;
++    s_hud.ctx = 0;
++    memset(s_hud.have, 0, sizeof(s_hud.have));
++    if (!kh_partner_swap_enabled() || pSlots[0].nId < 0 || pSlots[0].nId >= HUD_IDS ||
++        pSlots[0].nIcon == -1)
++        return;
++    /* the shapes the copies are made in: the big gauge's, and one for every small one */
++    if (data_ov002_0207dc90[0].nRows != HUD_BIG_ROWS ||
++        data_ov002_0207dc90[0].nRowBytes != HUD_BIG_ROW)
++        return;
++    for (i = 1; i < 4; i++) {
++        if (data_ov002_0207dc90[i].nRows != HUD_SMALL_ROWS ||
++            data_ov002_0207dc90[i].nRowBytes != HUD_SMALL_ROW)
++            return;
++    }
++    for (i = 0; i < 4; i++) {
++        const int id = pSlots[i].nId;
++        int icon = pSlots[i].nIcon;
++        int nChar, nPlt;
++        if (id < 0 || id >= HUD_IDS || icon == -1)
++            continue;
++        if (icon >= 0xd) {
++            icon -= 0xd;
++            nChar = *(int *)((char *)pHigh->pChar + 0x14);
++            nPlt = *(int *)((char *)pHigh->pPalette + 0xc);
++        } else {
++            nChar = *(int *)((char *)pLow->pChar + 0x14);
++            nPlt = *(int *)((char *)pLow->pPalette + 0xc);
++        }
++        /* the rows Ov002_LoadPanelSlots takes for slot 0 and for the others */
++        for (k = 0; k < HUD_BIG_ROWS; k++)
++            memcpy((char *)s_hud.big[id] + k * HUD_BIG_ROW,
++                   (const void *)(nChar + k * 0x120 + 0x120 + icon * 0x6c0), HUD_BIG_ROW);
++        for (k = 0; k < HUD_SMALL_ROWS; k++)
++            memcpy((char *)s_hud.small[id] + k * HUD_SMALL_ROW,
++                   (const void *)(nChar + k * 0x120 + icon * 0x6c0 + 0x1e0), HUD_SMALL_ROW);
++        memcpy(s_hud.plt[id], (const void *)(nPlt + icon * 0x20 + 0x20), 0x20);
++        s_hud.plt[id][15] = data_ov002_0207db8c[id];
++        s_hud.have[id] = 1;
++    }
++    s_hud.homeId = s_hud.bigId = pSlots[0].nId;
++    s_hud.ctx = data_ov002_0207f614;
++    s_hud.ready = 1;
++    KH_TRACE_ALWAYS("swap: HUD layouts prebuilt (big gauge: id %d; ids %d%d%d%d)", s_hud.homeId,
++                    s_hud.have[0], s_hud.have[1], s_hud.have[2], s_hud.have[3]);
++}
++
++static void hud_rows(int nSlot, const u32 *pRows)
++{
++    const Ov002PanelBlit *b = &data_ov002_0207dc90[nSlot];
++    unsigned int k;
++    for (k = 0; k < b->nRows; k++)
++        GX_LoadBG3Char((const char *)pRows + k * b->nRowBytes, b->nDstOffset + k * 0x400,
++                       b->nRowBytes);
++}
++
++/* The member id nWant (a partner's; 0 or less: the one the HUD was built with) in the big
++ * gauge. Every frame from Ov022_RefreshSlotRows; 1 once it is shown, 0 while it cannot be (no
++ * HUD, not built for the swap, the panel held: tried again on the next frame). */
++int kh_hud_swap_show(int nWant)
++{
++    Ov002PanelCtx *ctx = data_ov002_0207f614;
++    char *g = data_ov002_0207f618;
++    u16 *cnt;   /* per slot: HP maximum, HP shown */
++    char *slots;
++    int id0, sp, hp0, hps, t;
++    unsigned char tmp[0x10];
++
++    if (ctx == 0 || g == 0 || !s_hud.ready || s_hud.ctx != ctx)
++        return 0;
++    if (nWant <= 0)
++        nWant = s_hud.homeId;
++    if (nWant == s_hud.bigId)
++        return 1;
++    if (*(int *)((char *)ctx + HUD_HELD) != 0)
++        return 0;
++    id0 = s_hud.bigId;
++    sp = nWant >= 0 && nWant < HUD_IDS ? ctx->anSlotForId[nWant] : -1;
++    if (sp <= 0 || sp >= 4 || !s_hud.have[nWant] || !s_hud.have[id0] ||
++        ctx->anSlotForId[id0] != 0) {
++        KH_TRACE_ALWAYS("swap: HUD not swapped (id %d in slot %d, id %d in the big gauge)", nWant,
++                        sp, id0);
++        s_hud.ready = 0;
++        return 0;
++    }
++    cnt = (u16 *)(g + 0xcc);
++    slots = (char *)ctx + HUD_SLOTS;
++    hp0 = cnt[1];
++    hps = cnt[sp * 2 + 1];
++
++    /* the low-HP blink and its alarm off: the game's per-frame call puts them back by id
++     * (Ov022_ActorUpdate) */
++    Ov002_SetGaugeSlotShown(0, 0);
++    Ov002_SetGaugeSlotShown(sp, 0);
++    /* every cell of both gauges cleared, a draining trail's too (drawn as from full) */
++    cnt[1] = cnt[0];
++    Ov002_SetGaugeValue(0, 0, 7, 0, 0);
++    cnt[sp * 2 + 1] = cnt[sp * 2];
++    Ov002_SetGaugeValue(sp, 0, 7, 0, 0);
++    /* the big gauge's two tweens (the trail, the fill) idle, as its set-up leaves them */
++    memset(g + 0xf4, 0, 8);
++    *(int *)(g + 0xf4 + 0x18) = 0;
++    memset(g + 0x110, 0, 8);
++    *(int *)(g + 0x110 + 0x18) = 0;
++    /* the HP maxima, the slots (id, icon: the flash and down palettes) and the ids traded */
++    t = cnt[0];
++    cnt[0] = cnt[sp * 2];
++    cnt[sp * 2] = (u16)t;
++    memcpy(tmp, slots, 0x10);
++    memcpy(slots, slots + sp * 0x10, 0x10);
++    memcpy(slots + sp * 0x10, tmp, 0x10);
++    ctx->anSlotForId[id0] = sp;
++    ctx->anSlotForId[nWant] = 0;
++    /* portraits and labels */
++    hud_rows(0, s_hud.big[nWant]);
++    hud_rows(sp, s_hud.small[id0]);
++    Ov002_PrintHelpPage(0, (int *)slots);
++    Ov002_PrintHelpPage(sp, (int *)(slots + sp * 0x10));
++    /* the HP, drawn as the gauges' set-up draws it */
++    cnt[1] = 0;
++    Ov002_SetGaugeValue(0, hps, 7, 0, 1);
++    cnt[sp * 2 + 1] = 0;
++    Ov002_SetGaugeValue(sp, hp0, 7, 0, 1);
++    /* the big gauge painted by the game's own painter, the Limit's yellow included (its cells up
++     * to the threshold, Ov002_DrawGaugeTweenCell; the set-up's painter has no yellow): the
++     * threshold (+0x34 on, +0x38 cells) belongs to the one now in the big gauge, so it is let go
++     * and the game's next call sets it with this HP maximum and repaints (Ov022_UpdateSubsystems
++     * -> Ov002_SetScrollPosition) */
++    *(int *)(g + 0x34) = 0;
++    Ov002_RepaintPanelRows();
++    /* the palettes, queued after the ones the gauges just asked for */
++    GFXi_EnqueueCommand(0xf, 0x40, (int)s_hud.plt[nWant], 0x20);
++    GFXi_EnqueueCommand(0xf, 0x40 + sp * 0x20, (int)s_hud.plt[id0], 0x20);
++    if (hp0 == 0)
++        Ov002_UploadSlotIconPalette(sp, 2);
++    s_hud.bigId = nWant;
++    KH_TRACE_ALWAYS("swap: HUD: id %d in the big gauge (HP %d/%d), id %d in slot %d (HP %d/%d)",
++                    nWant, hps, cnt[0], id0, sp, hp0, cnt[sp * 2]);
++    return 1;
++}
++#endif
++
+ int Ov002_LoadPanelSlots(Ov002PanelSlot *pSlots, SpriteResSet *pDst,
+                         int nPalDst, int i)
+ {
+@@ -182,6 +373,9 @@ int Ov002_LoadPanelSlots(Ov002PanelSlot *pSlots, SpriteResSet *pDst,
+         }
+     }
+ 
++#ifdef PLATFORM_VITA
++    hud_prebuild(pSlots, &sLow, &sHigh);
++#endif
+     if (ctx->nFlipGate != 0) {
+         Ov002_PlayCaptionCues(1, 1);
+     }
 diff --git a/src/overlays/scenes/ov002_field/Ov002_LoadSubFlowOverlay.c b/src/overlays/scenes/ov002_field/Ov002_LoadSubFlowOverlay.c
 index 466162497..244e8f873 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_LoadSubFlowOverlay.c
@@ -18056,6 +18384,33 @@ index fa4458cdd..7048c02ce 100644
  /* Turn the roster highlight on or off for every row, and remember which it is.
   *
   * The row count comes from the roster module, plus one more row while the phase word reads five.
+diff --git a/src/overlays/scenes/ov002_field/Ov002_SetScrollPosition.c b/src/overlays/scenes/ov002_field/Ov002_SetScrollPosition.c
+index 8a07b4a95..b149f461b 100644
+--- a/src/overlays/scenes/ov002_field/Ov002_SetScrollPosition.c
++++ b/src/overlays/scenes/ov002_field/Ov002_SetScrollPosition.c
+@@ -1,3 +1,4 @@
++#include "nitro/kh_hw.h"  /* PLATFORM_VITA: KH_TRACE_ALWAYS */
+ /* Update the scroll position: scale the row by 0x4d and divide by the viewport
+  * height at +0xcc, then store the pair at +0x34/+0x38 and relayout -- but only
+  * when it actually changed. func_02020400 is the signed divide helper; the
+@@ -23,5 +24,17 @@ void Ov002_SetScrollPosition(int row, int offset) {
+ 
+     *(int *)(ctx + 0x34) = row;
+     *(short *)(ctx + 0x38) = (short)scaled;
++#ifdef PLATFORM_VITA
++    {
++        /* diagnostics: the Limit's threshold in the big HP gauge (its yellow cells) */
++        static int logged;
++        if (logged < 30) {
++            logged++;
++            KH_TRACE_ALWAYS("hud: Limit threshold %d HP -> %d of 77 cells (HP max %u, shown %u)",
++                            offset, scaled, *(unsigned short *)(ctx + 0xcc),
++                            *(unsigned short *)(ctx + 0xce));
++        }
++    }
++#endif
+     Ov002_RepaintPanelRows();
+ }
 diff --git a/src/overlays/scenes/ov002_field/Ov002_SetUpSubScreen.c b/src/overlays/scenes/ov002_field/Ov002_SetUpSubScreen.c
 index 0c475b3cd..bdd4329c5 100644
 --- a/src/overlays/scenes/ov002_field/Ov002_SetUpSubScreen.c
@@ -23525,7 +23880,7 @@ index d1037e3af..6f5394c8e 100644
  #define SECTOR_MASK    0x00fffffc
  
 diff --git a/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_PresentOnVBlank.c b/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_PresentOnVBlank.c
-index efd9f258b..c6d6181fb 100644
+index efd9f258b..6c6eb29c7 100644
 --- a/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_PresentOnVBlank.c
 +++ b/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_PresentOnVBlank.c
 @@ -1,3 +1,4 @@
@@ -23533,7 +23888,14 @@ index efd9f258b..c6d6181fb 100644
  /* MobiClip: present the next movie frame, once per vertical blank.
   *
   * The player draws alternate frames two ways -- one as background layers, the
-@@ -29,7 +30,7 @@ extern int data_ov024_0209ba48;
+@@ -26,10 +27,14 @@ struct MobiClipFrameTimer {
+ 
+ extern int data_ov024_02093a2c;
+ extern int data_ov024_0209ba48;
++#ifdef PLATFORM_VITA
++/* platform/nitro/mobiclip.c: the frames shown per engine, for the single screen's scenes */
++extern volatile unsigned int kh_movie_presents[2];
++#endif
  
  void Ov024_MobiClip_PresentOnVBlank(void)
  {
@@ -23542,7 +23904,7 @@ index efd9f258b..c6d6181fb 100644
      struct MobiClipFrameTimer *pTimer;
      void (*pfnAfterPresent)(void);
      u32 nScanline;
-@@ -41,7 +42,7 @@ void Ov024_MobiClip_PresentOnVBlank(void)
+@@ -41,7 +46,7 @@ void Ov024_MobiClip_PresentOnVBlank(void)
  
      pTimer = ((struct MobiClipFrameTimer **)&data_ov024_02093a2c)[2];
      if (pTimer != 0 && pTimer->bPresented == 0) {
@@ -23551,7 +23913,14 @@ index efd9f258b..c6d6181fb 100644
  
          if (pTimer->nFrontBuffer == 0) {
              *reg_dispcnt = (*reg_dispcnt & ~DISPCNT_LAYERS) | LAYERS_AS_BG;
-@@ -55,7 +56,7 @@ void Ov024_MobiClip_PresentOnVBlank(void)
+@@ -51,11 +56,14 @@ void Ov024_MobiClip_PresentOnVBlank(void)
+         pTimer->nFrontBuffer = (u8)(pTimer->nFrontBuffer ^ 1);
+         pTimer->bPresented = 1;
+         pTimer->nPresented++;
++#ifdef PLATFORM_VITA
++        kh_movie_presents[0]++;
++#endif
+     }
  
      pTimer = ((struct MobiClipFrameTimer **)&data_ov024_02093a2c)[3];
      if (pTimer != 0 && pTimer->bPresented == 0) {
@@ -23560,6 +23929,16 @@ index efd9f258b..c6d6181fb 100644
  
          if (pTimer->nFrontBuffer == 0) {
              *reg_db_dispcnt = (*reg_db_dispcnt & ~DISPCNT_LAYERS) | LAYERS_AS_BG;
+@@ -65,6 +73,9 @@ void Ov024_MobiClip_PresentOnVBlank(void)
+         pTimer->nFrontBuffer = (u8)(pTimer->nFrontBuffer ^ 1);
+         pTimer->bPresented = 1;
+         pTimer->nPresented++;
++#ifdef PLATFORM_VITA
++        kh_movie_presents[1]++;
++#endif
+     }
+ 
+     pfnAfterPresent = ((void (**)(void))&data_ov024_0209ba48)[0x38];
 diff --git a/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_RestoreDisplay.c b/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_RestoreDisplay.c
 index 48c4a9283..bc5da4ef7 100644
 --- a/src/overlays/system/ov024_mobiclip/Ov024_MobiClip_RestoreDisplay.c

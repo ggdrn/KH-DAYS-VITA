@@ -22,6 +22,25 @@ void kh_gpu3d_forget_previous(void);
 /* Each frame drawn as it comes, nothing held back for the 60 fps mix (the display loop sets it
  * while the screens trade places frame by frame). */
 extern volatile int kh_gpu3d_direct;
+/* The target the next frames are drawn into, 0 or 1 (the display thread, before
+ * kh_gpu3d_prepare): the dual-3D cutscenes keep each screen's 3D in its own, shown again
+ * while the other screen gets the next frame (game.c). 0 otherwise; 1 is made when first
+ * chosen, at the size drawn then. */
+void kh_gpu3d_select_target(int target);
+/* Target 1 deleted (with target 0 chosen): out of the cutscenes, its video memory back. */
+void kh_gpu3d_drop_second_target(void);
+
+/* The single screen's field HUD (hw/fieldhud.c, khdays-port's `shape3d hud`): the
+ * frame's flat polygons (KhGxPolygon flat: the HUD's 3D pieces) wholly inside the DS rectangle
+ * src (x0, y0, x1, y1, DS dots) are drawn moved, at NDC x = mx * px + cx, y = my * py + cy from
+ * their DS position (px, py); with hide, the flat ones smaller than a quarter of the screen are
+ * not drawn. NULL: as the game lays them out. */
+typedef struct {
+    int place, hide;
+    float src[4];
+    float mx, cx, my, cy;
+} KhGpu3dHudPlace;
+void kh_gpu3d_set_hud_place(const KhGpu3dHudPlace *p);
 
 /* Draw the frame; returns the GL texture holding the 3D layer (premultiplied RGBA, GL
  * orientation: row 0 is the bottom of the screen), 0 when there is nothing to show. */
