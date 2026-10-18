@@ -27,6 +27,8 @@ extern volatile int kh_gpu3d_direct;
  * while the other screen gets the next frame (game.c). 0 otherwise; 1 is made when first
  * chosen, at the size drawn then. */
 void kh_gpu3d_select_target(int target);
+/* Target 1 deleted (with target 0 chosen): out of the cutscenes, its video memory back. */
+void kh_gpu3d_drop_second_target(void);
 
 /* The single screen's field HUD (hw/fieldhud.c, khdays-port's `shape3d hud`): the
  * frame's flat polygons (KhGxPolygon flat: the HUD's 3D pieces) wholly inside the DS rectangle

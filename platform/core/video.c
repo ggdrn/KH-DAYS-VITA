@@ -634,6 +634,12 @@ typedef struct {
 static KeptScreen s_keep[2];
 static int s_keep_on;
 
+void video_log_memory(void)
+{
+    LOG("video: free memory: video %u KB, RAM %u KB", (unsigned)(vglMemFree(VGL_MEM_VRAM) / 1024),
+        (unsigned)(vglMemFree(VGL_MEM_RAM) / 1024));
+}
+
 void video_set_dual_keep(int on)
 {
     on = on != 0;
@@ -935,34 +941,75 @@ void video_set_capture_dual(int dual)
     s_cap_dual = dual;
 }
 
-static void capture_targets(void)
+/* The copies in two sets, made once each and kept: render_scale's, and 2x for the dual-3D
+ * fights (capture_quarters). 0.8.4 deleted and made the seven again (21 MB at 4x) at every such
+ * fight's start and end. */
+typedef struct {
+    GLuint tex[7], fbo[7];
+    int w, h, made;
+} CapSet;
+static CapSet s_capset[2];
+static int s_capset_cur;
+
+static void capset_make(CapSet *c, int q)
 {
     int i;
-    s_cap_w = DS_SCREEN_W * capture_quarters() / 4;
-    s_cap_h = DS_SCREEN_H * capture_quarters() / 4;
+    c->w = DS_SCREEN_W * q / 4;
+    c->h = DS_SCREEN_H * q / 4;
     for (i = 0; i < 7; i++) {
-        s_cap_tex[i] = new_texture(s_cap_w, s_cap_h, GL_LINEAR);
-        glGenFramebuffers(1, &s_cap_fbo[i]);
-        glBindFramebuffer(GL_FRAMEBUFFER, s_cap_fbo[i]);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s_cap_tex[i], 0);
+        c->tex[i] = new_texture(c->w, c->h, GL_LINEAR);
+        glGenFramebuffers(1, &c->fbo[i]);
+        glBindFramebuffer(GL_FRAMEBUFFER, c->fbo[i]);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, c->tex[i], 0);
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    c->made = 1;
 }
 
-/* a dual-3D scene starting or ending: the copies made again at their new size, every one held dropped (a dual-3D scene
- * drops its screen memories as it starts anyway) */
+static void capset_use(int k)
+{
+    const CapSet *c = &s_capset[k];
+    memcpy(s_cap_tex, c->tex, sizeof(s_cap_tex));
+    memcpy(s_cap_fbo, c->fbo, sizeof(s_cap_fbo));
+    s_cap_w = c->w;
+    s_cap_h = c->h;
+    s_capset_cur = k;
+}
+
+/* the set capture_quarters wants: 1 when smaller than render_scale's */
+static int capset_wanted(int q)
+{
+    return q < kh_config.render_scale * 4 ? 1 : 0;
+}
+
+static void capture_targets(void)
+{
+    const int q = capture_quarters(), k = capset_wanted(q);
+    capset_make(&s_capset[k], q);
+    capset_use(k);
+}
+
+/* a dual-3D fight starting or ending (or render_scale changed): the other set of copies, every
+ * one held dropped (a dual-3D scene drops its screen memories as it starts anyway) */
 static void capture_check_size(void)
 {
+    const int q = capture_quarters(), k = capset_wanted(q);
+    CapSet *c = &s_capset[k];
     int i;
-    if (!s_cap_w || s_cap_w == DS_SCREEN_W * capture_quarters() / 4)
+    if (!s_cap_w || (k == s_capset_cur && c->w == DS_SCREEN_W * q / 4))
         return;
-    glDeleteFramebuffers(7, s_cap_fbo);
-    glDeleteTextures(7, s_cap_tex);
+    if (c->made && c->w != DS_SCREEN_W * q / 4) {
+        glDeleteFramebuffers(7, c->fbo);
+        glDeleteTextures(7, c->tex);
+        c->made = 0;
+    }
+    if (!c->made)
+        capset_make(c, q);
+    capset_use(k);
     for (i = 0; i < 6; i++)
         s_bank_valid[i] = 0;
     for (i = 0; i < 2; i++)
         s_show_bank[i] = -1;
-    capture_targets();
     LOG("video: screen copies now %dx%d", s_cap_w, s_cap_h);
 }
 

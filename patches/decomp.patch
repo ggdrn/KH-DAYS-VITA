@@ -13372,6 +13372,24 @@ index 1edf6e250..46f352ec1 100644
  
  typedef struct Ov023Scene {
      u8   pad_00000[0x1d6dc];
+diff --git a/src/overlays/field/ov023_event_script/Ov023_BuildEventTextPath.c b/src/overlays/field/ov023_event_script/Ov023_BuildEventTextPath.c
+index 349afb8c6..6bf59e2cb 100644
+--- a/src/overlays/field/ov023_event_script/Ov023_BuildEventTextPath.c
++++ b/src/overlays/field/ov023_event_script/Ov023_BuildEventTextPath.c
+@@ -15,7 +15,13 @@ extern const char gOv023P2Name[];                            /* ".p2" */
+ 
+ char *Ov023_BuildEventTextPath(const char *pszCode)
+ {
++#ifdef PLATFORM_VITA
++    /* PLATFORM_VITA: static, not on the stack (GCC returns NULL for a dead stack buffer's
++     * address; see Ov023_FormatIndex) */
++    static char szPath[0x40];
++#else
+     char szPath[0x40];
++#endif
+ 
+     {
+         u32 nRemaining;
 diff --git a/src/overlays/field/ov023_event_script/Ov023_CmdResetStage.c b/src/overlays/field/ov023_event_script/Ov023_CmdResetStage.c
 index 8a6ecf100..082baa9de 100644
 --- a/src/overlays/field/ov023_event_script/Ov023_CmdResetStage.c
@@ -13426,6 +13444,25 @@ index 37140c8e0..5a0dd8d62 100644
      unsigned int mode = (*reg & 0x1f00) >> 8;
      *reg = (*reg & 0xffffe0ff) | ((mode | 0x10) << 8);
      G2x_SetBlendAlpha_((void *)((char *)reg + 0x50), 8, 0x21, 0xd, 3);
+diff --git a/src/overlays/field/ov023_event_script/Ov023_FormatIndex.c b/src/overlays/field/ov023_event_script/Ov023_FormatIndex.c
+index 82cc71366..5a44baf12 100644
+--- a/src/overlays/field/ov023_event_script/Ov023_FormatIndex.c
++++ b/src/overlays/field/ov023_event_script/Ov023_FormatIndex.c
+@@ -10,7 +10,14 @@ extern char gOv023Chair0Fmt[];
+ extern char gOv023ChairFmt[];
+ 
+ char *Ov023_FormatIndex(int index) {
++#ifdef PLATFORM_VITA
++    /* PLATFORM_VITA: static, not on the stack. GCC makes the dead stack buffer's address NULL
++     * (undefined behaviour, -Wreturn-local-addr), and Ov023_CmdSeatMembers' strcpy of it
++     * faulted: the crash on day 255 (0.8.4). The callers copy it at once, as on the DS. */
++    static char buf[0x40];
++#else
+     char buf[0x40];
++#endif
+     if (index + 1 < 10) {
+         OS_SPrintf(buf, gOv023Chair0Fmt, index + 1);
+     } else {
 diff --git a/src/overlays/field/ov023_event_script/Ov023_OpenDialog.c b/src/overlays/field/ov023_event_script/Ov023_OpenDialog.c
 index 34a4dce8e..928462399 100644
 --- a/src/overlays/field/ov023_event_script/Ov023_OpenDialog.c

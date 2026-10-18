@@ -420,6 +420,17 @@ int kh_gpu3d_scale_quarters(void)
     return s_scale;
 }
 
+void kh_gpu3d_drop_second_target(void)
+{
+    if (s_tgt_cur != 0 || !s_tgt_made[1])
+        return;
+    glDeleteFramebuffers(1, &s_tgt_fbo[1]);
+    glDeleteRenderbuffers(1, &s_tgt_depth[1]);
+    glDeleteTextures(1, &s_tgt_color[1]);
+    s_tgt_made[1] = 0;
+    LOG("gpu3d: second target given back");
+}
+
 void kh_gpu3d_select_target(int target)
 {
     target &= 1;

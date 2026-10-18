@@ -150,6 +150,9 @@ void video_set_capture_dual(int dual);
 /* The dual-3D cutscenes: each screen drawn from what it keeps (video.c), no copy made. On or
  * off drops what the screens keep. */
 void video_set_dual_keep(int on);
+/* The log's 10 s line: vitaGL's free video memory and RAM (textures past the video memory go
+ * to the slower RAM). */
+void video_log_memory(void);
 /* config single_screen, a scene (video_set_single_scene): the bottom screen shows something,
  * drawn in the middle over the top one, half see-through (1), or not (0). */
 void video_set_scene_bottom(int on);

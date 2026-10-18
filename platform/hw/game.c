@@ -734,14 +734,21 @@ static void present(void)
     {
         /* a new dual-3D scene: the screen memories are the last scene's */
         static int was_dual;
-        static uint32_t dual_vb = 0x80000000u;
+        static uint32_t dual_vb = 0x80000000u, keep_vb = 0x80000000u;
         if (dual && !was_dual)
             video_forget_screen_memory();
         was_dual = dual;
-        /* the smaller copies until 2 s without a toggle: a pause in the scene keeps them */
-        if (dual)
+        /* a fight's smaller copies until 2 s without a toggle: a pause in it keeps them (the
+         * cutscenes make none, video_set_dual_keep) */
+        if (dual_field)
             dual_vb = s_vblanks;
         video_set_capture_dual(s_vblanks - dual_vb < 120);
+        /* the cutscenes' second 3D target given back 2 s after the last one (6 MB of video
+         * memory at 4x), made again by the next */
+        if (keep)
+            keep_vb = s_vblanks;
+        else if (s_vblanks - keep_vb == 120)
+            kh_gpu3d_drop_second_target();
     }
     /* the 2D drawn with the frame's own layers: the game changes engine A's visible layers
      * (and B's) with every screen it draws for */
@@ -1032,10 +1039,11 @@ static void present(void)
          * helper, on the game's core, can take a share of it while the game waits for its
          * next frame. At 30 fps too since 0.4.0: joined at once there, the display thread
          * waited about 4 ms a frame for it (0.1.27's log) */
-        /* dual 3D: joined at once, but with the spare helper too: the game core is free while
-         * the game waits for this toggle's 2D (kh_dual3d_toggled), and the 2D on two cores
-         * was most of a toggle (0.8.4's log: 11 ms of 22) */
-        if (f2d.neng && (dual || (!lock30 && !capture_gfx)))
+        /* a dual-3D cutscene: joined at once, but with the spare helper too: the game core is
+         * free while the game waits for this toggle's 2D (kh_dual3d_toggled), and the 2D on two
+         * cores was most of a toggle (0.8.4's log: 11 ms of 22). Not in the field's fights,
+         * where the game core has the fight to run. */
+        if (f2d.neng && (keep || (!dual && !lock30 && !capture_gfx)))
             workers_begin_spare(render_chunk, BANDS * f2d.neng, &f2d);
         else
             workers_begin(render_chunk, BANDS * f2d.neng, &f2d);
@@ -1977,6 +1985,7 @@ void kh_game_run(void)
             }
             kh_gx3d_take_stats(&gs);
             threadstat_log();
+            video_log_memory();
             {
                 /* the movie player's loop (Ov024_MobiClip_UpdatePlayback) and its waits */
                 extern volatile unsigned int kh_mobiclip_passes;
