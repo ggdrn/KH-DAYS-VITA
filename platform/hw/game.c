@@ -288,10 +288,6 @@ static volatile int s_fast_forward; /* L+R+Square */
 static void dump_2d(int a_on_top);
 static void dynamic_resolution(int late);
 static void dual_resolution(void);
-static void auto30_step(int late);
-/* config fps 60 shown at 30 for a while: the display could not keep up (auto30_step) */
-static int s_auto30;
-static uint32_t s_auto30_until, s_auto30_hold = 600;
 
 /* the last screen toggle of a dual-3D scene (kh_dual3d_toggled), with the display registers
  * as the game set them for that frame: read later, they were sometimes the next frame's */
@@ -720,11 +716,10 @@ static void present(void)
         movie_vb = s_vblanks;
     }
     const int movie = s_vblanks - movie_vb < 30;
-    if (s_auto30 && (int32_t)(s_vblanks - s_auto30_until) >= 0) {
-        s_auto30 = 0;
-        LOG("display: 60 fps tried again");
-    }
-    const int lock30 = (!kh_config.frame_interpolation || movie || s_auto30) &&
+    /* config fps 60 (experimental) runs as fast as the GPU lets it, 40 or 50 a second in a heavy
+     * fight: 0.7.43 to 0.8.4 dropped to a steady 30 for 10 s to a minute when it fell behind,
+     * and the player who chose 60 seldom saw more than 30 (0.8.4's logs) */
+    const int lock30 = (!kh_config.frame_interpolation || movie) &&
                        (!dual || (dual_field && !dual_top_only)) && !portmenu_is_open();
     /* config confirm_cross (input.c): the fonts' A and B drawn to match */
     kh_button_glyphs_menu(kh_config.confirm_cross);
@@ -1300,7 +1295,6 @@ static void present(void)
             }
             if (last_vc && !gpu_probe && kh_config.debug != 3 && !after_dual) {
                 dynamic_resolution(vc - last_vc >= 2);
-                auto30_step(vc - last_vc >= 2);
             }
             last_vc = vc;
         } else if (dual && kh_config.debug != 3) {
@@ -1378,46 +1372,6 @@ static void dynamic_resolution(int late)
         }
     } else {
         calm = 0;
-    }
-    swaps = lates = 0;
-}
-
-/* 60 fps that the display cannot keep (a heavy fight at 4x, dynamic_res off or already at its
- * floor: 0.7.43's log, 97 of 590 swaps late, the display at some 50 a second): the frames mixed
- * in between then come unevenly, and the game, still at its own 30 frames a second, looked slow
- * and jerky. Over two windows of 120 swaps in a row with more than 10% late, the display goes to
- * the steady 30 fps of the 30 fps mode (each game frame shown for two VBlanks) for 10 s, then
- * tries 60 again; each failed try doubles the wait (to a minute), a window on time at 60 takes it
- * back to 10 s. */
-static void auto30_step(int late)
-{
-    static uint32_t swaps, lates, bad;
-    const int top = kh_config.render_scale * 4, floor_q = top < 8 ? top : 8;
-    /* config fps_fallback 0 (the default since 0.8.4): never; the display as fast as the GPU
-     * lets it, 40 or 50 a second rather than 30 */
-    if (!kh_config.fps_fallback) {
-        swaps = lates = bad = 0;
-        s_auto30 = 0;
-        s_auto30_hold = 600;
-        return;
-    }
-    swaps++;
-    lates += (uint32_t)late;
-    if (swaps < 120)
-        return;
-    if (lates > 12 && (!kh_config.dynamic_res || kh_gpu3d_scale_quarters() <= floor_q)) {
-        if (++bad >= 2) {
-            s_auto30 = 1;
-            s_auto30_until = s_vblanks + s_auto30_hold;
-            LOG("display: 60 fps behind (%u of 120 swaps late): steady 30 fps for %u s",
-                (unsigned)lates, (unsigned)(s_auto30_hold / 60));
-            s_auto30_hold = s_auto30_hold * 2 > 3600 ? 3600 : s_auto30_hold * 2;
-            bad = 0;
-        }
-    } else {
-        bad = 0;
-        if (lates <= 2)
-            s_auto30_hold = 600;
     }
     swaps = lates = 0;
 }
