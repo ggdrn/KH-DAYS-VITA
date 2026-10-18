@@ -22,6 +22,11 @@ void kh_gpu3d_forget_previous(void);
 /* Each frame drawn as it comes, nothing held back for the 60 fps mix (the display loop sets it
  * while the screens trade places frame by frame). */
 extern volatile int kh_gpu3d_direct;
+/* The target the next frames are drawn into, 0 or 1 (the display thread, before
+ * kh_gpu3d_prepare): the dual-3D cutscenes keep each screen's 3D in its own, shown again
+ * while the other screen gets the next frame (game.c). 0 otherwise; 1 is made when first
+ * chosen, at the size drawn then. */
+void kh_gpu3d_select_target(int target);
 
 /* The single screen's field HUD (hw/fieldhud.c, khdays-port's `shape3d hud`): the
  * frame's flat polygons (KhGxPolygon flat: the HUD's 3D pieces) wholly inside the DS rectangle

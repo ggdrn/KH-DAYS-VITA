@@ -617,6 +617,54 @@ static void shape_init(void)
     glGenBuffers(1, &s_shape_vbo);
 }
 
+/* The dual-3D cutscenes (video_set_dual_keep): each screen keeps the last picture engine A gave
+ * it -- its 2D (the screen's last upload), its 3D (its own gpu3d target) and the composition's
+ * settings -- and is drawn from them like a live screen, both screens the same way at every
+ * toggle. Until 0.8.4 the screen engine A had left showed a copy of its picture made on the
+ * GPU at each toggle: some 50 ms of GPU each at 4x (22 at 1x), the scene at 18 toggles a
+ * second of the DS's 60 and the 3D held at 1.5x; and the screens went from live to copy and
+ * back, the dialogue box shaking. */
+typedef struct {
+    int valid;
+    GLuint tex3d;
+    uint16_t bright, bldalpha, backdrop;
+    float hofs;
+    float hud; /* s_hud_scale for it: each screen its own (a widescreen top, a 4:3 bottom) */
+} KeptScreen;
+static KeptScreen s_keep[2];
+static int s_keep_on;
+
+void video_set_dual_keep(int on)
+{
+    on = on != 0;
+    if (on != s_keep_on)
+        memset(s_keep, 0, sizeof(s_keep));
+    s_keep_on = on;
+}
+
+void video_keep_screen(int screen, unsigned tex3d, uint16_t master_bright, int hofs,
+                       uint16_t bldalpha, uint16_t backdrop)
+{
+    KeptScreen *k = &s_keep[screen & 1];
+    k->valid = 1;
+    k->tex3d = tex3d;
+    k->bright = master_bright;
+    k->hofs = (float)hofs / 256.0f;
+    k->bldalpha = bldalpha;
+    k->backdrop = backdrop;
+    k->hud = s_hud_scale;
+}
+
+void video_keep_drop(int screen)
+{
+    s_keep[screen & 1].valid = 0;
+}
+
+int video_kept(int screen)
+{
+    return s_keep_on && s_keep[screen & 1].valid;
+}
+
 void video_set_3d(int screen, unsigned tex, uint16_t master_bright, int hofs, uint16_t bldalpha,
                   uint16_t backdrop)
 {
@@ -729,8 +777,20 @@ static void screen_quad(int screen, float *v)
     memcpy(v, q, sizeof(q));
 }
 
+static int s_scene, s_select; /* (below, with the single screen) */
+/* config single_screen in a scene (s_scene): the bottom screen while it shows something (a
+ * scene of its own: Sora, a video), in the middle of the display over the widescreen top one,
+ * 70 % of the display's height and half see-through; faded in and out over some 8 frames
+ * (s_scene_level, 0 to 1). game.c says when. */
+static int s_scene_bottom;
+static float s_scene_level;
+#define SCENE_BOTTOM_H (DISPLAY_H * 70 / 100)
+#define SCENE_BOTTOM_OPACITY 0.5f
+
 static float screen_alpha(int screen)
 {
+    if (screen == 1 && s_scene && !s_select)
+        return SCENE_BOTTOM_OPACITY * s_scene_level;
     return screen == s_inset ? (float)kh_config.inset_opacity / 100.0f : 1.0f;
 }
 
@@ -760,6 +820,20 @@ void video_set_hud_shrink(int on)
     s_hud_shrink = on != 0;
 }
 
+static int s_single; /* (below) */
+
+/* A notice's box (DS pixels) whose middle falls in a hole of the single screen's field HUD: a
+ * piece there draws it already */
+static int note_in_hole(const int *bx)
+{
+    const float x = (bx[0] + bx[2]) * 0.5f / DS_SCREEN_W, y = (bx[1] + bx[3]) * 0.5f / DS_SCREEN_H;
+    int h;
+    for (h = 0; h < VIDEO_HOLES; h++)
+        if (x >= s_holes[h][0] && x < s_holes[h][2] && y >= s_holes[h][1] && y < s_holes[h][3])
+            return 1;
+    return 0;
+}
+
 static void draw_composed(int screen)
 {
     float v[16];
@@ -784,6 +858,9 @@ static void draw_composed(int screen)
                 break;
             if ((b & 3) == 0 && s_hearts_moved)
                 continue; /* the hearts' corner: a field HUD piece now */
+            if (b >= 4 && s_single && s_npieces && note_in_hole(bx))
+                continue; /* a notice a field HUD piece already shows (the hearts' corner takes
+                           * the item obtained: 0.8.3 showed it there and again at the edge) */
             if (q[2] <= q[0] || bx[2] <= bx[0] || bx[3] <= bx[1])
                 continue;
             /* the corner shrunk to its own edges, then only the box the HUD fills in it */
@@ -837,12 +914,32 @@ static GLuint new_texture(int w, int h, GLint filter)
     return t;
 }
 
-static void capture_init(void)
+/* a dual-3D scene running (video_set_capture_dual) */
+static int s_cap_dual;
+
+/* The copies' size, in quarters of the DS's: render_scale, but at most 2x in the dual-3D
+ * scenes, where every toggle makes one (engine A's picture kept for its screen) and the 3D
+ * itself runs at 1.5x to 2.5x (game.c dual_resolution). At 4x (1024x768) each copy cost the
+ * GPU some 50 ms, the scene ran at 18 toggles a second of the DS's 60; at 1x, 22 ms and 40
+ * toggles, as many as with no copy at all (0.8.4's tests). */
+static int capture_quarters(void)
 {
-    static const uint32_t clear = 0;
+    const int q = kh_config.render_scale * 4;
+    /* 2x, not 1.5x: a whole number of copy pixels to the DS pixel, the 2D (dialogue text) not
+     * resampled unevenly */
+    return s_cap_dual && q > 8 ? 8 : q;
+}
+
+void video_set_capture_dual(int dual)
+{
+    s_cap_dual = dual;
+}
+
+static void capture_targets(void)
+{
     int i;
-    s_cap_w = DS_SCREEN_W * kh_config.render_scale;
-    s_cap_h = DS_SCREEN_H * kh_config.render_scale;
+    s_cap_w = DS_SCREEN_W * capture_quarters() / 4;
+    s_cap_h = DS_SCREEN_H * capture_quarters() / 4;
     for (i = 0; i < 7; i++) {
         s_cap_tex[i] = new_texture(s_cap_w, s_cap_h, GL_LINEAR);
         glGenFramebuffers(1, &s_cap_fbo[i]);
@@ -850,6 +947,29 @@ static void capture_init(void)
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s_cap_tex[i], 0);
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+/* a dual-3D scene starting or ending: the copies made again at their new size, every one held dropped (a dual-3D scene
+ * drops its screen memories as it starts anyway) */
+static void capture_check_size(void)
+{
+    int i;
+    if (!s_cap_w || s_cap_w == DS_SCREEN_W * capture_quarters() / 4)
+        return;
+    glDeleteFramebuffers(7, s_cap_fbo);
+    glDeleteTextures(7, s_cap_tex);
+    for (i = 0; i < 6; i++)
+        s_bank_valid[i] = 0;
+    for (i = 0; i < 2; i++)
+        s_show_bank[i] = -1;
+    capture_targets();
+    LOG("video: screen copies now %dx%d", s_cap_w, s_cap_h);
+}
+
+static void capture_init(void)
+{
+    static const uint32_t clear = 0;
+    capture_targets();
     s_cap_gfx = new_texture(DS_SCREEN_W, DS_SCREEN_H, GL_NEAREST);
     s_cap_srcb = new_texture(DS_SCREEN_W, DS_SCREEN_H, GL_NEAREST);
     s_clear_tex = new_texture(1, 1, GL_NEAREST);
@@ -941,7 +1061,7 @@ static int s_menus_layout = -1; /* 2: the menu over the picture */
  * screen stays black (a dialogue) with the top screen alone over the display (s_scene), and
  * the world / mission selection with the top screen over the display and the bottom one (the
  * list) beside the world, on the right (s_select) */
-static int s_scene, s_select;
+/* (s_scene, s_select, s_scene_bottom, s_scene_level: declared above screen_alpha) */
 #define SELECT_W 320
 #define SELECT_H 240
 #define SELECT_MARGIN 16
@@ -969,11 +1089,24 @@ void video_set_panel_visibility(int i, float vis)
 static ScreenRect panel_rect(const int *p);
 static int piece_map(int px, int py, int *x, int *y);
 
+/* panels placed by the single screen's field HUD (video_set_panel_place): w 0 none */
+static ScreenRect s_panel_place[KH_PANELS];
+
+void video_set_panel_place(int i, const ScreenRect *r)
+{
+    if (i < 0 || i >= KH_PANELS)
+        return;
+    if (r)
+        s_panel_place[i] = *r;
+    else
+        s_panel_place[i].w = s_panel_place[i].h = 0;
+}
+
 /* where panel i is now: an autohide one slides in from the edge it is anchored to */
 static ScreenRect panel_rect_now(int i)
 {
     const int *p = kh_config.panel[i];
-    ScreenRect r = panel_rect(p);
+    ScreenRect r = s_panel_place[i].w > 0 && s_panel_place[i].h > 0 ? s_panel_place[i] : panel_rect(p);
     if (p[KH_PANEL_AUTOHIDE]) {
         const float t = s_panel_vis[i], e = t * t * (3.0f - 2.0f * t); /* eased */
         const int bottom = p[KH_PANEL_ANCHOR] == KH_PANEL_BOTTOM_LEFT ||
@@ -1058,9 +1191,36 @@ static void compute_layout(void)
         s_rect[1] = s_single ? (ScreenRect){ 0, 0, DISPLAY_W, DISPLAY_H }
                     : s_select ? (ScreenRect){ DISPLAY_W - SELECT_W - SELECT_MARGIN,
                                                (DISPLAY_H - SELECT_H) / 2, SELECT_W, SELECT_H }
-                               : (ScreenRect){ 0, 0, 0, 0 };
+                    : (s_scene_bottom || s_scene_level > 0.0f)
+                        ? (ScreenRect){ (DISPLAY_W - SCENE_BOTTOM_H * 4 / 3) / 2,
+                                        (DISPLAY_H - SCENE_BOTTOM_H) / 2, SCENE_BOTTOM_H * 4 / 3,
+                                        SCENE_BOTTOM_H }
+                        : (ScreenRect){ 0, 0, 0, 0 };
         s_inset = -1;
     }
+}
+
+void video_set_scene_bottom(int on)
+{
+    on = on != 0;
+    if (on == s_scene_bottom)
+        return;
+    s_scene_bottom = on;
+    LOG("video: single screen scene, the bottom screen %s", on ? "over it" : "gone");
+    compute_layout();
+}
+
+/* s_scene_level a step towards s_scene_bottom, once a display frame */
+static void scene_bottom_step(void)
+{
+    const float target = s_scene && s_scene_bottom ? 1.0f : 0.0f;
+    const float was = s_scene_level;
+    if (s_scene_level < target)
+        s_scene_level = s_scene_level + 0.125f > target ? target : s_scene_level + 0.125f;
+    else if (s_scene_level > target)
+        s_scene_level = s_scene_level - 0.125f < target ? target : s_scene_level - 0.125f;
+    if (was > 0.0f && s_scene_level <= 0.0f)
+        compute_layout(); /* faded out: its rectangle goes */
 }
 
 void video_set_single_scene(int on)
@@ -1069,7 +1229,7 @@ void video_set_single_scene(int on)
     if (on == s_scene)
         return;
     s_scene = on;
-    LOG("video: single screen, %s", on ? "a scene's top screen alone (its bottom one black)"
+    LOG("video: single screen, %s", on ? "a scene: its top screen over the display"
                                        : "the scene's own layout back");
     compute_layout();
 }
@@ -1393,7 +1553,7 @@ static void draw_screen(int i)
             draw_panels();
         return;
     }
-    if (i == 1 && s_scene && !s_select)
+    if (i == 1 && s_scene && !s_select && s_scene_level <= 0.0f)
         return; /* a scene's black bottom screen: not shown */
     if (video_gpu_test & 2) {
         draw_quad(&s_rect[i]); /* the GPU test's plain screens */
@@ -1404,6 +1564,23 @@ static void draw_screen(int i)
         screen_quad(i, v);
         compose_pass(v, s_cap_tex[s_bank_slot[s_show_bank[i]]], 1, 0, s_show_bright[i], 0,
                      1.0f, screen_alpha(i), FILTER_LINEAR);
+    } else if (s_keep_on && s_keep[i].valid && s_compose) {
+        /* a dual-3D cutscene's screen, from what it keeps (video_keep_screen) */
+        const KeptScreen *k = &s_keep[i];
+        const GLuint tex = s_3d_tex;
+        const uint16_t bright = s_3d_bright, bldalpha = s_3d_bldalpha, backdrop = s_3d_backdrop;
+        const float hofs = s_3d_hofs, hud = s_hud_scale;
+        s_3d_tex = k->tex3d, s_3d_bright = k->bright, s_3d_bldalpha = k->bldalpha;
+        s_3d_backdrop = k->backdrop, s_3d_hofs = k->hofs, s_hud_scale = k->hud;
+        if (k->tex3d) {
+            draw_composed(i);
+        } else {
+            float v[16];
+            screen_quad(i, v);
+            compose_pass(v, s_tex_cur(i), 0, 0, 0, 0, 1.0f, screen_alpha(i), FILTER_2D);
+        }
+        s_3d_tex = tex, s_3d_bright = bright, s_3d_bldalpha = bldalpha;
+        s_3d_backdrop = backdrop, s_3d_hofs = hofs, s_hud_scale = hud;
     } else if (i == s_3d_screen) {
         draw_composed(i);
     } else if (s_compose) {
@@ -1581,6 +1758,7 @@ void video_set_swap_interval(int vblanks)
 
 void video_run_capture(const uint32_t *top, const uint32_t *bottom)
 {
+    capture_check_size();
     if (top)
         upload_screen(0, top);
     if (bottom)
@@ -1597,6 +1775,8 @@ void video_present(const uint32_t *top, const uint32_t *bottom)
 
     s_upload_us = 0;
     s_seg_at = sceKernelGetProcessTimeWide();
+    capture_check_size();
+    scene_bottom_step();
     if (s_pending >= 0) {
         s_layout = (ScreenLayout)s_pending;
         s_pending = -1;

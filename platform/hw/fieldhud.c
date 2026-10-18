@@ -1,5 +1,6 @@
 /* The single screen's field HUD (fieldhud.h). The pieces, their places and their effects are
  * khdays-port's [field] compositions (port_days.txt, MIT; measured there on missions 17 and 18),
+ * the mission's panel and the enemy's health left as the panels' single screen has them,
  * in its units: the picture is the display's height in 192 DS pixels, C of them across, a
  * length scaled by the HUD's factor (here config hud_size / 100). The states are its own
  * checks: the mission's panel by its edge's greys on the bottom screen, a mission's start and a
@@ -23,6 +24,14 @@ extern unsigned char data_0204c240;    /* the mission's kind: bit 1 a challenge 
 
 /* BGR555 from 8-bit channels */
 #define C555(r, g, b) ((uint16_t)(((r) >> 3) | ((g) >> 3) << 5 | ((b) >> 3) << 10))
+
+/* the hearts' top margin (khdays-port's 29, under its mission's panel; here the panel stays at
+ * the bottom), and the map's top (picture DS pixels, not scaled: the enemy's health above it is
+ * the game's own, 22 rows) */
+#define HEARTS_TOP 5.0f
+#define MAP_TOP 25.0f
+/* config panel 2: the target (its red tab) */
+#define TARGET_PANEL 2
 
 /* the picture: k display pixels a DS pixel, C DS pixels across from x0 */
 static float s_k, s_c, s_x0, s_f;
@@ -85,14 +94,15 @@ static int mission_panel(const uint32_t *lower)
 }
 
 /* The HUD's flat 3D (the hearts counter, its "CHAIN" and its timer: the screen-space polygons at
- * the top left) moved under the mission's panel, at the 2D pieces' scale: khdays-port's
- * `shape3d hud -64 -64 191.5 141 at top-left margin -37.666667 -13.666667 0 0 scale 0.666667` */
+ * the top left) moved with their 2D (HEARTS_TOP), at its scale: khdays-port's
+ * `shape3d hud -64 -64 191.5 141 at top-left margin -37.666667 -13.666667 0 0 scale 0.666667`,
+ * its 42.67 above the 2D's margin kept */
 static void hearts_3d(int on)
 {
     static const float src[4] = { -64.0f, -64.0f, 191.5f, 141.0f };
     const ScreenRect r = video_screen_rect(0);
     KhGpu3dHudPlace p;
-    const float s = 0.666667f * s_f, x = -37.666667f * s_f, y = -13.666667f * s_f;
+    const float s = 0.666667f * s_f, x = -37.666667f * s_f, y = (HEARTS_TOP - 42.666667f) * s_f;
     if (!on || r.w <= 0 || r.h <= 0) {
         kh_gpu3d_set_hud_place(NULL);
         return;
@@ -112,7 +122,7 @@ void kh_fieldhud_frame(int active, int paused, int dialog, const uint32_t *lower
     static int story_camp = 1;
     VideoPiece pieces[VIDEO_PIECES];
     float holes[VIDEO_HOLES][4];
-    int n = 0, nh = 0, start = -1, info_upper, challenge, hud, panel;
+    int n = 0, nh = 0, start = -1, info_upper, challenge, hud, map, target = 0;
     /* the last camp loaded: the story's (ov025) or Mission Mode's (ov008); a challenge's mark
      * is only the story's */
     if (kh_overlay_loaded(25))
@@ -121,6 +131,7 @@ void kh_fieldhud_frame(int active, int paused, int dialog, const uint32_t *lower
         story_camp = 0;
     if (!active) {
         video_set_field_hud(NULL, 0, NULL, 0, 0, 0);
+        video_set_panel_place(TARGET_PANEL, NULL);
         hearts_3d(0);
         return;
     }
@@ -141,54 +152,59 @@ void kh_fieldhud_frame(int active, int paused, int dialog, const uint32_t *lower
     dialog = dialog || start == 10;
     challenge = story_camp && (data_0204c240 & 2u);
     hud = !paused && !dialog && !info_upper;
-    panel = !dialog && !info_upper && !challenge && mission_panel(lower);
-    if (panel) {
-        /* the mission's panel (the bottom screen's 4,152-252,192) at the top left, the ground
-         * around its bevelled corners (36 36 36) not drawn, its black half seen through; its
-         * lower edge, cut by the DS's screen, is its upper edge turned over */
-        VideoPiece p = piece(1, 4, 152, 248, 40, AT_TOP_LEFT, 5, 5, 0, 0.5f, 0.5f);
-        p.keys[p.key_count++] = C555(36, 36, 36);
-        see(&p, C555(0, 0, 0), 0.65f);
-        pieces[n++] = p;
-        p = piece(1, 4, 152, 248, 4, AT_TOP_LEFT, 5, 25, 0, 0.5f, 0.5f);
-        p.mirror_y = 1;
-        p.keys[p.key_count++] = C555(36, 36, 36);
-        see(&p, C555(0, 0, 0), 0.65f);
-        pieces[n++] = p;
-    }
-    if (hud) {
-        /* the enemy's health at the top right, above the map */
-        pieces[n++] = piece(0, 163, 0, 93, 22, AT_TOP_RIGHT, 0, 5, 5, 0.666667f, 0.666667f);
-        holes[nh][0] = 163, holes[nh][1] = 0, holes[nh][2] = 256, holes[nh++][3] = 22;
-    }
-    if (panel) {
+    /* the map whenever the field shows it, a challenge's too (khdays-port leaves it out there) */
+    map = !dialog && !info_upper;
+    if (map) {
         /* the map, as Kingdom Hearts II has it: a 104 x 64 window of its box, its white ground not
          * drawn, its floor (239 239 247) seen through, fading at its edges; the panel's black
-         * stretched behind it, half seen through */
-        VideoPiece p = piece(1, 112, 64, 104, 64, AT_TOP_RIGHT, 0, 5, 5, 0.6f, 0.6f);
+         * stretched behind it, half seen through. Under the enemy's health, which the top screen
+         * keeps where the game draws it (its 22 rows; MAP_TOP at any HUD size) */
+        VideoPiece p = piece(1, 112, 64, 104, 64, AT_TOP_RIGHT, 0, MAP_TOP / s_f, 5, 0.6f, 0.6f);
         p.keys[p.key_count++] = C555(248, 248, 248);
         see(&p, C555(232, 232, 240), 0.55f);
         fade(&p, 4, 4, 4, 4);
         pieces[n++] = p;
-        p = piece(1, 186, 156, 2, 12, AT_TOP_RIGHT, 0, 3, 3, 33.2f, 3.533333f);
-        see(&p, C555(0, 0, 0), 0.5f);
-        fade(&p, 6, 6, 6, 6);
-        pieces[n++] = p;
+        {
+            /* the target (config panel 2: its frame black, shown while its red tab is up, as
+             * 0.4's single screen had it beside the old map), beside this map now: the map's
+             * height, its own proportions, to the map's left with the margin of the map's fade */
+            const float h = p.dst[3] - p.dst[1];
+            const int *t = kh_config.panel[TARGET_PANEL];
+            const float w = t[KH_PANEL_SH] > 0 ? h * (float)t[KH_PANEL_SW] / (float)t[KH_PANEL_SH] : 0.0f;
+            const float gap = 4.0f * s_f * s_k;
+            ScreenRect r;
+            r.x = (int)(p.dst[0] - gap - w + 0.5f);
+            r.y = (int)(p.dst[1] + 0.5f);
+            r.w = (int)(w + 0.5f);
+            r.h = (int)(h + 0.5f);
+            video_set_panel_place(TARGET_PANEL, &r);
+            target = r.w > 0 && t[KH_PANEL_SW] > 0;
+        }
+        /* the black behind it is the mission's panel's: only while the bottom screen shows it */
+        if (!challenge && mission_panel(lower)) {
+            p = piece(1, 186, 156, 2, 12, AT_TOP_RIGHT, 0, (MAP_TOP - 2.0f) / s_f, 3, 33.2f, 3.533333f);
+            see(&p, C555(0, 0, 0), 0.5f);
+            fade(&p, 6, 6, 6, 6);
+            pieces[n++] = p;
+        }
     }
     if (hud) {
-        /* the hearts' item notifications and timer (the 2D at the top left) under the panel */
-        pieces[n++] = piece(0, 0, 0, 108, 86, AT_TOP_LEFT, 0, 29, 0, 0.666667f, 0.666667f);
+        /* the hearts' item notifications and timer (the 2D at the top left), in the corner: the
+         * mission's panel stays the bottom one's (config panel 4) */
+        pieces[n++] = piece(0, 0, 0, 108, 86, AT_TOP_LEFT, 0, HEARTS_TOP, 0, 0.666667f, 0.666667f);
         holes[nh][0] = 0, holes[nh][1] = 0, holes[nh][2] = 108, holes[nh++][3] = 86;
-        /* the sigils and the death counter under the map */
-        pieces[n++] = piece(0, 163, 25, 93, 30, AT_TOP_RIGHT, 0, 47.333333f, 5, 0.666667f, 0.666667f);
-        holes[nh][0] = 163, holes[nh][1] = 25, holes[nh][2] = 256, holes[nh++][3] = 55;
+        /* (the rows under the enemy's health, khdays-port's sigils and death counter, stay where the
+         * game draws them: moved under the map, the enemy's maximum HP there went with them) */
         if (challenge) {
             /* a challenge's label (the top screen's rows 0-13) at the top, under the countdown */
             pieces[n++] = piece(0, 0, 0, 132, 14, AT_TOP, 0, 22, 0, 0.666667f, 0.666667f);
             holes[nh][0] = 0, holes[nh][1] = 0, holes[nh][2] = 132, holes[nh++][3] = 14;
         }
     }
-    /* the panels of the map (2), the target (3) and the mission's gauge (4) give way to these */
-    video_set_field_hud(pieces, n, (const float(*)[4])holes, nh, hud, 0xeu);
+    /* the config panel of the map (bit 1) gives way to this map; the target's (bit 2) is placed
+     * beside it, and off when no map is shown */
+    if (!target)
+        video_set_panel_place(TARGET_PANEL, NULL);
+    video_set_field_hud(pieces, n, (const float(*)[4])holes, nh, hud, target ? 0x2u : 0x6u);
     hearts_3d(hud);
 }

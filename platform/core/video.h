@@ -82,6 +82,9 @@ typedef struct {
 void video_set_field_hud(const VideoPiece *pieces, int count, const float holes[][4], int nholes,
                          int hearts_moved, unsigned panels_off);
 ScreenRect video_screen_rect(int screen);
+/* Config panel i drawn in r (display pixels) instead of its configured place, as the single
+ * screen's field HUD lays it out (the target beside the map); NULL: its own place again. */
+void video_set_panel_place(int i, const ScreenRect *r);
 /* Display pixel (960x544) -> DS touch-screen pixel; 0 when it is not on the touch screen. */
 int video_map_touch(int px, int py, int *x, int *y);
 /* The width/height of the display rectangle a screen (0 top, 1 bottom) is drawn into. */
@@ -142,6 +145,21 @@ void video_take_gpu_probe(uint32_t *avg_us, uint32_t *max_us);
 /* The screen memories (VIDEO_SCREEN_MEMORY) dropped, at the start of a dual-3D scene: they
  * held the last one's pictures (0.0.96 showed one for a frame); whether a screen has one. */
 void video_forget_screen_memory(void);
+/* A dual-3D scene runs (1) or not: the screen copies are made smaller in one (video.c). */
+void video_set_capture_dual(int dual);
+/* The dual-3D cutscenes: each screen drawn from what it keeps (video.c), no copy made. On or
+ * off drops what the screens keep. */
+void video_set_dual_keep(int on);
+/* config single_screen, a scene (video_set_single_scene): the bottom screen shows something,
+ * drawn in the middle over the top one, half see-through (1), or not (0). */
+void video_set_scene_bottom(int on);
+/* Engine A's screen this toggle: its 3D (0 for none), master brightness, BG0HOFS, BLDALPHA
+ * and backdrop colour kept with the 2D just uploaded for it. */
+void video_keep_screen(int screen, unsigned tex3d, uint16_t master_bright, int hofs,
+                       uint16_t bldalpha, uint16_t backdrop);
+void video_keep_drop(int screen);
+/* the screen draws from what it keeps */
+int video_kept(int screen);
 int video_screen_memory_valid(int screen);
 /* the master brightness a screen memory is shown with (VIDEO_SCREEN_MEMORY) */
 void video_screen_memory_bright(int screen, uint16_t master_bright);

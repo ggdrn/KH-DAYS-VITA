@@ -42,10 +42,18 @@ Branch `FEAT-1.0`, PR [ggdrn/KH-DAYS-VITA#10](https://github.com/ggdrn/KH-DAYS-V
   - Bloqueado enquanto ele está na IA (0.7.36).
   - A flag 44 (o pedido de Limit da IA, que dispensa segurar o botão) é limpa a cada troca. Antes, o Limit disparava sozinho ao voltar para o Roxas (0.7.38).
 - **Entrar numa zona nova com o parceiro:** o controle volta para o Roxas quando a entrada termina, porque os inimigos não apareciam (0.7.37). O log tem a linha `swap: zone X -> Y (Roxas in zone Z)`.
-- **Troca de posição do HUD (barra grande ↔ pequena): não implementada.**
-  - O jogo fixa slot, retrato e HP máximo de cada barra quando cria o HUD (`Ov002_CreateAndRestoreHud`, tabela `anSlotForId`).
-  - Trocar no meio da missão exige recriar o HUD, a mesma reconstrução em tempo real que travava antes.
-  - Redirecionar só o HP deixaria o rosto e o máximo errados.
+- **Troca de posição do HUD (barra grande ↔ pequena):** implementada na 0.8.3, sem recriar o HUD (ver abaixo).
+
+### 0.8.3: arma, itens/magias e HUD pré-carregados
+
+- **Arma:** a linha do parceiro com a arma do Roxas é montada junto com os atores da missão (`Ov022_BuildActionTable` → `kh_swap_prebuild_weapon`, só com a opção ligada). A troca só copia a linha pronta; antes ela lia o arquivo do cartucho no meio da luta. Sem linha pronta para aquele ator, cada um fica com a própria (log `swap: no prebuilt weapon`). Fora do controle, o parceiro volta à própria linha, a de quem entrou na missão sem arma do Roxas.
+- **Itens e magias do parceiro:** o parceiro controlado usa os do próprio registro, os mesmos que a IA dele já usa (animações e efeitos carregados).
+  - As magias já eram só as dele: o deck mostra apenas os slots da máscara do ator, com as cargas dele (`Ov022_UpdateCommandInput`).
+  - Os itens não: a lista do HUD é montada com o HUD, a partir do Roxas. Um item que o registro do parceiro não tem é descartado (`Ov022_TranslateCommandToAction`, log `swap: partner N holds no item K`).
+- **HUD:** ao criar o HUD (`Ov002_LoadPanelSlots` → `hud_prebuild`), o port copia de cada membro o retrato no formato da barra grande e no da pequena, e a paleta.
+  - A troca (`kh_hud_swap_show`, a cada quadro, chamada de `swap_tick`) troca os dois slots: retratos gravados no char do BG3, paletas pela fila de VRAM, HP máximo e HP redesenhados como na criação dos gauges, rótulos reimpressos e `anSlotForId` trocado. Com isso as chamadas de HP do jogo por id já vão para a barra certa.
+  - Se o jogo recriar o HUD (cena, pausa), ele volta ao layout original e a troca é refeita no quadro seguinte. Com o painel retido (`+0x1b0`), a troca espera.
+  - Log: `swap: HUD layouts prebuilt` e `swap: HUD: id X in the big gauge ...`.
 
 ## Desempenho
 
@@ -71,9 +79,16 @@ Branch `FEAT-1.0`, PR [ggdrn/KH-DAYS-VITA#10](https://github.com/ggdrn/KH-DAYS-V
    - O Limit continua utilizável segurando o botão, com e sem troca.
    - Os inimigos aparecem depois da volta automática ao entrar numa zona (0.7.37). Ver no log se o Roxas estava na mesma zona do parceiro (`Roxas in zone Z`); se não estava, a câmera pode voltar para trás.
    - O parceiro controlado consegue usar o próprio Limit.
+   - **0.8.3:** ao trocar, o retrato e o HP do parceiro vão para a barra grande e os do Roxas para a pequena; ao voltar, o contrário. Conferir também: HP baixo piscando na barra certa, dano no parceiro drenando a barra grande, pausa no meio da troca (o HUD deve voltar trocado), a primeira troca sem engasgo (a arma não é mais lida do cartucho) e um item que só o Roxas tem sendo recusado para o parceiro.
 3. **Diagnósticos a remover quando a troca estiver estável:**
    - `deck: actor ...` (`Ov022_UpdateCommandInput`).
    - `swap: commands held 3 s` (`Ov022_RefreshSlotRows`).
    - `swap pickup: ...`.
 4. **Engasgos do 2D (menores, até ~20 ms):** o ajudante do 2D divide o núcleo 2 com o áudio. Avaliar mudá-lo de núcleo se os engasgos persistirem com `debug = 0`.
 5. **Carregamentos:** os `hitch:` de 100 a 1100 ms aparecem em trocas de área e no começo das missões (leitura do cartucho e montagem da cena). Não fazem parte do ritmo normal, mas podem ser investigados à parte.
+
+## 0.8.4
+
+- **Aviso de item duplicado (tela única, `hud = 2`):** o "OBTAINED" aparecia na peça do canto dos corações (pequeno, no alto) e de novo na cópia "na borda" do `hud = 2` (grande, mais ao meio). A cópia na borda é pulada quando o aviso cai num buraco das peças do HUD (`video.c`, `note_in_hole`).
+- **Barra amarela do Limit:** são as células do HP até o limiar do Limit pintadas no estilo 3 (`Ov002_DrawGaugeTweenCell`, `+0x34`/`+0x38` do contexto dos gauges, armados por `Ov022_UpdateSubsystems` → `Ov002_SetScrollPosition`). A troca do HUD agora repinta a barra grande com esse pintor e solta o limiar para o jogo recalcular. Log de diagnóstico: `hud: Limit threshold X HP -> Y of 77 cells`. **Pendente:** confirmar no Vita se o amarelo aparece sem troca.
+- **Target ao lado do mapa novo (tela única):** o painel 2 da configuração (target, moldura preta, só com a aba vermelha) volta, colocado à esquerda do mapa novo do `fieldhud.c`, com a altura do mapa e as proporções dele (`video_set_panel_place`). Sem mapa na tela, ele fica desligado.

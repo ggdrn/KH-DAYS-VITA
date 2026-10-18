@@ -105,6 +105,11 @@ static Prog3d s_p3[2];
 static const Prog3d *s_cur3; /* the one in use while a frame is drawn */
 static uint32_t s_frame;
 static uint32_t s_last_serial;
+/* the two targets (kh_gpu3d_select_target): s_fbo, s_color, s_depth and s_last_serial are the
+ * chosen one's, the other one's kept here */
+static GLuint s_tgt_fbo[2], s_tgt_color[2], s_tgt_depth[2];
+static uint32_t s_tgt_serial[2];
+static int s_tgt_cur, s_tgt_made[2] = { 1, 0 };
 static KhGpu3dStats s_stats;
 volatile int kh_gpu3d_debug;
 volatile uint32_t kh_gpu3d_mixes;
@@ -415,6 +420,29 @@ int kh_gpu3d_scale_quarters(void)
     return s_scale;
 }
 
+void kh_gpu3d_select_target(int target)
+{
+    target &= 1;
+    if (target == s_tgt_cur || !s_prog)
+        return;
+    s_tgt_fbo[s_tgt_cur] = s_fbo;
+    s_tgt_color[s_tgt_cur] = s_color;
+    s_tgt_depth[s_tgt_cur] = s_depth;
+    s_tgt_serial[s_tgt_cur] = s_last_serial;
+    s_tgt_cur = target;
+    if (!s_tgt_made[target]) {
+        make_target();
+        s_tgt_made[target] = 1;
+        s_last_serial = 0;
+        LOG("gpu3d: second target, %dx%d", s_w, s_h);
+    } else {
+        s_fbo = s_tgt_fbo[target];
+        s_color = s_tgt_color[target];
+        s_depth = s_tgt_depth[target];
+        s_last_serial = s_tgt_serial[target];
+    }
+}
+
 void kh_gpu3d_reload_textures(void)
 {
     s_want_reload = 1;
@@ -426,6 +454,14 @@ static uint32_t s_batches_serial; /* below, with flush */
 static void apply_requests(void)
 {
     if (s_want_scale && s_want_scale != s_scale && s_prog) {
+        const int other = !s_tgt_cur;
+        if (s_tgt_made[other]) {
+            /* made again at the new size when next chosen */
+            glDeleteFramebuffers(1, &s_tgt_fbo[other]);
+            glDeleteRenderbuffers(1, &s_tgt_depth[other]);
+            glDeleteTextures(1, &s_tgt_color[other]);
+            s_tgt_made[other] = 0;
+        }
         glDeleteFramebuffers(1, &s_fbo);
         glDeleteRenderbuffers(1, &s_depth);
         glDeleteTextures(1, &s_color);
