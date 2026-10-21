@@ -658,10 +658,18 @@ static void present(void)
      * bottom screen then), and comes back after; a pause of the toggles under 2 s (the pause
      * menu) is the same fight */
     static uint32_t dual_field_since, dual_field_last = 0x80000000u;
+    /* A normal pause stops the battle's alternating 3D frames for longer than the
+     * two-second gap used to identify a new fight. Keep its age across that gap: otherwise
+     * resuming restarts the dual-screen hand-off and can leave the active view mostly black. */
+    static int dual_field_paused;
+    const int pause_open = PauseMenu_GetMode() != 0;
+    if (pause_open && (dual_field || s_vblanks - dual_field_last < 120))
+        dual_field_paused = 1;
     if (dual_field) {
-        if (s_vblanks - dual_field_last > 120)
+        if (s_vblanks - dual_field_last > 120 && !dual_field_paused)
             dual_field_since = s_vblanks;
         dual_field_last = s_vblanks;
+        dual_field_paused = 0;
     }
     const int dual_top_only = dual_field && kh_config.single_screen &&
                               s_vblanks - dual_field_since >= 600;

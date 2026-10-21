@@ -24670,3 +24670,28 @@ index 1a7489ad8..23d032670 100644
      0, 0, 8, 9, 0, 0, 8, 4,
  };
 +#endif
+diff --git a/src/engine/data/main_scene_table_0204252c.c b/src/engine/data/main_scene_table_0204252c.c
+index ba05e8e0e..ef63bedbc 100644
+--- a/src/engine/data/main_scene_table_0204252c.c
++++ b/src/engine/data/main_scene_table_0204252c.c
+@@ -22,7 +22,7 @@ extern void Boot_InitScene(void);   /* BootTask_Construct */
+ extern void func_02020974(void);
+ extern int data_0204c024;          /* the main heap arena */
+ extern int gOv000TitleSceneClass, gOv002FieldSceneClass, data_ov003_0204f8e4, gOv004CalendarSceneClass,
+-           gOv005MissionResultSceneClass, gOv006MissionSelectSceneClass, data_ov011_0205e8a0, data_ov006_02056220,
++           gOv005MissionResultSceneClass, gOv006MissionSelectSceneClass, data_ov011_0205e8a0, data_ov009_02056220,
+            gOv007MonologueSceneClass, gOv012OpeningSceneClass, gOv010ConnectionErrorSceneClass, gOv008MissionCampSceneClass;
+ 
+ /* Two words ov107 020c6624 reads. */
+@@ -49,7 +49,10 @@ SceneEntry gSceneTable[20] = {
+     { 5, &gOv005MissionResultSceneClass },      /* 6: mission results (ov005) */
+     { 6, &gOv006MissionSelectSceneClass },      /* 7: mission-mode character select (ov006) */
+     { 11, &data_ov011_0205e8a0 },     /* 8 */
+-    { 9, &data_ov006_02056220 },      /* 9: the descriptor at 0x02056220 inside ov009 (the delink names the address after ov006) */
++    /* Scene 9 loads ov009. Ov006 shares this DS address, but its host-side descriptor is a
++     * different object; using it made the post-credits save scene read an unrelated palette
++     * pointer as its arena and fault before it could write the cleared-game save. */
++    { 9, &data_ov009_02056220 },      /* 9: post-credits save scene */
+     { 7, &gOv007MonologueSceneClass },      /* 10: Roxas's monologue after the clock-tower scene (ov007) */
+     { 12, &gOv012OpeningSceneClass },     /* 11: opening movie (ov012) */
+     { 10, &gOv010ConnectionErrorSceneClass },     /* 12: the connection-error screen (ov010) */
