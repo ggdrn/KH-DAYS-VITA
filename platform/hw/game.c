@@ -886,11 +886,25 @@ static void present(void)
     static Frame2d f2d;
     static uint32_t seen_serial, serial_vb, drawn_vb, pending;
     static int last_a3d;
+    static int shortcut_l_was;
+    static unsigned shortcut_sync_frames;
     /* the 2D of a new game frame is drawn by the helpers over this Vita frame and the next,
      * and shown with the next one, where the new frame's 3D (after its halfway mix at 60 fps)
      * is shown too; it no longer has to fit in one frame with everything else */
     static int async_2d, async_top;
     int upload2d = 0, upload_mask = 0, capture_gfx = 0;
+
+    /* Opening the field shortcut changes the top HUD over several game writes.  Its 4:3
+     * composition otherwise leaves a 2D job running into the next display frame, where it
+     * can combine the old top rows with the new ones for one flash.  Finish a few pictures
+     * immediately after L's press; the normal asynchronous path resumes once it is stable. */
+    {
+        const int l_down = !(KH_IO16(0x04000130) & DS_KEY_L);
+        if (l_down && !shortcut_l_was && kh_config.aspect == KH_ASPECT_WIDE && kh_config.hud == 1 &&
+            kh_overlay_loaded(22))
+            shortcut_sync_frames = 3;
+        shortcut_l_was = l_down;
+    }
 
 
     if (async_2d) {
@@ -925,7 +939,8 @@ static void present(void)
         }
         /* dual 3D: the engines change screens with every toggle, so both are drawn each
          * time (a skipped one left the other engine's picture on its screen, 0.0.88) */
-        draw2d = dual || hud_changed || (pending && vb != serial_vb) || vb - drawn_vb >= 4;
+        draw2d = dual || hud_changed || shortcut_sync_frames || (pending && vb != serial_vb) ||
+                 vb - drawn_vb >= 4;
         if (draw2d) {
             pending = 0;
             drawn_vb = vb;
@@ -1046,14 +1061,15 @@ static void present(void)
          * free while the game waits for this toggle's 2D (kh_dual3d_toggled), and the 2D on two
          * cores was most of a toggle (0.8.4's log: 11 ms of 22). Not in the field's fights,
          * where the game core has the fight to run. */
-        if (f2d.neng && (keep || (!dual && !lock30 && !capture_gfx)))
+        if (f2d.neng && !shortcut_sync_frames && (keep || (!dual && !lock30 && !capture_gfx)))
             workers_begin_spare(render_chunk, BANDS * f2d.neng, &f2d);
         else
             workers_begin(render_chunk, BANDS * f2d.neng, &f2d);
         if (f2d.neng && !dual && !lock30 && !capture_gfx) {
-            async_2d = 1;
+            async_2d = !shortcut_sync_frames;
             async_top = a_on_top;
-            s_2d_async++;
+            if (async_2d)
+                s_2d_async++;
         }
         s_stage = "3d";
         {
@@ -1087,6 +1103,8 @@ static void present(void)
                 }
             }
         }
+        if (shortcut_sync_frames)
+            shortcut_sync_frames--;
     }
     /* which pixels are 3D: from the last 2D picture finished */
     a3d = last_a3d;

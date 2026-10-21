@@ -30,10 +30,15 @@ static Mtx s_proj, s_pos, s_vec, s_tex, s_clip;
 volatile float kh_gx3d_wide_x = 1.0f;
 volatile float kh_gx3d_wide_screen[2] = { 1.0f, 1.0f };
 volatile int kh_gx3d_dual;
+/* The display may flip POWCNT while the game is emitting a large model.  A geometry frame
+ * must use one projection throughout: mixing the factors for its two screens makes the
+ * polygons between consecutive vertices stretch (most visibly on Darkside's tentacles). */
+static float s_wide_frame = 1.0f;
+static int s_frame_a_top;
 
 static float wide_k(void)
 {
-    return kh_gx3d_dual ? kh_gx3d_wide_screen[(KH_IO16(0x04000304) >> 15) & 1] : kh_gx3d_wide_x;
+    return s_wide_frame;
 }
 
 /* a perspective projection (w taken from z): the field's camera, not a flat 2D-like layout */
@@ -651,6 +656,8 @@ static void vec_test(uint32_t p)
 
 static void frame_begin(void)
 {
+    s_frame_a_top = (KH_IO16(0x04000304) >> 15) & 1;
+    s_wide_frame = kh_gx3d_dual ? kh_gx3d_wide_screen[s_frame_a_top] : kh_gx3d_wide_x;
     s_f = &s_frames[s_build];
     s_f->nvtx = 0;
     s_f->npoly = 0;
@@ -695,7 +702,7 @@ static void swap_buffers(uint32_t param)
     int old;
     /* the DS's geometry engine takes nothing after a swap until the next VBlank: a game loop
      * that does not wait for the VBlank itself is paced by that */
-    f->built_a_top = (KH_IO16(0x04000304) >> 15) & 1;
+    f->built_a_top = s_frame_a_top;
     if (kh_gx3d_swap_wait)
         kh_gx3d_swap_wait();
     f->swap = param & 3;

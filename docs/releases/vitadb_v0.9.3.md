@@ -2,11 +2,13 @@
 khdays-vita
 
 # Version
-0.9.1
+0.9.3
 
 # Changelog (Only if update)
 - Fixed the post-credits save scene, restoring cleared-game saves, Theater Mode and Zero Gear unlocks
 - Fixed the mostly black display that could occur after resuming the final Riku battle
+- Fixed the brief corrupted top HUD flash when opening the shortcut with L in widescreen 4:3 HUD mode
+- Fixed Darkside's temporarily stretched geometry in Holo-Mission Two Keys in widescreen
 
 # Screenshots (Optional)
 -- Insert images here --
@@ -24,10 +26,10 @@ khdays-vita is a native port of Kingdom Hearts 358/2 Days (Nintendo DS) to the P
 Native PS Vita port of Kingdom Hearts 358/2 Days, built from its decompilation.
 
 # Download Link
-https://github.com/ggdrn/KH-DAYS-VITA/releases/download/v0.9.1/khdays-vita-0.9.1.vpk
+https://github.com/ggdrn/KH-DAYS-VITA/releases/download/v0.9.3/khdays-vita-0.9.3.vpk
 
 # Release Link
-https://github.com/ggdrn/KH-DAYS-VITA/releases/tag/v0.9.1
+https://github.com/ggdrn/KH-DAYS-VITA/releases/tag/v0.9.3
 
 # Sourcecode Link (Optional)
 https://github.com/ggdrn/KH-DAYS-VITA
