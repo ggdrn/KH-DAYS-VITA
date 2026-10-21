@@ -5,6 +5,7 @@
 #include "portmenu.h"
 
 #include "config.h"
+#include "log.h"
 #include "font8x8.h"
 #include "video.h"
 #include "nitro/overlay.h"
@@ -64,7 +65,7 @@ static const Item s_screen[] = {
     { IT_CORNER, 0, "Small screen corner", NULL },
     { IT_OPACITY, 0, "Small screen opacity", "See the game through the small screen." },
     { IT_HUDSIZE, 0, "HUD size", "Commands, HP, chain (and map, target) in the field." },
-    { IT_SINGLE, 0, "Single screen (beta)", "One screen: missions with panels; title menu over its picture." },
+    { IT_SINGLE, 0, "One screen", "OFF: the original two-screen layout." },
     { IT_PANELOP, 0, "Panel opacity", "Single screen: see the game through the panels." },
 };
 static const Item s_controls[] = {
@@ -204,7 +205,7 @@ static void value(const Item *it, char *out, size_t n)
     case IT_INSET: snprintf(out, n, "%d", kh_config.inset_width); break;
     case IT_CORNER: snprintf(out, n, "%s", corners[kh_config.inset_corner & 3]); break;
     case IT_OPACITY: snprintf(out, n, "%d%%", kh_config.inset_opacity); break;
-    case IT_SINGLE: snprintf(out, n, "%s", kh_config.single_screen ? "On" : "Off"); break;
+    case IT_SINGLE: snprintf(out, n, "%s", config_single_screen_name(kh_config.single_screen)); break;
     case IT_HUDSIZE: snprintf(out, n, "%d%%", kh_config.hud_size); break;
     case IT_PANELOP: snprintf(out, n, "%d%%", kh_config.panel_opacity); break;
     case IT_CAMERA: snprintf(out, n, "%s", kh_config.camera_stick ? "On" : "Off"); break;
@@ -301,7 +302,13 @@ static void change(const Item *it, int d)
     case IT_OPACITY:
         kh_config.inset_opacity = wrap(kh_config.inset_opacity, 50, 100, d * 25);
         break;
-    case IT_SINGLE: kh_config.single_screen ^= 1; break;
+    case IT_SINGLE: {
+        const int previous = kh_config.single_screen;
+        kh_config.single_screen = wrap(previous, KH_SINGLE_OFF, KH_SINGLE_DETAIL, d);
+        LOG("one-screen: requested %s -> %s (port menu open)",
+            config_single_screen_name(previous), config_single_screen_name(kh_config.single_screen));
+        break;
+    }
     case IT_HUDSIZE: kh_config.hud_size = wrap(kh_config.hud_size, 60, 100, d * 10); break;
     case IT_PANELOP:
         kh_config.panel_opacity = wrap(kh_config.panel_opacity, 50, 100, d * 10);
@@ -355,6 +362,7 @@ int portmenu_is_open(void)
 static void close_menu(void)
 {
     s_open = 0;
+    LOG("one-screen: port menu closed, requested=%s", config_single_screen_name(kh_config.single_screen));
     config_save();
 }
 
@@ -510,11 +518,19 @@ const uint32_t *portmenu_render(void)
         }
     }
 
-    fill(0, H - 34, W, H, C_BAR);
+    const int single_help = items[sel].kind == IT_SINGLE && !s_note[0];
+    fill(0, H - (single_help ? 50 : 34), W, H, C_BAR);
     if (s_note[0])
         text(8, H - 30, s_note, 0xff80ff80u);
     else if (items[sel].kind == IT_BUTTON)
         text(8, H - 30, "The Vita button that acts as this DS button.", C_HELP);
+    else if (single_help && kh_config.single_screen == KH_SINGLE_SIMPLE) {
+        text(8, H - 46, "Static panels, fewer 2D texture effects and filters.", C_HELP);
+        text(8, H - 30, "Lighter composition for better performance.", C_HELP);
+    } else if (single_help && kh_config.single_screen == KH_SINGLE_DETAIL) {
+        text(8, H - 46, "Detailed 2D filtering and effects for more immersion.", C_HELP);
+        text(8, H - 30, "Richer HUD composition; higher rendering cost.", C_HELP);
+    }
     else if (items[sel].help)
         text(8, H - 30, items[sel].help, C_HELP);
     text(8, H - 14, "L/R tab  Up/Down pick  Left/Right change  L+R+Select exit", C_HINT);

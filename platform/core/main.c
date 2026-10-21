@@ -154,6 +154,9 @@ int main(void)
     mark("log");
     /* the build's date too: test builds of one version share its name */
     LOG("khdays-vita %s (built %s %s)", KH_VERSION, __DATE__, __TIME__);
+    LOG("power: clocks MHz CPU=%d GPU=%d BUS=%d XBAR=%d (requested 444/222/222/166)",
+        scePowerGetArmClockFrequency(), scePowerGetGpuClockFrequency(),
+        scePowerGetBusClockFrequency(), scePowerGetGpuXbarClockFrequency());
     sceKernelGetFreeMemorySize(&mem);
     LOG("memory free: user %u KiB, cdram %u KiB, phycont %u KiB", (unsigned)(mem.size_user >> 10),
         (unsigned)(mem.size_cdram >> 10), (unsigned)(mem.size_phycont >> 10));

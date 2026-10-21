@@ -24695,3 +24695,40 @@ index ba05e8e0e..ef63bedbc 100644
      { 7, &gOv007MonologueSceneClass },      /* 10: Roxas's monologue after the clock-tower scene (ov007) */
      { 12, &gOv012OpeningSceneClass },     /* 11: opening movie (ov012) */
      { 10, &gOv010ConnectionErrorSceneClass },     /* 12: the connection-error screen (ov010) */
+diff --git a/src/overlays/scenes/ov009_camp_save/Ov009_ClassCtor.c b/src/overlays/scenes/ov009_camp_save/Ov009_ClassCtor.c
+index ddd6b096d..ed3ac3bb2 100644
+--- a/src/overlays/scenes/ov009_camp_save/Ov009_ClassCtor.c
++++ b/src/overlays/scenes/ov009_camp_save/Ov009_ClassCtor.c
+@@ -2,6 +2,11 @@
+ 
+ typedef void (*Ov009Callback)(void);
+ 
++#ifdef PLATFORM_VITA
++extern void log_printf(const char *fmt, ...);
++extern void log_flush(void);
++#endif
++
+ extern void *data_ov009_020563e0;
+ extern void *NNSi_FndGetCurrentRootHeap(void);
+ extern void Ov009_Menu_Init(int mode);
+@@ -10,8 +15,20 @@ extern void Ov009_WaitCommitPage(void);
+ 
+ Ov009Callback Ov009_ClassCtor(void)
+ {
++#ifdef PLATFORM_VITA
++    log_printf("ending: ov009 save scene constructor entered");
++    log_flush();
++#endif
+     data_ov009_020563e0 = NNSi_FndGetCurrentRootHeap();
+     Ov009_Menu_Init(0);
++#ifdef PLATFORM_VITA
++    log_printf("ending: save menu initialized; updating completion milestones");
++    log_flush();
++#endif
+     Ov009_UpdateCompletionMilestones();
++#ifdef PLATFORM_VITA
++    log_printf("ending: completion milestones updated; waiting for save page");
++    log_flush();
++#endif
+     return Ov009_WaitCommitPage;
+ }

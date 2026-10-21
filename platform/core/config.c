@@ -182,7 +182,7 @@ void config_save(void)
                "# display, parts of the bottom screen as panels over it (touch a panel to touch\n"
                "# the DS screen there); before the game, the bottom screen (the title's menu)\n"
                "# on the left over your own picture, ux0:data/khdays/menu_bg.png\n"
-               "# (or .jpg; none comes with the port). single_screen 0 off, 1 on;\n"
+               "# (or .jpg; none comes with the port). single_screen 0 OFF, 1 SIMPLE, 2 DETAIL;\n"
                "# panel_opacity 50 to 100.\n"
                "single_screen = %d\npanel_opacity = %d\n", kh_config.single_screen,
             kh_config.panel_opacity);
@@ -300,7 +300,7 @@ static void set(const char *k, const char *v, int version)
     else if (!strcmp(k, "swap_roxas_magic"))
         kh_config.swap_roxas_magic = atoi(v) != 0;
     else if (!strcmp(k, "single_screen"))
-        kh_config.single_screen = atoi(v) != 0;
+        kh_config.single_screen = clampi(atoi(v), KH_SINGLE_OFF, KH_SINGLE_DETAIL);
     else if (!strcmp(k, "panel_opacity"))
         kh_config.panel_opacity = clampi(atoi(v), 50, 100);
     else if (!strncmp(k, "panel_", 6) && k[6] >= '1' && k[6] < '1' + KH_PANELS && !k[7]) {

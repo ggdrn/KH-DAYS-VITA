@@ -24,6 +24,7 @@ absolute; 0.0.10's OSi_CurrentThreadPtr). Define such names as labels or `.set` 
 """
 import os
 import re
+import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -31,6 +32,38 @@ from pathlib import Path
 BIN = Path(os.environ.get("VITASDK", Path.home() / "vitasdk")) / "bin"
 # named after their DS address: the object itself, placed by its module's layout
 DS_NAMED = re.compile(r"^data_(?:ov\d+_)?[0-9a-f]{8}$")
+
+
+def check_ending_scene(elf, syms):
+    """Check actual linked pointers, not just the source's overlay-address names."""
+    symbols = {p[2]: int(p[0], 16) for p in (line.split() for line in syms.splitlines())
+               if len(p) == 3}
+    if "gSceneTable" not in symbols:
+        return 0  # hardware-only build
+    data = Path(elf).read_bytes()
+    if data[:6] != b"\x7fELF\x01\x01":
+        raise ValueError("expected a little-endian ELF32")
+    phoff = struct.unpack_from("<I", data, 28)[0]
+    phsize, phnum = struct.unpack_from("<HH", data, 42)
+
+    def words(address, count):
+        for i in range(phnum):
+            kind, offset, va, _, size = struct.unpack_from("<IIIII", data, phoff + i * phsize)
+            if kind == 1 and va <= address and address + count * 4 <= va + size:
+                return struct.unpack_from("<" + "I" * count, data, offset + address - va)
+        raise ValueError("ending scene data is outside file-backed LOAD segments")
+
+    expected = symbols["data_ov009_02056220"]
+    if words(symbols["gSceneTable"] + 9 * 8, 2) != (9, expected):
+        print("check_elf: post-credits scene 9 must reference ov009's descriptor", file=sys.stderr)
+        return 1
+    _, ctor, method, size, arena = words(expected, 5)
+    if (ctor, method, size, arena) != (symbols["Ov009_ClassCtor"],
+                                      symbols["Ov009_SaveSceneTeardown"], 4, 0):
+        print("check_elf: invalid ov009 save scene constructor/descriptor", file=sys.stderr)
+        return 1
+    print("check_elf: post-credits scene -> ov009 save constructor verified")
+    return 0
 
 
 def main():
@@ -55,6 +88,7 @@ def main():
         rc = 1
     syms = subprocess.run([str(BIN / "arm-vita-eabi-nm"), elf], capture_output=True, text=True,
                           check=True).stdout
+    rc |= check_ending_scene(elf, syms)
     loose = sorted(p[2] for p in (l.split() for l in syms.splitlines())
                    if len(p) == 3 and p[1] in "Vv" and not p[2].startswith("_Z")
                    and not DS_NAMED.match(p[2]))

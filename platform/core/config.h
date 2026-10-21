@@ -6,6 +6,12 @@
 
 #include <stdint.h>
 
+enum { KH_SINGLE_OFF, KH_SINGLE_SIMPLE, KH_SINGLE_DETAIL };
+static inline const char *config_single_screen_name(int mode)
+{
+    return mode == KH_SINGLE_DETAIL ? "DETAIL" : mode == KH_SINGLE_SIMPLE ? "SIMPLE" : "OFF";
+}
+
 /* the DS buttons a Vita button can be given to, in kh_config.button[] */
 enum { KH_BTN_A, KH_BTN_B, KH_BTN_X, KH_BTN_Y, KH_BTN_L, KH_BTN_R, KH_BTN_START, KH_BTN_SELECT,
        KH_BTN_COUNT };
@@ -66,8 +72,7 @@ typedef struct {
     int mission_balance; /* Mission Mode's enemies: 0 as the game has them (HP x3 and harder
                           * hits, made for four players, solo too), 1 as in the story (enemy HP, and
                           * damage taken as in the story, by the save's difficulty) */
-    int single_screen;  /* experimental: in missions, the top screen alone over the whole display,
-                         * with parts of the bottom screen as panels over it: 0 off, 1 on */
+    int single_screen;  /* KH_SINGLE_*: 0 off, 1 simple panels, 2 legacy composed field HUD */
     int panel_opacity;  /* those panels' opacity, 50-100 % */
     /* the panels: the DS bottom screen's rectangle (sx, sy, sw, sh), where it goes on the Vita
      * (anchor KH_PANEL_*, dx/dy in Vita pixels from that corner or edge), its size (scale, %

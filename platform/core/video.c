@@ -69,7 +69,7 @@ static GLuint s_compose, s_compose_vbo, s_overlay_prog;
 /* The composition shader in four builds, each with only what its passes use: the screens
  * (covering the whole display every frame), the screens with the HUD blocks masked, the panels
  * and HUD blocks, the display captures. One build with everything cost the GPU frames (0.1.8). */
-enum { PROG_SCREEN, PROG_PANEL, PROG_CAP, PROGS };
+enum { PROG_SCREEN, PROG_PANEL, PROG_CAP, PROG_SCREEN_PRO, PROGS };
 typedef struct {
     GLuint id;
     GLint vs, c2d, c3d, bright, hofs, blend, backdrop, prev, cap, flip, fx, filt, panel, panel_rect, hole[VIDEO_HOLES];
@@ -86,6 +86,7 @@ static int s_hud_shrink; /* the field's HUD corners are drawn smaller (gpu2d mar
 /* the panel being drawn (draw_panels): style, radius, width, height; its texture rectangle */
 static float s_panel[4], s_panel_rect[4];
 static float s_hud_scale = 1.0f; /* < 1: the 2D kept 4:3 over a widescreen 3D (config hud) */
+static float s_pause_dim;
 /* single screen in the field: khdays-port's HUD pieces over the top screen (video_set_field_hud),
  * the top screen's 2D left out where they come from (holes, normalised x0 y0 x1 y1), the
  * hearts' corner not drawn again smaller, config panels left out (a bit each) */
@@ -180,15 +181,19 @@ static const char s_compose_fs[] =
     "    float4 b = tex2D(u2d, v2d);\n"
     "    float4 t = tex2D(u3d, v3d);\n"
     "    if (v2d.x < 0.0 || v2d.x > 1.0)\n"
-    "        b = float4(0.0, 0.0, 0.0, 0.0);\n"
-    "    else if (uFilt.x > 0.5 && b.a > 0.999)\n"
-    "        b.rgb = smooth2d(u2d, v2d, uFilt);\n"
+    /* Outside the 4:3 HUD there is no 2D texel to carry BG0's brightness code.
+     * Recreate that code during pause; the centre already carries it and must not
+     * be darkened twice. uFx.w is zero for captures and panel passes. */
+    "        b = float4(0.0, 0.0, 0.0, uFx.w > 0.0 ? (128.0 + uFx.w) / 255.0 : 0.0);\n"
     /* the single screen's field HUD drawn elsewhere (uHole0-3, the 2D's own coordinates): its
      * 2D left out here, the 3D over the backdrop in its place */
-    "#ifndef PANEL\n"
-    "    if (inside(v2d, uHole0) + inside(v2d, uHole1) + inside(v2d, uHole2) + inside(v2d, uHole3) > 0.5)\n"
+    "#if !defined(PANEL) && !defined(SIMPLE_SCREEN)\n"
+    "    else if (inside(v2d, uHole0) + inside(v2d, uHole1) + inside(v2d, uHole2) + inside(v2d, uHole3) > 0.5)\n"
     "        b = float4(uBackdrop, 0.0);\n"
     "#endif\n"
+    /* Masked texels are discarded: do not pay for their four-tap smoothing first. */
+    "    else if (uFilt.x > 0.5 && b.a > 0.999)\n"
+    "        b.rgb = smooth2d(u2d, v2d, uFilt);\n"
     /* the HUD size's codes (gpu2d hud_codes): left out here, drawn again smaller in the
      * corners (a PANEL pass); the 3D over the backdrop in their place */
     "#ifndef PANEL\n"
@@ -424,7 +429,9 @@ unsigned video_build_program(const char *vs_src, const char *fs_src, const char 
 static void compose_init(void)
 {
     static const char *const attribs[] = { "aPos", "aUv" };
-    static const char *const defines[PROGS] = { "", "#define PANEL\n", "#define CAP\n" };
+    static const char *const defines[PROGS] = {
+        "#define SIMPLE_SCREEN\n", "#define PANEL\n", "#define CAP\n#define SIMPLE_SCREEN\n", ""
+    };
     int k;
     for (k = 0; k < PROGS; k++) {
         ComposeProg *g = &s_progs[k];
@@ -699,6 +706,7 @@ static void compose_pass(const float *v, GLuint tex2d, int flip2d, GLuint tex3d,
         f = 16;
     const ComposeProg *g = &s_progs[cap ? PROG_CAP
                                     : (s_panel[0] > 0.5f || s_panel[1] > 0.5f) ? PROG_PANEL
+                                    : s_holes_on ? PROG_SCREEN_PRO
                                     : PROG_SCREEN];
 /* a uniform the build leaves out (not used there) has no location */
 #define SET(loc, call) do { if ((loc) >= 0) call; } while (0)
@@ -720,7 +728,9 @@ static void compose_pass(const float *v, GLuint tex2d, int flip2d, GLuint tex3d,
     SET(g->c3d, glUniform1i(g->c3d, 1));
     SET(g->prev, glUniform1i(g->prev, 2));
     SET(g->vs, glUniform4f(g->vs, flip2d ? 1.0f : 0.0f, hud, s_3d_hofs, 0.0f));
-    SET(g->fx, glUniform4f(g->fx, cap ? 0.0f : (float)kh_config.screen_effect, hud, alpha, 0.0f));
+    SET(g->fx, glUniform4f(g->fx, cap ? 0.0f : (float)kh_config.screen_effect, hud, alpha,
+                           (g == &s_progs[PROG_SCREEN] || g == &s_progs[PROG_SCREEN_PRO]) &&
+                           tex3d && hud < 0.999f ? s_pause_dim : 0.0f));
     {
         int h;
         for (h = 0; h < VIDEO_HOLES; h++) {
@@ -900,6 +910,15 @@ static void draw_composed(int screen)
 void video_set_hud_scale(float scale)
 {
     s_hud_scale = scale;
+}
+
+void video_set_pause_dim(int paused, uint16_t bldcnt, uint16_t bldy)
+{
+    /* Mission and cutscene PauseMenu_Open select BG0 brightness decrease, 8/16.
+     * Follow the actual registers so resume and scene transitions clear it. */
+    const int strength = bldy & 31;
+    s_pause_dim = paused && (bldcnt & 0xc1) == 0xc1 ?
+                      (float)(strength > 16 ? 16 : strength) : 0.0f;
 }
 
 int video_hud_edges(void)
@@ -1350,11 +1369,16 @@ static void draw_menubg(void)
 
 void video_set_single_screen(int on)
 {
+    static int last_requested = -1;
     on = on != 0;
-    if (on == s_single)
+    if (on == s_single && last_requested == kh_config.single_screen)
         return;
+    last_requested = kh_config.single_screen;
     s_single = on;
     compute_layout();
+    LOG("video: one-screen active=%d requested=%s top=%dx%d layout=%d scale=%d filter2d=%d hud=%d/%d",
+        s_single, config_single_screen_name(kh_config.single_screen), s_rect[0].w, s_rect[0].h, s_layout,
+        kh_config.render_scale, kh_config.filter_2d, kh_config.hud, kh_config.hud_size);
 }
 
 int video_single_screen(void)
@@ -1509,7 +1533,6 @@ void video_init(void)
     s_layout = (ScreenLayout)(kh_config.layout % LAYOUT_COUNT);
     compute_layout();
     compose_init();
-    shape_init();
     capture_init();
     LOG("video: vitaGL up, layout %d", s_layout);
 }
@@ -1662,6 +1685,8 @@ static void draw_piece(const VideoPiece *pc)
     float v[24];
     int i;
     uint16_t bright;
+    if (!s_shape.id)
+        shape_init(); /* legacy pieces are not used by the panel-only field layout */
     if (!s_shape.id || x1 <= x0 || y1 <= y0)
         return;
     {

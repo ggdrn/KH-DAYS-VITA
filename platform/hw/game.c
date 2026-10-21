@@ -807,9 +807,10 @@ static void present(void)
      * the menu then */
     const int tutorial = single && ((KH_IO32(0x04001000) >> 8) & 0x1f) == 0x0c;
     video_set_tutorial(tutorial);
-    /* the field's HUD as khdays-port lays it out on one screen: the mission's panel, the hearts,
-     * the map, the enemy's health, the sigils and a challenge's label (hw/fieldhud.c) */
-    kh_fieldhud_frame(single && !tutorial, PauseMenu_GetMode() != 0, s_dialog_open, s_bottom);
+    /* DETAIL restores the legacy composition. Calling the inactive path also clears
+     * pieces, panel placement and flat-3D relocation when returning to Simple/OFF. */
+    kh_fieldhud_frame(single && !tutorial && kh_config.single_screen == KH_SINGLE_DETAIL,
+                      PauseMenu_GetMode() != 0, s_dialog_open, s_bottom);
     /* the field's HUD at config hud_size (engine A, with the 3D, on top in the field) */
     /* not while paused: the pause menu's buttons reach into the HP gauge's corner. The 2D
      * gives the HUD's own layers (BG1, BG3) in its corners codes of their own (gpu2d
@@ -1115,6 +1116,10 @@ static void present(void)
     raw3d = tex3d; /* for the capture, which sees the 3D layer whatever is displayed */
     if (!a3d)
         tex3d = 0;
+    /* PauseMenu_Open also handles cutscene Continue/Skip, without battle ov022.
+     * The blend registers guard the effect; do not restrict it to missions. */
+    video_set_pause_dim(PauseMenu_GetMode() != 0,
+                         KH_IO16(0x04000050), KH_IO16(0x04000054));
     video_set_3d(tex3d ? (a_on_top ? 0 : 1) : -1, tex3d, KH_IO16(0x0400006c),
                  /* BG0HOFS scrolls the 3D layer: 9 bits, signed */
                  (int)((int16_t)(KH_IO16(0x04000010) << 7) >> 7), KH_IO16(0x04000052),
