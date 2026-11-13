@@ -1260,7 +1260,14 @@ static unsigned draw_frame(const KhGxFrame *f, const KhGxVertex *vtx)
             }
             if (ps->tex) {
                 const KhGxVertex *a = &f->vtx[p->v[0]], *b = &f->vtx[p->v[1]], *c = &f->vtx[p->v[2]];
-                const float tw = 1.0f / ps->tex->sx + 0.05f, th = 1.0f / ps->tex->sy + 0.05f;
+                const float w = 1.0f / ps->tex->sx, h = 1.0f / ps->tex->sy;
+                /* Opaque repeating scenery commonly ends a polygon exactly at one texture
+                 * period.  That is a wrap on the DS: clamping it makes the last texel meet
+                 * the first texel of the next sky polygon and exposes a moving seam with
+                 * linear filtering.  Translucent/cut-out effects keep the old beyond-edge
+                 * test so their nominally repeating 0..w quads still clamp without a halo. */
+                const float tw = w + (ps->tex->opaque ? -0.05f : 0.05f);
+                const float th = h + (ps->tex->opaque ? -0.05f : 0.05f);
                 int k;
                 for (k = 0; k < p->count; k++) {
                     const KhGxVertex *v = &f->vtx[p->v[k]];

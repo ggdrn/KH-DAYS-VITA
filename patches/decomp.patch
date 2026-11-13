@@ -24732,3 +24732,193 @@ index ddd6b096d..ed3ac3bb2 100644
 +#endif
      return Ov009_WaitCommitPage;
  }
+diff --git a/src/overlays/scenes/ov000_title/Ov000_MatchRecipeAndApply.c b/src/overlays/scenes/ov000_title/Ov000_MatchRecipeAndApply.c
+index ec8806fef..ca0e49c84 100644
+--- a/src/overlays/scenes/ov000_title/Ov000_MatchRecipeAndApply.c
++++ b/src/overlays/scenes/ov000_title/Ov000_MatchRecipeAndApply.c
+@@ -151,11 +151,16 @@ int Ov000_MatchRecipeAndApply(Ov000PanelView *self, Ov000TallyEntry *groups, int
+     }
+     if (kind == 0 || kind == 0x13) {
+         self->comboFlag = Ov000_TagListHasFbAtLeast3(groups);
++#ifdef PLATFORM_VITA
++        /* Keep Zero Gear + 3 Ability Units in Roxas's dual-wield form in Story/Challenges. */
++        self->resultId = self->comboFlag != 0 ? 0 : entry->result;
++#else
+         if ((data_0204c240 & 4) != 0 || (data_0204c240 & 8) != 0) {
+             self->resultId = self->comboFlag != 0 ? 0 : entry->result;
+         } else {
+             self->resultId = self->comboFlag != 0 ? 0x27 : entry->result;
+         }
++#endif
+     } else {
+         self->comboFlag = 0;
+         self->resultId = entry->result;
+diff --git a/src/overlays/field/ov022_battle/Ov022_FillSelectorStates.c b/src/overlays/field/ov022_battle/Ov022_FillSelectorStates.c
+--- a/src/overlays/field/ov022_battle/Ov022_FillSelectorStates.c
++++ b/src/overlays/field/ov022_battle/Ov022_FillSelectorStates.c
+@@ -58,6 +58,9 @@ extern Ov022CameraRoot *NNSi_FndGetCurrentRootHeap(void);
+ extern int func_ov022_020882f8(void);
+ extern int Ov029_AcquireOverlaySlot(int index, int group);
+ extern int InstantiateClass(void *classData, int argument);
++#ifdef PLATFORM_VITA
++extern int Ov069_IsRoxasDualWieldEquipped(void);
++#endif
+
+ extern unsigned char data_02042a1d;
+ extern Ov022MetadataRecord data_0204c3d8[];
+@@ -91,6 +94,16 @@ void Ov022_FillSelectorStates(int *input)
+             int inputValue;
+             int inputValue4;
+
++#ifdef PLATFORM_VITA
++            /* Story and Challenge normally leave Roxas in group 0 even when the
++             * equipped Zero Gear recipe has three Ability Units.  Mission Mode
++             * represents the same form as player group 0x13 (ov049/068/087/104). */
++            if (index == 0 && special == 0 && Ov069_IsRoxasDualWieldEquipped()) {
++                special = 0x13;
++                KH_TRACE("ov022: promoting Roxas to dual-wield group 19");
++            }
++#endif
++
+             switch (special) {
+             case 0x14:
+                 special = 0;
+diff --git a/src/overlays/screens/ov069/Ov069_HasKind4MenuEntry.c b/src/overlays/screens/ov069/Ov069_HasKind4MenuEntry.c
+--- a/src/overlays/screens/ov069/Ov069_HasKind4MenuEntry.c
++++ b/src/overlays/screens/ov069/Ov069_HasKind4MenuEntry.c
+@@ -48,3 +48,30 @@ int Ov069_HasKind4MenuEntry(unsigned int min)
+     func_ov069_020ba244(ctx);
+     return found;
+ }
++
++#ifdef PLATFORM_VITA
++/* Rebuild the equipped panel grid with the game's own recipe evaluator and expose the
++ * Zero Gear + three Ability Units result to the field player selector.  Keeping this
++ * here avoids duplicating the panel-shape/recipe rules in ov022. */
++int Ov069_IsRoxasDualWieldEquipped(void)
++{
++    int enabled;
++    int list[3];
++    char *entries[3][0x28];
++    char ctx[0x100];
++
++    NNS_FndInitList(list, 0x28);
++    Ov069_InitRecordContext(ctx, 0);
++    Ov069_BuildMenuGrid(ctx, (void **)entries, list, (u16 *)(gGameState + 0xee0));
++    Ov069_RebuildViewAndCountCells(ctx, (void **)entries, list);
++
++    /* Ov069PanelView::comboFlag is at +0x2c.  MatchRecipeAndApply only sets it
++     * for the Roxas/Zero Gear dual-wield recipe and requires at least 3 tag-FB
++     * (Ability Unit) entries. */
++    enabled = *(int *)(ctx + 0x2c) != 0;
++
++    Ov069_ReleaseHandleGridAndList(ctx, (void **)entries, list);
++    func_ov069_020ba244(ctx);
++    return enabled;
++}
++#endif
+diff --git a/src/overlays/scenes/ov004_calendar/Ov004_MatchRecipeAndApply.c b/src/overlays/scenes/ov004_calendar/Ov004_MatchRecipeAndApply.c
+index 0a858e0bb..e21aa2e56 100644
+--- a/src/overlays/scenes/ov004_calendar/Ov004_MatchRecipeAndApply.c
++++ b/src/overlays/scenes/ov004_calendar/Ov004_MatchRecipeAndApply.c
+@@ -151,11 +151,16 @@ int Ov004_MatchRecipeAndApply(Ov000PanelView *self, Ov000TallyEntry *groups, int
+     }
+     if (kind == 0 || kind == 0x13) {
+         self->comboFlag = Ov004_TagListHasFbAtLeast3(groups);
++#ifdef PLATFORM_VITA
++        /* Keep Zero Gear + 3 Ability Units in Roxas's dual-wield form in Story/Challenges. */
++        self->resultId = self->comboFlag != 0 ? 0 : entry->result;
++#else
+         if ((data_0204c240 & 4) != 0 || (data_0204c240 & 8) != 0) {
+             self->resultId = self->comboFlag != 0 ? 0 : entry->result;
+         } else {
+             self->resultId = self->comboFlag != 0 ? 0x27 : entry->result;
+         }
++#endif
+     } else {
+         self->comboFlag = 0;
+         self->resultId = entry->result;
+diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_MatchRecipeAndApply.c b/src/overlays/scenes/ov005_mission_result/Ov005_MatchRecipeAndApply.c
+index 1a404a4a6..6dca01842 100644
+--- a/src/overlays/scenes/ov005_mission_result/Ov005_MatchRecipeAndApply.c
++++ b/src/overlays/scenes/ov005_mission_result/Ov005_MatchRecipeAndApply.c
+@@ -151,11 +151,16 @@ int Ov005_MatchRecipeAndApply(Ov000PanelView *self, Ov000TallyEntry *groups, int
+     }
+     if (kind == 0 || kind == 0x13) {
+         self->comboFlag = Ov005_TagListHasFbAtLeast3(groups);
++#ifdef PLATFORM_VITA
++        /* Keep Zero Gear + 3 Ability Units in Roxas's dual-wield form in Story/Challenges. */
++        self->resultId = self->comboFlag != 0 ? 0 : entry->result;
++#else
+         if ((data_0204c240 & 4) != 0 || (data_0204c240 & 8) != 0) {
+             self->resultId = self->comboFlag != 0 ? 0 : entry->result;
+         } else {
+             self->resultId = self->comboFlag != 0 ? 0x27 : entry->result;
+         }
++#endif
+     } else {
+         self->comboFlag = 0;
+         self->resultId = entry->result;
+diff --git a/src/overlays/scenes/ov009_camp_save/Ov009_MatchRecipeAndApply.c b/src/overlays/scenes/ov009_camp_save/Ov009_MatchRecipeAndApply.c
+index 20b3bf4b0..5da1da0bf 100644
+--- a/src/overlays/scenes/ov009_camp_save/Ov009_MatchRecipeAndApply.c
++++ b/src/overlays/scenes/ov009_camp_save/Ov009_MatchRecipeAndApply.c
+@@ -151,11 +151,16 @@ int Ov009_MatchRecipeAndApply(Ov000PanelView *self, Ov000TallyEntry *groups, int
+     }
+     if (kind == 0 || kind == 0x13) {
+         self->comboFlag = Ov009_TagListHasFbAtLeast3(groups);
++#ifdef PLATFORM_VITA
++        /* Keep Zero Gear + 3 Ability Units in Roxas's dual-wield form in Story/Challenges. */
++        self->resultId = self->comboFlag != 0 ? 0 : entry->result;
++#else
+         if ((data_0204c240 & 4) != 0 || (data_0204c240 & 8) != 0) {
+             self->resultId = self->comboFlag != 0 ? 0 : entry->result;
+         } else {
+             self->resultId = self->comboFlag != 0 ? 0x27 : entry->result;
+         }
++#endif
+     } else {
+         self->comboFlag = 0;
+         self->resultId = entry->result;
+diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_MatchRecipeAndApply.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_MatchRecipeAndApply.c
+index afbf2090b..e9bbd182d 100644
+--- a/src/overlays/screens/ov025_camp_menu_2/Ov025_MatchRecipeAndApply.c
++++ b/src/overlays/screens/ov025_camp_menu_2/Ov025_MatchRecipeAndApply.c
+@@ -151,11 +151,16 @@ int Ov025_MatchRecipeAndApply(Ov000PanelView *self, Ov000TallyEntry *groups, int
+     }
+     if (kind == 0 || kind == 0x13) {
+         self->comboFlag = Ov025_TagListHasFbAtLeast3(groups);
++#ifdef PLATFORM_VITA
++        /* Keep Zero Gear + 3 Ability Units in Roxas's dual-wield form in Story/Challenges. */
++        self->resultId = self->comboFlag != 0 ? 0 : entry->result;
++#else
+         if ((data_0204c240 & 4) != 0 || (data_0204c240 & 8) != 0) {
+             self->resultId = self->comboFlag != 0 ? 0 : entry->result;
+         } else {
+             self->resultId = self->comboFlag != 0 ? 0x27 : entry->result;
+         }
++#endif
+     } else {
+         self->comboFlag = 0;
+         self->resultId = entry->result;
+diff --git a/src/overlays/screens/ov069/Ov069_MatchRecipeAndApply.c b/src/overlays/screens/ov069/Ov069_MatchRecipeAndApply.c
+index 4e12c395e..28dd1844e 100644
+--- a/src/overlays/screens/ov069/Ov069_MatchRecipeAndApply.c
++++ b/src/overlays/screens/ov069/Ov069_MatchRecipeAndApply.c
+@@ -151,11 +151,16 @@ int Ov069_MatchRecipeAndApply(Ov000PanelView *self, Ov000TallyEntry *groups, int
+     }
+     if (kind == 0 || kind == 0x13) {
+         self->comboFlag = Ov069_TagListHasFbAtLeast3(groups);
++#ifdef PLATFORM_VITA
++        /* Keep Zero Gear + 3 Ability Units in Roxas's dual-wield form in Story/Challenges. */
++        self->resultId = self->comboFlag != 0 ? 0 : entry->result;
++#else
+         if ((data_0204c240 & 4) != 0 || (data_0204c240 & 8) != 0) {
+             self->resultId = self->comboFlag != 0 ? 0 : entry->result;
+         } else {
+             self->resultId = self->comboFlag != 0 ? 0x27 : entry->result;
+         }
++#endif
+     } else {
+         self->comboFlag = 0;
+         self->resultId = entry->result;

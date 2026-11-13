@@ -733,7 +733,15 @@ static void present(void)
     kh_button_glyphs_menu(kh_config.confirm_cross);
     video_set_swap_interval(lock30 ? 2 : 1);
     s_locked += (uint32_t)lock30;
-    kh_gpu3d_direct = dual || lock30;
+    /* Scripted scenes can cut to another camera and rebuild runs of one material in a
+     * different order from one game frame to the next.  Pairing the old and new runs for the
+     * optional 60 Hz clip-space mix crosses two unrelated cameras: w passes through zero and
+     * the composed picture flashes black; it can also join two body parts (mission 24's large
+     * duplicate Genie).  ov023 is the field event script, while video_single_scene covers
+     * one-screen scenes outside it.  Present those authored 30 Hz frames directly; gameplay
+     * keeps interpolation. */
+    const int scripted_scene = kh_overlay_loaded(23) || video_single_scene();
+    kh_gpu3d_direct = dual || lock30 || s_dialog_open || scripted_scene;
     {
         /* a new dual-3D scene: the screen memories are the last scene's */
         static int was_dual;
@@ -897,13 +905,18 @@ static void present(void)
 
     /* Opening the field shortcut changes the top HUD over several game writes.  Its 4:3
      * composition otherwise leaves a 2D job running into the next display frame, where it
-     * can combine the old top rows with the new ones for one flash.  Finish a few pictures
-     * immediately after L's press; the normal asynchronous path resumes once it is stable. */
+     * can combine the old top rows with the new ones.  At a reduced HUD size that mixed
+     * picture is visible for longer because the marked corner is drawn in another pass.
+     * Keep the 2D job synchronous for the whole L hold and for four settling pictures after
+     * release; a fixed three pictures after the initial press ended before every write. */
     {
         const int l_down = !(KH_IO16(0x04000130) & DS_KEY_L);
-        if (l_down && !shortcut_l_was && kh_config.aspect == KH_ASPECT_WIDE && kh_config.hud == 1 &&
-            kh_overlay_loaded(22))
-            shortcut_sync_frames = 3;
+        const int shortcut_4_3 = kh_config.aspect == KH_ASPECT_WIDE && kh_config.hud == 1 &&
+                                 kh_config.hud_size < 100 && kh_overlay_loaded(22);
+        if (shortcut_4_3 && l_down)
+            shortcut_sync_frames = 2; /* reset each display frame: never reaches zero held */
+        else if (shortcut_4_3 && shortcut_l_was && !l_down)
+            shortcut_sync_frames = 4;
         shortcut_l_was = l_down;
     }
 

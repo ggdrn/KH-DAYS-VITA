@@ -193,6 +193,12 @@ void kh_fieldhud_frame(int active, int paused, int dialog, const uint32_t *lower
          * mission's panel stays the bottom one's (config panel 4) */
         pieces[n++] = piece(0, 0, 0, 108, 86, AT_TOP_LEFT, 0, HEARTS_TOP, 0, 0.666667f, 0.666667f);
         holes[nh][0] = 0, holes[nh][1] = 0, holes[nh][2] = 108, holes[nh++][3] = 86;
+        /* The portal countdown and LOCKED ON share this strip.  It overlaps the hearts'
+         * source rectangle by 15 DS pixels, but is a separate HUD piece centred on screen.
+         * Without its own piece the hearts' coarse source hole removes that overlap from the
+         * base screen, cutting the first letters from LOCKED ON in the detailed layout. */
+        pieces[n++] = piece(0, 93, 0, 70, 20, AT_TOP, 0, 5, 0, 0.666667f, 0.666667f);
+        holes[nh][0] = 93, holes[nh][1] = 0, holes[nh][2] = 163, holes[nh++][3] = 20;
         /* (the rows under the enemy's health, khdays-port's sigils and death counter, stay where the
          * game draws them: moved under the map, the enemy's maximum HP there went with them) */
         if (challenge) {
