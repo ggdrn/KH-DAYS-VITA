@@ -10314,6 +10314,31 @@ index 937fb230a..7470a129b 100644
  #define FS_OVERLAY_ID_ov107 ((FSOverlayID)(u32) & (OVERLAY_107_ID))
  
  void UnloadActorOverlay(void) {
+diff --git a/src/engine/data/main_scene_table_0204252c.c b/src/engine/data/main_scene_table_0204252c.c
+index ba05e8e0e..ef63bedbc 100644
+--- a/src/engine/data/main_scene_table_0204252c.c
++++ b/src/engine/data/main_scene_table_0204252c.c
+@@ -22,7 +22,7 @@ extern void Boot_InitScene(void);   /* BootTask_Construct */
+ extern void func_02020974(void);
+ extern int data_0204c024;          /* the main heap arena */
+ extern int gOv000TitleSceneClass, gOv002FieldSceneClass, data_ov003_0204f8e4, gOv004CalendarSceneClass,
+-           gOv005MissionResultSceneClass, gOv006MissionSelectSceneClass, data_ov011_0205e8a0, data_ov006_02056220,
++           gOv005MissionResultSceneClass, gOv006MissionSelectSceneClass, data_ov011_0205e8a0, data_ov009_02056220,
+            gOv007MonologueSceneClass, gOv012OpeningSceneClass, gOv010ConnectionErrorSceneClass, gOv008MissionCampSceneClass;
+ 
+ /* Two words ov107 020c6624 reads. */
+@@ -49,7 +49,10 @@ SceneEntry gSceneTable[20] = {
+     { 5, &gOv005MissionResultSceneClass },      /* 6: mission results (ov005) */
+     { 6, &gOv006MissionSelectSceneClass },      /* 7: mission-mode character select (ov006) */
+     { 11, &data_ov011_0205e8a0 },     /* 8 */
+-    { 9, &data_ov006_02056220 },      /* 9: the descriptor at 0x02056220 inside ov009 (the delink names the address after ov006) */
++    /* Scene 9 loads ov009. Ov006 shares this DS address, but its host-side descriptor is a
++     * different object; using it made the post-credits save scene read an unrelated palette
++     * pointer as its arena and fault before it could write the cleared-game save. */
++    { 9, &data_ov009_02056220 },      /* 9: post-credits save scene */
+     { 7, &gOv007MonologueSceneClass },      /* 10: Roxas's monologue after the clock-tower scene (ov007) */
+     { 12, &gOv012OpeningSceneClass },     /* 11: opening movie (ov012) */
+     { 10, &gOv010ConnectionErrorSceneClass },     /* 12: the connection-error screen (ov010) */
 diff --git a/src/engine/main.c b/src/engine/main.c
 index 8e6f54324..3f8747a6e 100644
 --- a/src/engine/main.c
@@ -10881,6 +10906,32 @@ index 6b85c9ec3..bc895bfb4 100644
  extern void SetIndexedSlot(void *obj, int idx, void *value);
  
  void Ov193_stTimedInterpPhases(int *node) {
+diff --git a/src/overlays/enemies/ov202_enemy_detonator/Ov202_Construct.c b/src/overlays/enemies/ov202_enemy_detonator/Ov202_Construct.c
+index 2d931b633..be885bc0a 100644
+--- a/src/overlays/enemies/ov202_enemy_detonator/Ov202_Construct.c
++++ b/src/overlays/enemies/ov202_enemy_detonator/Ov202_Construct.c
+@@ -13,7 +13,7 @@ extern void Ov202_Destroy(void), Ov202_TickWithChildRefresh(void), Ov202_InitMod
+ extern void Ov202_HandleSpawnMessage(void), Ov202_CreateRegistryEntryTwoCallbacks(void), Ov202_ReleaseTasks(void);
+ extern void Ov202_OnHit(void), Ov202_RequestSubState10IfIdleUnless7Or8(void), Ov202_Model_SetTrack0(void);
+ 
+-extern void *Ov107_PackTextureHandle();
++extern void *Ov107_PackTextureHandle(int obj, unsigned offset);
+ extern void *CreateSubitemInstance0xB4();
+ extern void RegisterSubscriberSlot();
+ extern void *InsertSortedEntryWithKey();
+@@ -44,7 +44,11 @@ void Ov202_Construct(int param_1) {
+     *(int *)(param_1 + 0x64) = 0;
+     *(int *)(param_1 + 0x68) = 0x1000;
+     *(int *)(param_1 + 0x6c) = 0;
+-    *(void **)(param_1 + 0x384) = CreateSubitemInstance0xB4(Ov107_PackTextureHandle(param_1));
++    /* The DS passes 0 as the second argument: r1 still holds the 0 just stored at +0x64/+0x6c.
++     * Written with one argument, the port passed whatever r1 held, so the body model came from a
++     * random resource and the Detonator's spawn faulted in Archive_GetMember (mission 79's
++     * second Halloween Town room never loaded). */
++    *(void **)(param_1 + 0x384) = CreateSubitemInstance0xB4(Ov107_PackTextureHandle(param_1, 0));
+     RegisterSubscriberSlot(*(int *)(param_1 + 0x9c), *(void **)(param_1 + 0x384));
+     *(void **)(param_1 + 0x3d4) = InsertSortedEntryWithKey(*(int *)(param_1 + 0x384), 1, gOv202BoneHimoName);
+     *(void **)(param_1 + 0x3d8) = InsertSortedEntryWithKey(*(int *)(param_1 + 0x384), 1, gOv202BoneHeadName);
 diff --git a/src/overlays/enemies/ov202_enemy_detonator/Ov202_ThrowReleaseTick.c b/src/overlays/enemies/ov202_enemy_detonator/Ov202_ThrowReleaseTick.c
 index 206744bf7..8531b308d 100644
 --- a/src/overlays/enemies/ov202_enemy_detonator/Ov202_ThrowReleaseTick.c
@@ -12028,7 +12079,7 @@ index 489f7c75e..0d011b961 100644
  
  extern void func_02023ad0(int handle);
 diff --git a/src/overlays/field/ov022_battle/Ov022_FillSelectorStates.c b/src/overlays/field/ov022_battle/Ov022_FillSelectorStates.c
-index 65ada4864..7cfc42953 100644
+index 65ada4864..4ccfb686f 100644
 --- a/src/overlays/field/ov022_battle/Ov022_FillSelectorStates.c
 +++ b/src/overlays/field/ov022_battle/Ov022_FillSelectorStates.c
 @@ -1,3 +1,4 @@
@@ -12045,7 +12096,17 @@ index 65ada4864..7cfc42953 100644
      char padding008[0xa];
      unsigned short selectedLimit;
      char padding014[2];
-@@ -71,6 +72,8 @@ void Ov022_FillSelectorStates(int *input)
+@@ -55,6 +56,9 @@ extern Ov022CameraRoot *NNSi_FndGetCurrentRootHeap(void);
+ extern int func_ov022_020882f8(void);
+ extern int Ov029_AcquireOverlaySlot(int index, int group);
+ extern int InstantiateClass(void *classData, int argument);
++#ifdef PLATFORM_VITA
++extern int Ov069_IsRoxasDualWieldEquipped(void);
++#endif
+ 
+ extern unsigned char data_02042a1d;
+ extern Ov022MetadataRecord data_0204c3d8[];
+@@ -71,6 +75,8 @@ void Ov022_FillSelectorStates(int *input)
      int index = 0;
      int count = data_02042a1d;
  
@@ -12054,6 +12115,23 @@ index 65ada4864..7cfc42953 100644
      if (count > 0 && count > 0) {
          int *inputCursor = input;
          unsigned char *stateCursor = (unsigned char *)root;
+@@ -89,6 +95,16 @@ void Ov022_FillSelectorStates(int *input)
+             int inputValue;
+             int inputValue4;
+ 
++#ifdef PLATFORM_VITA
++            /* Story and Challenge normally leave Roxas in group 0 even when the
++             * equipped Zero Gear recipe has three Ability Units.  Mission Mode
++             * represents the same form as player group 0x13 (ov049/068/087/104). */
++            if (index == 0 && special == 0 && Ov069_IsRoxasDualWieldEquipped()) {
++                special = 0x13;
++                KH_TRACE("ov022: promoting Roxas to dual-wield group 19");
++            }
++#endif
++
+             switch (special) {
+             case 0x14:
+                 special = 0;
 diff --git a/src/overlays/field/ov022_battle/Ov022_GetActorValue.c b/src/overlays/field/ov022_battle/Ov022_GetActorValue.c
 index f559d9e8f..4ef986734 100644
 --- a/src/overlays/field/ov022_battle/Ov022_GetActorValue.c
@@ -16482,6 +16560,27 @@ index bda91f022..cba29a74c 100644
  
      NNSi_FndGetCurrentRootHeap();
      trackerConfig = data_ov000_0205a6e0;
+diff --git a/src/overlays/scenes/ov000_title/Ov000_MatchRecipeAndApply.c b/src/overlays/scenes/ov000_title/Ov000_MatchRecipeAndApply.c
+index ec8806fef..ca0e49c84 100644
+--- a/src/overlays/scenes/ov000_title/Ov000_MatchRecipeAndApply.c
++++ b/src/overlays/scenes/ov000_title/Ov000_MatchRecipeAndApply.c
+@@ -151,11 +151,16 @@ int Ov000_MatchRecipeAndApply(Ov000PanelView *self, Ov000TallyEntry *groups, int
+     }
+     if (kind == 0 || kind == 0x13) {
+         self->comboFlag = Ov000_TagListHasFbAtLeast3(groups);
++#ifdef PLATFORM_VITA
++        /* Keep Zero Gear + 3 Ability Units in Roxas's dual-wield form in Story/Challenges. */
++        self->resultId = self->comboFlag != 0 ? 0 : entry->result;
++#else
+         if ((data_0204c240 & 4) != 0 || (data_0204c240 & 8) != 0) {
+             self->resultId = self->comboFlag != 0 ? 0 : entry->result;
+         } else {
+             self->resultId = self->comboFlag != 0 ? 0x27 : entry->result;
+         }
++#endif
+     } else {
+         self->comboFlag = 0;
+         self->resultId = entry->result;
 diff --git a/src/overlays/scenes/ov000_title/Ov000_MenuFadeInState.c b/src/overlays/scenes/ov000_title/Ov000_MenuFadeInState.c
 index d79bb7ed4..39cf26952 100644
 --- a/src/overlays/scenes/ov000_title/Ov000_MenuFadeInState.c
@@ -19410,6 +19509,27 @@ index bc485e38a..a456c2016 100644
  };
  
  void Ov004_GetGridMaskExtent(struct S *s, unsigned short *outW, unsigned short *outH)
+diff --git a/src/overlays/scenes/ov004_calendar/Ov004_MatchRecipeAndApply.c b/src/overlays/scenes/ov004_calendar/Ov004_MatchRecipeAndApply.c
+index 0a858e0bb..e21aa2e56 100644
+--- a/src/overlays/scenes/ov004_calendar/Ov004_MatchRecipeAndApply.c
++++ b/src/overlays/scenes/ov004_calendar/Ov004_MatchRecipeAndApply.c
+@@ -151,11 +151,16 @@ int Ov004_MatchRecipeAndApply(Ov000PanelView *self, Ov000TallyEntry *groups, int
+     }
+     if (kind == 0 || kind == 0x13) {
+         self->comboFlag = Ov004_TagListHasFbAtLeast3(groups);
++#ifdef PLATFORM_VITA
++        /* Keep Zero Gear + 3 Ability Units in Roxas's dual-wield form in Story/Challenges. */
++        self->resultId = self->comboFlag != 0 ? 0 : entry->result;
++#else
+         if ((data_0204c240 & 4) != 0 || (data_0204c240 & 8) != 0) {
+             self->resultId = self->comboFlag != 0 ? 0 : entry->result;
+         } else {
+             self->resultId = self->comboFlag != 0 ? 0x27 : entry->result;
+         }
++#endif
+     } else {
+         self->comboFlag = 0;
+         self->resultId = entry->result;
 diff --git a/src/overlays/scenes/ov004_calendar/Ov004_ReleaseSceneObjects.c b/src/overlays/scenes/ov004_calendar/Ov004_ReleaseSceneObjects.c
 index c59ab8fc2..6eb4a505c 100644
 --- a/src/overlays/scenes/ov004_calendar/Ov004_ReleaseSceneObjects.c
@@ -19683,6 +19803,27 @@ index c08f783c5..8c85feb4d 100644
 +    *(volatile unsigned int *)KH_HW(0x04000000) &= ~0x1f00;
 +    *(volatile unsigned int *)KH_HW(0x04001000) &= ~0x1f00;
  }
+diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_MatchRecipeAndApply.c b/src/overlays/scenes/ov005_mission_result/Ov005_MatchRecipeAndApply.c
+index 1a404a4a6..6dca01842 100644
+--- a/src/overlays/scenes/ov005_mission_result/Ov005_MatchRecipeAndApply.c
++++ b/src/overlays/scenes/ov005_mission_result/Ov005_MatchRecipeAndApply.c
+@@ -151,11 +151,16 @@ int Ov005_MatchRecipeAndApply(Ov000PanelView *self, Ov000TallyEntry *groups, int
+     }
+     if (kind == 0 || kind == 0x13) {
+         self->comboFlag = Ov005_TagListHasFbAtLeast3(groups);
++#ifdef PLATFORM_VITA
++        /* Keep Zero Gear + 3 Ability Units in Roxas's dual-wield form in Story/Challenges. */
++        self->resultId = self->comboFlag != 0 ? 0 : entry->result;
++#else
+         if ((data_0204c240 & 4) != 0 || (data_0204c240 & 8) != 0) {
+             self->resultId = self->comboFlag != 0 ? 0 : entry->result;
+         } else {
+             self->resultId = self->comboFlag != 0 ? 0x27 : entry->result;
+         }
++#endif
+     } else {
+         self->comboFlag = 0;
+         self->resultId = entry->result;
 diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_RenderTextSurface.c b/src/overlays/scenes/ov005_mission_result/Ov005_RenderTextSurface.c
 index e20b75336..baa37e4d2 100644
 --- a/src/overlays/scenes/ov005_mission_result/Ov005_RenderTextSurface.c
@@ -21417,6 +21558,43 @@ index 88a80068f..b581bc331 100644
      TweenFlags flags;
  } Tween;
  
+diff --git a/src/overlays/scenes/ov009_camp_save/Ov009_ClassCtor.c b/src/overlays/scenes/ov009_camp_save/Ov009_ClassCtor.c
+index ddd6b096d..ed3ac3bb2 100644
+--- a/src/overlays/scenes/ov009_camp_save/Ov009_ClassCtor.c
++++ b/src/overlays/scenes/ov009_camp_save/Ov009_ClassCtor.c
+@@ -2,6 +2,11 @@
+ 
+ typedef void (*Ov009Callback)(void);
+ 
++#ifdef PLATFORM_VITA
++extern void log_printf(const char *fmt, ...);
++extern void log_flush(void);
++#endif
++
+ extern void *data_ov009_020563e0;
+ extern void *NNSi_FndGetCurrentRootHeap(void);
+ extern void Ov009_Menu_Init(int mode);
+@@ -10,8 +15,20 @@ extern void Ov009_WaitCommitPage(void);
+ 
+ Ov009Callback Ov009_ClassCtor(void)
+ {
++#ifdef PLATFORM_VITA
++    log_printf("ending: ov009 save scene constructor entered");
++    log_flush();
++#endif
+     data_ov009_020563e0 = NNSi_FndGetCurrentRootHeap();
+     Ov009_Menu_Init(0);
++#ifdef PLATFORM_VITA
++    log_printf("ending: save menu initialized; updating completion milestones");
++    log_flush();
++#endif
+     Ov009_UpdateCompletionMilestones();
++#ifdef PLATFORM_VITA
++    log_printf("ending: completion milestones updated; waiting for save page");
++    log_flush();
++#endif
+     return Ov009_WaitCommitPage;
+ }
 diff --git a/src/overlays/scenes/ov009_camp_save/Ov009_GetGridMaskExtent.c b/src/overlays/scenes/ov009_camp_save/Ov009_GetGridMaskExtent.c
 index ccde21a9f..fdda1e092 100644
 --- a/src/overlays/scenes/ov009_camp_save/Ov009_GetGridMaskExtent.c
@@ -21473,6 +21651,27 @@ index b73dca128..b7a877588 100644
  
  void Ov009_LoadMenuBgWithVariantChars(void)
  {
+diff --git a/src/overlays/scenes/ov009_camp_save/Ov009_MatchRecipeAndApply.c b/src/overlays/scenes/ov009_camp_save/Ov009_MatchRecipeAndApply.c
+index 20b3bf4b0..5da1da0bf 100644
+--- a/src/overlays/scenes/ov009_camp_save/Ov009_MatchRecipeAndApply.c
++++ b/src/overlays/scenes/ov009_camp_save/Ov009_MatchRecipeAndApply.c
+@@ -151,11 +151,16 @@ int Ov009_MatchRecipeAndApply(Ov000PanelView *self, Ov000TallyEntry *groups, int
+     }
+     if (kind == 0 || kind == 0x13) {
+         self->comboFlag = Ov009_TagListHasFbAtLeast3(groups);
++#ifdef PLATFORM_VITA
++        /* Keep Zero Gear + 3 Ability Units in Roxas's dual-wield form in Story/Challenges. */
++        self->resultId = self->comboFlag != 0 ? 0 : entry->result;
++#else
+         if ((data_0204c240 & 4) != 0 || (data_0204c240 & 8) != 0) {
+             self->resultId = self->comboFlag != 0 ? 0 : entry->result;
+         } else {
+             self->resultId = self->comboFlag != 0 ? 0x27 : entry->result;
+         }
++#endif
+     } else {
+         self->comboFlag = 0;
+         self->resultId = entry->result;
 diff --git a/src/overlays/scenes/ov009_camp_save/Ov009_Menu_Init.c b/src/overlays/scenes/ov009_camp_save/Ov009_Menu_Init.c
 index 0c5b93edb..5e5f91a2a 100644
 --- a/src/overlays/scenes/ov009_camp_save/Ov009_Menu_Init.c
@@ -22651,6 +22850,27 @@ index 3d1cc7993..2d3e16514 100644
  
  void Ov025_MainMenu_SetupDisplay(void)
  {
+diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_MatchRecipeAndApply.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_MatchRecipeAndApply.c
+index afbf2090b..e9bbd182d 100644
+--- a/src/overlays/screens/ov025_camp_menu_2/Ov025_MatchRecipeAndApply.c
++++ b/src/overlays/screens/ov025_camp_menu_2/Ov025_MatchRecipeAndApply.c
+@@ -151,11 +151,16 @@ int Ov025_MatchRecipeAndApply(Ov000PanelView *self, Ov000TallyEntry *groups, int
+     }
+     if (kind == 0 || kind == 0x13) {
+         self->comboFlag = Ov025_TagListHasFbAtLeast3(groups);
++#ifdef PLATFORM_VITA
++        /* Keep Zero Gear + 3 Ability Units in Roxas's dual-wield form in Story/Challenges. */
++        self->resultId = self->comboFlag != 0 ? 0 : entry->result;
++#else
+         if ((data_0204c240 & 4) != 0 || (data_0204c240 & 8) != 0) {
+             self->resultId = self->comboFlag != 0 ? 0 : entry->result;
+         } else {
+             self->resultId = self->comboFlag != 0 ? 0x27 : entry->result;
+         }
++#endif
+     } else {
+         self->comboFlag = 0;
+         self->resultId = entry->result;
 diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionListDestroy.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionListDestroy.c
 index 368324f66..030ff1656 100644
 --- a/src/overlays/screens/ov025_camp_menu_2/Ov025_MissionListDestroy.c
@@ -23539,6 +23759,62 @@ index 618da23ed..d08227172 100644
  };
  
  void Ov069_GetGridMaskExtent(struct S *s, unsigned short *outW, unsigned short *outH)
+diff --git a/src/overlays/screens/ov069/Ov069_HasKind4MenuEntry.c b/src/overlays/screens/ov069/Ov069_HasKind4MenuEntry.c
+index 9f6458759..2dea854ba 100644
+--- a/src/overlays/screens/ov069/Ov069_HasKind4MenuEntry.c
++++ b/src/overlays/screens/ov069/Ov069_HasKind4MenuEntry.c
+@@ -48,3 +48,30 @@ int Ov069_HasKind4MenuEntry(unsigned int min)
+     func_ov069_020ba244(ctx);
+     return found;
+ }
++
++#ifdef PLATFORM_VITA
++/* Rebuild the equipped panel grid with the game's own recipe evaluator and expose the
++ * Zero Gear + three Ability Units result to the field player selector.  Keeping this
++ * here avoids duplicating the panel-shape/recipe rules in ov022. */
++int Ov069_IsRoxasDualWieldEquipped(void)
++{
++    int enabled;
++    int list[3];
++    char *entries[3][0x28];
++    char ctx[0x100];
++
++    NNS_FndInitList(list, 0x28);
++    Ov069_InitRecordContext(ctx, 0);
++    Ov069_BuildMenuGrid(ctx, (void **)entries, list, (u16 *)(gGameState + 0xee0));
++    Ov069_RebuildViewAndCountCells(ctx, (void **)entries, list);
++
++    /* Ov069PanelView::comboFlag is at +0x2c.  MatchRecipeAndApply only sets it
++     * for the Roxas/Zero Gear dual-wield recipe and requires at least 3 tag-FB
++     * (Ability Unit) entries. */
++    enabled = *(int *)(ctx + 0x2c) != 0;
++
++    Ov069_ReleaseHandleGridAndList(ctx, (void **)entries, list);
++    func_ov069_020ba244(ctx);
++    return enabled;
++}
++#endif
+diff --git a/src/overlays/screens/ov069/Ov069_MatchRecipeAndApply.c b/src/overlays/screens/ov069/Ov069_MatchRecipeAndApply.c
+index 4e12c395e..28dd1844e 100644
+--- a/src/overlays/screens/ov069/Ov069_MatchRecipeAndApply.c
++++ b/src/overlays/screens/ov069/Ov069_MatchRecipeAndApply.c
+@@ -151,11 +151,16 @@ int Ov069_MatchRecipeAndApply(Ov000PanelView *self, Ov000TallyEntry *groups, int
+     }
+     if (kind == 0 || kind == 0x13) {
+         self->comboFlag = Ov069_TagListHasFbAtLeast3(groups);
++#ifdef PLATFORM_VITA
++        /* Keep Zero Gear + 3 Ability Units in Roxas's dual-wield form in Story/Challenges. */
++        self->resultId = self->comboFlag != 0 ? 0 : entry->result;
++#else
+         if ((data_0204c240 & 4) != 0 || (data_0204c240 & 8) != 0) {
+             self->resultId = self->comboFlag != 0 ? 0 : entry->result;
+         } else {
+             self->resultId = self->comboFlag != 0 ? 0x27 : entry->result;
+         }
++#endif
+     } else {
+         self->comboFlag = 0;
+         self->resultId = entry->result;
 diff --git a/src/overlays/screens/ov069/Ov069_ScriptCmd_SetupBgLayer.c b/src/overlays/screens/ov069/Ov069_ScriptCmd_SetupBgLayer.c
 index a9e8d9e0e..2f359ec8f 100644
 --- a/src/overlays/screens/ov069/Ov069_ScriptCmd_SetupBgLayer.c
@@ -24670,255 +24946,3 @@ index 1a7489ad8..23d032670 100644
      0, 0, 8, 9, 0, 0, 8, 4,
  };
 +#endif
-diff --git a/src/engine/data/main_scene_table_0204252c.c b/src/engine/data/main_scene_table_0204252c.c
-index ba05e8e0e..ef63bedbc 100644
---- a/src/engine/data/main_scene_table_0204252c.c
-+++ b/src/engine/data/main_scene_table_0204252c.c
-@@ -22,7 +22,7 @@ extern void Boot_InitScene(void);   /* BootTask_Construct */
- extern void func_02020974(void);
- extern int data_0204c024;          /* the main heap arena */
- extern int gOv000TitleSceneClass, gOv002FieldSceneClass, data_ov003_0204f8e4, gOv004CalendarSceneClass,
--           gOv005MissionResultSceneClass, gOv006MissionSelectSceneClass, data_ov011_0205e8a0, data_ov006_02056220,
-+           gOv005MissionResultSceneClass, gOv006MissionSelectSceneClass, data_ov011_0205e8a0, data_ov009_02056220,
-            gOv007MonologueSceneClass, gOv012OpeningSceneClass, gOv010ConnectionErrorSceneClass, gOv008MissionCampSceneClass;
- 
- /* Two words ov107 020c6624 reads. */
-@@ -49,7 +49,10 @@ SceneEntry gSceneTable[20] = {
-     { 5, &gOv005MissionResultSceneClass },      /* 6: mission results (ov005) */
-     { 6, &gOv006MissionSelectSceneClass },      /* 7: mission-mode character select (ov006) */
-     { 11, &data_ov011_0205e8a0 },     /* 8 */
--    { 9, &data_ov006_02056220 },      /* 9: the descriptor at 0x02056220 inside ov009 (the delink names the address after ov006) */
-+    /* Scene 9 loads ov009. Ov006 shares this DS address, but its host-side descriptor is a
-+     * different object; using it made the post-credits save scene read an unrelated palette
-+     * pointer as its arena and fault before it could write the cleared-game save. */
-+    { 9, &data_ov009_02056220 },      /* 9: post-credits save scene */
-     { 7, &gOv007MonologueSceneClass },      /* 10: Roxas's monologue after the clock-tower scene (ov007) */
-     { 12, &gOv012OpeningSceneClass },     /* 11: opening movie (ov012) */
-     { 10, &gOv010ConnectionErrorSceneClass },     /* 12: the connection-error screen (ov010) */
-diff --git a/src/overlays/scenes/ov009_camp_save/Ov009_ClassCtor.c b/src/overlays/scenes/ov009_camp_save/Ov009_ClassCtor.c
-index ddd6b096d..ed3ac3bb2 100644
---- a/src/overlays/scenes/ov009_camp_save/Ov009_ClassCtor.c
-+++ b/src/overlays/scenes/ov009_camp_save/Ov009_ClassCtor.c
-@@ -2,6 +2,11 @@
- 
- typedef void (*Ov009Callback)(void);
- 
-+#ifdef PLATFORM_VITA
-+extern void log_printf(const char *fmt, ...);
-+extern void log_flush(void);
-+#endif
-+
- extern void *data_ov009_020563e0;
- extern void *NNSi_FndGetCurrentRootHeap(void);
- extern void Ov009_Menu_Init(int mode);
-@@ -10,8 +15,20 @@ extern void Ov009_WaitCommitPage(void);
- 
- Ov009Callback Ov009_ClassCtor(void)
- {
-+#ifdef PLATFORM_VITA
-+    log_printf("ending: ov009 save scene constructor entered");
-+    log_flush();
-+#endif
-     data_ov009_020563e0 = NNSi_FndGetCurrentRootHeap();
-     Ov009_Menu_Init(0);
-+#ifdef PLATFORM_VITA
-+    log_printf("ending: save menu initialized; updating completion milestones");
-+    log_flush();
-+#endif
-     Ov009_UpdateCompletionMilestones();
-+#ifdef PLATFORM_VITA
-+    log_printf("ending: completion milestones updated; waiting for save page");
-+    log_flush();
-+#endif
-     return Ov009_WaitCommitPage;
- }
-diff --git a/src/overlays/scenes/ov000_title/Ov000_MatchRecipeAndApply.c b/src/overlays/scenes/ov000_title/Ov000_MatchRecipeAndApply.c
-index ec8806fef..ca0e49c84 100644
---- a/src/overlays/scenes/ov000_title/Ov000_MatchRecipeAndApply.c
-+++ b/src/overlays/scenes/ov000_title/Ov000_MatchRecipeAndApply.c
-@@ -151,11 +151,16 @@ int Ov000_MatchRecipeAndApply(Ov000PanelView *self, Ov000TallyEntry *groups, int
-     }
-     if (kind == 0 || kind == 0x13) {
-         self->comboFlag = Ov000_TagListHasFbAtLeast3(groups);
-+#ifdef PLATFORM_VITA
-+        /* Keep Zero Gear + 3 Ability Units in Roxas's dual-wield form in Story/Challenges. */
-+        self->resultId = self->comboFlag != 0 ? 0 : entry->result;
-+#else
-         if ((data_0204c240 & 4) != 0 || (data_0204c240 & 8) != 0) {
-             self->resultId = self->comboFlag != 0 ? 0 : entry->result;
-         } else {
-             self->resultId = self->comboFlag != 0 ? 0x27 : entry->result;
-         }
-+#endif
-     } else {
-         self->comboFlag = 0;
-         self->resultId = entry->result;
-diff --git a/src/overlays/field/ov022_battle/Ov022_FillSelectorStates.c b/src/overlays/field/ov022_battle/Ov022_FillSelectorStates.c
---- a/src/overlays/field/ov022_battle/Ov022_FillSelectorStates.c
-+++ b/src/overlays/field/ov022_battle/Ov022_FillSelectorStates.c
-@@ -58,6 +58,9 @@ extern Ov022CameraRoot *NNSi_FndGetCurrentRootHeap(void);
- extern int func_ov022_020882f8(void);
- extern int Ov029_AcquireOverlaySlot(int index, int group);
- extern int InstantiateClass(void *classData, int argument);
-+#ifdef PLATFORM_VITA
-+extern int Ov069_IsRoxasDualWieldEquipped(void);
-+#endif
-
- extern unsigned char data_02042a1d;
- extern Ov022MetadataRecord data_0204c3d8[];
-@@ -91,6 +94,16 @@ void Ov022_FillSelectorStates(int *input)
-             int inputValue;
-             int inputValue4;
-
-+#ifdef PLATFORM_VITA
-+            /* Story and Challenge normally leave Roxas in group 0 even when the
-+             * equipped Zero Gear recipe has three Ability Units.  Mission Mode
-+             * represents the same form as player group 0x13 (ov049/068/087/104). */
-+            if (index == 0 && special == 0 && Ov069_IsRoxasDualWieldEquipped()) {
-+                special = 0x13;
-+                KH_TRACE("ov022: promoting Roxas to dual-wield group 19");
-+            }
-+#endif
-+
-             switch (special) {
-             case 0x14:
-                 special = 0;
-diff --git a/src/overlays/screens/ov069/Ov069_HasKind4MenuEntry.c b/src/overlays/screens/ov069/Ov069_HasKind4MenuEntry.c
---- a/src/overlays/screens/ov069/Ov069_HasKind4MenuEntry.c
-+++ b/src/overlays/screens/ov069/Ov069_HasKind4MenuEntry.c
-@@ -48,3 +48,30 @@ int Ov069_HasKind4MenuEntry(unsigned int min)
-     func_ov069_020ba244(ctx);
-     return found;
- }
-+
-+#ifdef PLATFORM_VITA
-+/* Rebuild the equipped panel grid with the game's own recipe evaluator and expose the
-+ * Zero Gear + three Ability Units result to the field player selector.  Keeping this
-+ * here avoids duplicating the panel-shape/recipe rules in ov022. */
-+int Ov069_IsRoxasDualWieldEquipped(void)
-+{
-+    int enabled;
-+    int list[3];
-+    char *entries[3][0x28];
-+    char ctx[0x100];
-+
-+    NNS_FndInitList(list, 0x28);
-+    Ov069_InitRecordContext(ctx, 0);
-+    Ov069_BuildMenuGrid(ctx, (void **)entries, list, (u16 *)(gGameState + 0xee0));
-+    Ov069_RebuildViewAndCountCells(ctx, (void **)entries, list);
-+
-+    /* Ov069PanelView::comboFlag is at +0x2c.  MatchRecipeAndApply only sets it
-+     * for the Roxas/Zero Gear dual-wield recipe and requires at least 3 tag-FB
-+     * (Ability Unit) entries. */
-+    enabled = *(int *)(ctx + 0x2c) != 0;
-+
-+    Ov069_ReleaseHandleGridAndList(ctx, (void **)entries, list);
-+    func_ov069_020ba244(ctx);
-+    return enabled;
-+}
-+#endif
-diff --git a/src/overlays/scenes/ov004_calendar/Ov004_MatchRecipeAndApply.c b/src/overlays/scenes/ov004_calendar/Ov004_MatchRecipeAndApply.c
-index 0a858e0bb..e21aa2e56 100644
---- a/src/overlays/scenes/ov004_calendar/Ov004_MatchRecipeAndApply.c
-+++ b/src/overlays/scenes/ov004_calendar/Ov004_MatchRecipeAndApply.c
-@@ -151,11 +151,16 @@ int Ov004_MatchRecipeAndApply(Ov000PanelView *self, Ov000TallyEntry *groups, int
-     }
-     if (kind == 0 || kind == 0x13) {
-         self->comboFlag = Ov004_TagListHasFbAtLeast3(groups);
-+#ifdef PLATFORM_VITA
-+        /* Keep Zero Gear + 3 Ability Units in Roxas's dual-wield form in Story/Challenges. */
-+        self->resultId = self->comboFlag != 0 ? 0 : entry->result;
-+#else
-         if ((data_0204c240 & 4) != 0 || (data_0204c240 & 8) != 0) {
-             self->resultId = self->comboFlag != 0 ? 0 : entry->result;
-         } else {
-             self->resultId = self->comboFlag != 0 ? 0x27 : entry->result;
-         }
-+#endif
-     } else {
-         self->comboFlag = 0;
-         self->resultId = entry->result;
-diff --git a/src/overlays/scenes/ov005_mission_result/Ov005_MatchRecipeAndApply.c b/src/overlays/scenes/ov005_mission_result/Ov005_MatchRecipeAndApply.c
-index 1a404a4a6..6dca01842 100644
---- a/src/overlays/scenes/ov005_mission_result/Ov005_MatchRecipeAndApply.c
-+++ b/src/overlays/scenes/ov005_mission_result/Ov005_MatchRecipeAndApply.c
-@@ -151,11 +151,16 @@ int Ov005_MatchRecipeAndApply(Ov000PanelView *self, Ov000TallyEntry *groups, int
-     }
-     if (kind == 0 || kind == 0x13) {
-         self->comboFlag = Ov005_TagListHasFbAtLeast3(groups);
-+#ifdef PLATFORM_VITA
-+        /* Keep Zero Gear + 3 Ability Units in Roxas's dual-wield form in Story/Challenges. */
-+        self->resultId = self->comboFlag != 0 ? 0 : entry->result;
-+#else
-         if ((data_0204c240 & 4) != 0 || (data_0204c240 & 8) != 0) {
-             self->resultId = self->comboFlag != 0 ? 0 : entry->result;
-         } else {
-             self->resultId = self->comboFlag != 0 ? 0x27 : entry->result;
-         }
-+#endif
-     } else {
-         self->comboFlag = 0;
-         self->resultId = entry->result;
-diff --git a/src/overlays/scenes/ov009_camp_save/Ov009_MatchRecipeAndApply.c b/src/overlays/scenes/ov009_camp_save/Ov009_MatchRecipeAndApply.c
-index 20b3bf4b0..5da1da0bf 100644
---- a/src/overlays/scenes/ov009_camp_save/Ov009_MatchRecipeAndApply.c
-+++ b/src/overlays/scenes/ov009_camp_save/Ov009_MatchRecipeAndApply.c
-@@ -151,11 +151,16 @@ int Ov009_MatchRecipeAndApply(Ov000PanelView *self, Ov000TallyEntry *groups, int
-     }
-     if (kind == 0 || kind == 0x13) {
-         self->comboFlag = Ov009_TagListHasFbAtLeast3(groups);
-+#ifdef PLATFORM_VITA
-+        /* Keep Zero Gear + 3 Ability Units in Roxas's dual-wield form in Story/Challenges. */
-+        self->resultId = self->comboFlag != 0 ? 0 : entry->result;
-+#else
-         if ((data_0204c240 & 4) != 0 || (data_0204c240 & 8) != 0) {
-             self->resultId = self->comboFlag != 0 ? 0 : entry->result;
-         } else {
-             self->resultId = self->comboFlag != 0 ? 0x27 : entry->result;
-         }
-+#endif
-     } else {
-         self->comboFlag = 0;
-         self->resultId = entry->result;
-diff --git a/src/overlays/screens/ov025_camp_menu_2/Ov025_MatchRecipeAndApply.c b/src/overlays/screens/ov025_camp_menu_2/Ov025_MatchRecipeAndApply.c
-index afbf2090b..e9bbd182d 100644
---- a/src/overlays/screens/ov025_camp_menu_2/Ov025_MatchRecipeAndApply.c
-+++ b/src/overlays/screens/ov025_camp_menu_2/Ov025_MatchRecipeAndApply.c
-@@ -151,11 +151,16 @@ int Ov025_MatchRecipeAndApply(Ov000PanelView *self, Ov000TallyEntry *groups, int
-     }
-     if (kind == 0 || kind == 0x13) {
-         self->comboFlag = Ov025_TagListHasFbAtLeast3(groups);
-+#ifdef PLATFORM_VITA
-+        /* Keep Zero Gear + 3 Ability Units in Roxas's dual-wield form in Story/Challenges. */
-+        self->resultId = self->comboFlag != 0 ? 0 : entry->result;
-+#else
-         if ((data_0204c240 & 4) != 0 || (data_0204c240 & 8) != 0) {
-             self->resultId = self->comboFlag != 0 ? 0 : entry->result;
-         } else {
-             self->resultId = self->comboFlag != 0 ? 0x27 : entry->result;
-         }
-+#endif
-     } else {
-         self->comboFlag = 0;
-         self->resultId = entry->result;
-diff --git a/src/overlays/screens/ov069/Ov069_MatchRecipeAndApply.c b/src/overlays/screens/ov069/Ov069_MatchRecipeAndApply.c
-index 4e12c395e..28dd1844e 100644
---- a/src/overlays/screens/ov069/Ov069_MatchRecipeAndApply.c
-+++ b/src/overlays/screens/ov069/Ov069_MatchRecipeAndApply.c
-@@ -151,11 +151,16 @@ int Ov069_MatchRecipeAndApply(Ov000PanelView *self, Ov000TallyEntry *groups, int
-     }
-     if (kind == 0 || kind == 0x13) {
-         self->comboFlag = Ov069_TagListHasFbAtLeast3(groups);
-+#ifdef PLATFORM_VITA
-+        /* Keep Zero Gear + 3 Ability Units in Roxas's dual-wield form in Story/Challenges. */
-+        self->resultId = self->comboFlag != 0 ? 0 : entry->result;
-+#else
-         if ((data_0204c240 & 4) != 0 || (data_0204c240 & 8) != 0) {
-             self->resultId = self->comboFlag != 0 ? 0 : entry->result;
-         } else {
-             self->resultId = self->comboFlag != 0 ? 0x27 : entry->result;
-         }
-+#endif
-     } else {
-         self->comboFlag = 0;
-         self->resultId = entry->result;
