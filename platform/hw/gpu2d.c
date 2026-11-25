@@ -19,6 +19,9 @@
 
 #include <psp2/kernel/processmgr.h>
 #include <string.h>
+#ifdef __ARM_NEON
+#include <arm_neon.h>
+#endif
 
 #define W KH_GPU2D_W
 #define H KH_GPU2D_H
@@ -727,6 +730,38 @@ static int in_span(int v, int lo, int hi)
     return lo <= hi ? (v >= lo && v < hi) : (v >= lo || v < hi);
 }
 
+/* ctl[x] = c over the pixels in_span(x, lo, hi) picks, as one or two runs */
+static void span_fill(uint8_t *ctl, int lo, int hi, uint8_t c)
+{
+    if (lo <= hi) {
+        if (hi > lo)
+            memset(ctl + lo, c, (size_t)(hi - lo));
+    } else {
+        memset(ctl + lo, c, (size_t)(W - lo));
+        memset(ctl, c, (size_t)hi);
+    }
+}
+
+/* Masks for the composition loops, which GCC turns into NEON code (8 pixels at a time) only
+ * when every lane does the same work: no branch, no load behind a condition, no shift by a
+ * per-pixel amount, one element width. */
+
+/* the window control of a line without windows: effects everywhere */
+static const uint8_t s_fx_on[W] = { [0 ... W - 1] = 0x20 };
+
+/* 0xffff when layer id (L_BG0-L_BD) is in the 6-bit set (BLDCNT's first or second targets), 0
+ * otherwise: a shift by a vector of amounts (one VSHL); a compare per layer instead needed a
+ * dozen live masks and the loop spilled NEON registers to the stack */
+static inline uint16_t layer_mask(uint16_t id, unsigned set)
+{
+    return (uint16_t)-(uint16_t)(((uint16_t)set >> id) & 1);
+}
+
+static inline uint16_t mask16(int cond)
+{
+    return (uint16_t)-(uint16_t)(cond != 0);
+}
+
 /* the window control (WININ/WINOUT bits 0-5) of each pixel of the line */
 static int window_line(const Engine *e, int line, const ObjLine *o, uint8_t *ctl)
 {
@@ -749,13 +784,8 @@ static int window_line(const Engine *e, int line, const ObjLine *o, uint8_t *ctl
             ctl[x] = o->win[x] ? obj_c : ctl[x];
     for (w = 1; w >= 0; w--) {
         const uint16_t h = io16(e, 0x40 + 2 * w);
-        const int lo = h >> 8, hi = h & 0xff;
-        const uint8_t c = w ? in1 : in0;
-        if (!win_on[w])
-            continue;
-        for (x = 0; x < W; x++)
-            if (in_span(x, lo, hi))
-                ctl[x] = c;
+        if (win_on[w])
+            span_fill(ctl, h >> 8, h & 0xff, w ? in1 : in0);
     }
     return 1;
 }
@@ -809,19 +839,24 @@ static inline void push_layer(Scratch *sc, const uint16_t *src, int id, const ui
 /* the sprites of priority p in front, the same way */
 static inline void push_obj(Scratch *sc, int p, const uint8_t *allow)
 {
-    const ObjLine *o = &sc->obj;
+    const uint16_t *const col = sc->obj.col, *const pri = sc->obj.prio;
     uint16_t *const c0 = sc->c0, *const c1 = sc->c1, *const i0 = sc->id0, *const i1 = sc->id1;
+    const uint16_t pp = (uint16_t)p;
     int x;
+    /* through plain arrays and one width: the ObjLine reads and an int compare kept GCC from
+     * vectorising these two */
     if (allow) {
         for (x = 0; x < W; x++) {
-            const uint16_t m = (uint16_t)-(uint16_t)((o->col[x] >> 15) & (o->prio[x] == p) &
-                                                     (allow[x] >> 4) & 1);
-            PUSH(x, m, o->col[x] & 0x7fff, L_OBJ);
+            const uint16_t v = col[x];
+            const uint16_t m = (uint16_t)(-(uint16_t)(v >> 15) & mask16(pri[x] == pp) &
+                                          -(uint16_t)((allow[x] >> 4) & 1));
+            PUSH(x, m, v & 0x7fff, L_OBJ);
         }
     } else {
         for (x = 0; x < W; x++) {
-            const uint16_t m = (uint16_t)-(uint16_t)((o->col[x] >> 15) & (o->prio[x] == p));
-            PUSH(x, m, o->col[x] & 0x7fff, L_OBJ);
+            const uint16_t v = col[x];
+            const uint16_t m = (uint16_t)(-(uint16_t)(v >> 15) & mask16(pri[x] == pp));
+            PUSH(x, m, v & 0x7fff, L_OBJ);
         }
     }
 }
@@ -873,8 +908,9 @@ static void compose_line(const Engine *e, int line, uint16_t *out, uint8_t *code
                 /* the 3D layer is opaque everywhere */
                 memcpy(c1, c0, sizeof(sc->c1));
                 memcpy(id1, id0, sizeof(sc->id1));
+                memset(c0, 0, sizeof(sc->c0));
                 for (x = 0; x < W; x++)
-                    c0[x] = 0, id0[x] = L_BG0;
+                    id0[x] = L_BG0;
             } else {
                 push_layer(sc, bgl[bg], bg, ctl, 1 << bg);
             }
@@ -886,11 +922,14 @@ static void compose_line(const Engine *e, int line, uint16_t *out, uint8_t *code
     if (!ctl && !effect && !(objs & 2)) {
         /* the common case: the frontmost pixel, or with the 3D in front, what is under it */
         if (e->has3d) {
+            uint16_t *const code16 = sc->code16;
             for (x = 0; x < W; x++) {
-                const int is3d = id0[x] == L_BG0;
-                out[x] = is3d ? c1[x] : c0[x];
-                code[x] = is3d ? KH_GPU2D_3D : KH_GPU2D_2D;
+                const uint16_t m = mask16(id0[x] == L_BG0);
+                out[x] = (uint16_t)((c1[x] & m) | (c0[x] & ~m));
+                code16[x] = (uint16_t)((KH_GPU2D_3D & m) | (KH_GPU2D_2D & ~m));
             }
+            for (x = 0; x < W; x++)
+                code[x] = (uint8_t)code16[x];
         } else {
             memcpy(out, c0, W * sizeof(*out));
             memset(code, KH_GPU2D_2D, W);
@@ -902,32 +941,77 @@ static void compose_line(const Engine *e, int line, uint16_t *out, uint8_t *code
         /* the field's case (the alpha blend set up, no blending sprite; with or without a
          * window, which can turn the effect off per pixel): the general loop below, worked out
          * for all pixels with masks and selected (NEON) */
-        const uint16_t a3 = (uint16_t)(e->has3d ? 1 : 0), bit8 = (uint16_t)((bldcnt >> 8) & 1);
+        const uint16_t a3 = mask16(e->has3d), bit8 = mask16(bldcnt & 0x100);
+        const unsigned first = bldcnt & 0x3f, second = (bldcnt >> 8) & 0x3f;
+        const uint16_t ea = (uint16_t)eva, eb = (uint16_t)evb;
+        const uint8_t *const fxc = ctl ? ctl : s_fx_on; /* effects here (WIN bit 5) */
+#ifdef __ARM_NEON
+        /* By hand: written in C, GCC vectorised this loop but ran out of the 16 Q registers
+         * and spilled a third of its instructions to the stack (slower than scalar: 1.2.1's
+         * engine A went from 15.2 to 18.2 ms a frame in the field). 8 pixels at a time. */
+        const uint16x8_t v31 = vdupq_n_u16(31), vone = vdupq_n_u16(1), vzero = vdupq_n_u16(0);
+        const uint16x8_t vea = vdupq_n_u16(ea), veb = vdupq_n_u16(eb);
+        const uint16x8_t vfirst = vdupq_n_u16((uint16_t)first), vsecond = vdupq_n_u16((uint16_t)second);
+        const uint16x8_t va3 = vdupq_n_u16(a3), vbit8 = vdupq_n_u16(bit8), vbd = vdupq_n_u16(L_BD);
+        const uint16x8_t vfx = vdupq_n_u16(0x20);
+        const uint16x8_t k3d = vdupq_n_u16(KH_GPU2D_3D), kbl = vdupq_n_u16(KH_GPU2D_BLEND_3D);
+        const uint16x8_t k2d = vdupq_n_u16(KH_GPU2D_2D);
+        (void)layer_mask;
+        for (x = 0; x < W; x += 8) {
+            const uint16x8_t i0 = vld1q_u16(id0 + x), i1 = vld1q_u16(id1 + x);
+            const uint16x8_t a = vld1q_u16(c0 + x), b = vld1q_u16(c1 + x);
+            const uint16x8_t fx = vtstq_u16(vmovl_u8(vld1_u8(fxc + x)), vfx);
+            const uint16x8_t z0 = vandq_u16(va3, vceqq_u16(i0, vzero));
+            const uint16x8_t z1 = vbicq_u16(vandq_u16(va3, vceqq_u16(i1, vzero)), z0);
+            /* (set >> id) & 1 as a mask: VSHL by minus the layer */
+            const uint16x8_t f0 = vandq_u16(
+                vtstq_u16(vshlq_u16(vfirst, vnegq_s16(vreinterpretq_s16_u16(i0))), vone), fx);
+            const uint16x8_t b3 = vandq_u16(vandq_u16(z1, f0), vbit8);
+            const uint16x8_t i1e = vbslq_u16(z1, vbd, i1);
+            const uint16x8_t s1 =
+                vtstq_u16(vshlq_u16(vsecond, vnegq_s16(vreinterpretq_s16_u16(i1e))), vone);
+            const uint16x8_t bl = vbicq_u16(vbicq_u16(vandq_u16(f0, s1), z0), b3);
+            const uint16x8_t r = vminq_u16(
+                vshrq_n_u16(vmlaq_u16(vmulq_u16(vandq_u16(a, v31), vea), vandq_u16(b, v31), veb), 4), v31);
+            const uint16x8_t g = vminq_u16(
+                vshrq_n_u16(vmlaq_u16(vmulq_u16(vandq_u16(vshrq_n_u16(a, 5), v31), vea),
+                                      vandq_u16(vshrq_n_u16(b, 5), v31), veb), 4), v31);
+            const uint16x8_t bb = vminq_u16(
+                vshrq_n_u16(vmlaq_u16(vmulq_u16(vandq_u16(vshrq_n_u16(a, 10), v31), vea),
+                                      vandq_u16(vshrq_n_u16(b, 10), v31), veb), 4), v31);
+            const uint16x8_t mixed = vorrq_u16(vorrq_u16(r, vshlq_n_u16(g, 5)), vshlq_n_u16(bb, 10));
+            vst1q_u16(out + x, vbslq_u16(z0, b, vbslq_u16(bl, mixed, a)));
+            vst1_u8(code + x, vmovn_u16(vbslq_u16(z0, k3d, vbslq_u16(b3, kbl, k2d))));
+        }
+        return;
+#else
         uint16_t *const code16 = sc->code16;
         for (x = 0; x < W; x++) {
             const uint16_t i0 = id0[x], i1 = id1[x], a = c0[x], b = c1[x];
-            const uint16_t z0 = a3 & (i0 == L_BG0);
-            const uint16_t z1 = a3 & (i1 == L_BG0) & (uint16_t)!z0;
-            const uint16_t fx = ctl ? (uint16_t)((ctl[x] >> 5) & 1) : 1; /* effects here */
-            const uint16_t f0 = (uint16_t)((bldcnt >> i0) & 1) & fx;
+            const uint16_t z0 = a3 & mask16(i0 == L_BG0);
+            const uint16_t z1 = a3 & mask16(i1 == L_BG0) & (uint16_t)~z0;
+            const uint16_t fx = (uint16_t)-(uint16_t)((fxc[x] >> 5) & 1);
+            const uint16_t f0 = layer_mask(i0, first) & fx;
             const uint16_t b3 = z1 & f0 & bit8;
-            const uint16_t i1e = z1 ? (uint16_t)L_BD : i1;
-            const uint16_t s1 = (uint16_t)((bldcnt >> (8 + i1e)) & 1);
-            const uint16_t bl = (uint16_t)!z0 & (uint16_t)!b3 & f0 & s1;
-            uint16_t r = (uint16_t)(((a & 31) * eva + (b & 31) * evb) >> 4);
-            uint16_t g = (uint16_t)((((a >> 5) & 31) * eva + ((b >> 5) & 31) * evb) >> 4);
-            uint16_t bb = (uint16_t)((((a >> 10) & 31) * eva + ((b >> 10) & 31) * evb) >> 4);
+            const uint16_t i1e = (uint16_t)((L_BD & z1) | (i1 & ~z1));
+            const uint16_t s1 = layer_mask(i1e, second);
+            const uint16_t bl = (uint16_t)(~z0 & ~b3 & f0 & s1);
+            uint16_t r = (uint16_t)(((a & 31) * ea + (b & 31) * eb) >> 4);
+            uint16_t g = (uint16_t)((((a >> 5) & 31) * ea + ((b >> 5) & 31) * eb) >> 4);
+            uint16_t bb = (uint16_t)((((a >> 10) & 31) * ea + ((b >> 10) & 31) * eb) >> 4);
             uint16_t mixed;
             r = r > 31 ? 31 : r;
             g = g > 31 ? 31 : g;
             bb = bb > 31 ? 31 : bb;
             mixed = (uint16_t)(r | g << 5 | bb << 10);
-            out[x] = z0 ? b : bl ? mixed : a;
-            code16[x] = z0 ? (uint16_t)KH_GPU2D_3D : b3 ? (uint16_t)KH_GPU2D_BLEND_3D : (uint16_t)KH_GPU2D_2D;
+            out[x] = (uint16_t)((b & z0) | (~z0 & ((mixed & bl) | (a & ~bl))));
+            code16[x] = (uint16_t)((KH_GPU2D_3D & z0) |
+                                   (~z0 & ((KH_GPU2D_BLEND_3D & b3) | (KH_GPU2D_2D & ~b3))));
         }
         for (x = 0; x < W; x++)
             code[x] = (uint8_t)code16[x];
         return;
+#endif
     }
 
     if ((effect == 2 || effect == 3) && !(objs & 2)) {
@@ -935,23 +1019,48 @@ static void compose_line(const Engine *e, int line, uint16_t *out, uint8_t *code
          * loop below, with masks and selects (NEON). With the 3D in front the pixel is the
          * layer under it, faded when that is a first target, and the 3D's own fade is the
          * code; otherwise the front layer, faded when it is a first target. */
-        const uint16_t a3 = (uint16_t)(e->has3d ? 1 : 0), bit0 = (uint16_t)(bldcnt & 1);
+        const uint16_t a3 = mask16(e->has3d), bit0 = mask16(bldcnt & 1);
         const uint16_t code3d = (uint16_t)((effect == 2 ? KH_GPU2D_3D_BRIGHTEN : KH_GPU2D_3D_DARKEN) | evy);
-        const int up = effect == 2;
+        const unsigned targets = bldcnt & 0x3f;
+        const uint16_t ey = (uint16_t)evy;
+        const uint8_t *const fxc = ctl ? ctl : s_fx_on;
         uint16_t *const code16 = sc->code16;
-        for (x = 0; x < W; x++) {
-            const uint16_t i0 = id0[x], i1 = id1[x];
-            const uint16_t fx = ctl ? (uint16_t)((ctl[x] >> 5) & 1) : 1;
-            const uint16_t z0 = a3 & (i0 == L_BG0);
-            const uint16_t t = z0 ? c1[x] : c0[x];
-            const uint16_t first = (uint16_t)((bldcnt >> (z0 ? i1 : i0)) & 1) & fx;
-            const uint16_t r = t & 31, g = (t >> 5) & 31, b = (t >> 10) & 31;
-            const uint16_t rf = up ? (uint16_t)(r + (((31 - r) * evy) >> 4)) : (uint16_t)(r - ((r * evy) >> 4));
-            const uint16_t gf = up ? (uint16_t)(g + (((31 - g) * evy) >> 4)) : (uint16_t)(g - ((g * evy) >> 4));
-            const uint16_t bf = up ? (uint16_t)(b + (((31 - b) * evy) >> 4)) : (uint16_t)(b - ((b * evy) >> 4));
-            const uint16_t faded = (uint16_t)(rf | gf << 5 | bf << 10);
-            out[x] = first ? faded : t;
-            code16[x] = z0 ? ((fx & bit0) ? code3d : (uint16_t)KH_GPU2D_3D) : (uint16_t)KH_GPU2D_2D;
+        if (effect == 2) {
+            for (x = 0; x < W; x++) {
+                const uint16_t i0 = id0[x], i1 = id1[x];
+                const uint16_t fx = (uint16_t)-(uint16_t)((fxc[x] >> 5) & 1);
+                const uint16_t z0 = a3 & mask16(i0 == L_BG0);
+                const uint16_t t = (uint16_t)((c1[x] & z0) | (c0[x] & ~z0));
+                const uint16_t idf = (uint16_t)((i1 & z0) | (i0 & ~z0));
+                const uint16_t fm = layer_mask(idf, targets) & fx;
+                const uint16_t r = t & 31, g = (t >> 5) & 31, b = (t >> 10) & 31;
+                const uint16_t rf = (uint16_t)(r + (((31 - r) * ey) >> 4));
+                const uint16_t gf = (uint16_t)(g + (((31 - g) * ey) >> 4));
+                const uint16_t bf = (uint16_t)(b + (((31 - b) * ey) >> 4));
+                const uint16_t faded = (uint16_t)(rf | gf << 5 | bf << 10);
+                const uint16_t f3 = fx & bit0;
+                out[x] = (uint16_t)((faded & fm) | (t & ~fm));
+                code16[x] = (uint16_t)((z0 & ((code3d & f3) | (KH_GPU2D_3D & ~f3))) |
+                                       (KH_GPU2D_2D & ~z0));
+            }
+        } else {
+            for (x = 0; x < W; x++) {
+                const uint16_t i0 = id0[x], i1 = id1[x];
+                const uint16_t fx = (uint16_t)-(uint16_t)((fxc[x] >> 5) & 1);
+                const uint16_t z0 = a3 & mask16(i0 == L_BG0);
+                const uint16_t t = (uint16_t)((c1[x] & z0) | (c0[x] & ~z0));
+                const uint16_t idf = (uint16_t)((i1 & z0) | (i0 & ~z0));
+                const uint16_t fm = layer_mask(idf, targets) & fx;
+                const uint16_t r = t & 31, g = (t >> 5) & 31, b = (t >> 10) & 31;
+                const uint16_t rf = (uint16_t)(r - ((r * ey) >> 4));
+                const uint16_t gf = (uint16_t)(g - ((g * ey) >> 4));
+                const uint16_t bf = (uint16_t)(b - ((b * ey) >> 4));
+                const uint16_t faded = (uint16_t)(rf | gf << 5 | bf << 10);
+                const uint16_t f3 = fx & bit0;
+                out[x] = (uint16_t)((faded & fm) | (t & ~fm));
+                code16[x] = (uint16_t)((z0 & ((code3d & f3) | (KH_GPU2D_3D & ~f3))) |
+                                       (KH_GPU2D_2D & ~z0));
+            }
         }
         for (x = 0; x < W; x++)
             code[x] = (uint8_t)code16[x];
