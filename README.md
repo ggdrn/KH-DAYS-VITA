@@ -20,6 +20,12 @@ engines, sound, card, touch screen) is reimplemented on top of VitaSDK and vitaG
 
 Other regions (US `YKGE` included) do not work.
 
+Modified copies of the European dump (an undub with the Japanese voices and cutscenes, a
+translation) are accepted too, as long as they keep the gamecode `YKGP`: the first boot with one
+says the ROM is modified, then the game runs from it. Only the data can differ, since the code
+comes from the decomp; whether the replaced files work as the European ones did depends on the
+modification. If anything misbehaves, try the unmodified dump first.
+
 ## Install
 
 1. Install `khdays-vita-<version>.vpk` with VitaShell.

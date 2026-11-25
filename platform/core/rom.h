@@ -12,18 +12,26 @@
 #define ROM_EXPECTED_SHA1 "6fae8f5bbe80114b4e2535260eab5f4d0fc8a844"
 #define ROM_EXPECTED_SIZE 0x10000000u
 #define ROM_GAMECODE "YKGP"
+/* A modified EU dump (an undub, a translation) is accepted too: the code comes from the decomp,
+ * and every file is found through the dump's own FAT/FNT, so only the data may differ. It may
+ * have been rebuilt smaller, or larger up to the DS's 512 MiB. */
+#define ROM_MIN_SIZE 0x100000u /* above the fingerprint's 64 KiB slices */
+#define ROM_MAX_SIZE 0x20000000u
 
 typedef enum {
     ROM_OK = 0,
+    /* a YKGP dump whose SHA-1 is not the EU cartridge's, found on this boot's full check (later
+     * boots with the same file return ROM_OK; rom_is_modified() still tells) */
+    ROM_MODIFIED,
     ROM_MISSING,
     ROM_WRONG_SIZE,
     ROM_WRONG_GAME,
-    ROM_WRONG_HASH,
 } RomStatus;
 
 /* progress(done, total) is called while hashing; it may be NULL. */
 RomStatus rom_open(const char *path, const char *stamp_path,
                    void (*progress)(uint32_t done, uint32_t total));
+int rom_is_modified(void);
 int rom_read(uint32_t offset, void *dst, uint32_t size);
 /* Bytes the reads see in place of the dump's at offset (the port's own changes to game data,
  * such as the button icons of nitro/button_glyphs.c); the file itself is never written. Data

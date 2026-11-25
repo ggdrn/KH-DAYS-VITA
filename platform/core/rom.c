@@ -16,6 +16,8 @@ static SceUID s_fd = -1;
 static void ahead_start(const char *path);
 static SceUID s_lock = -1;
 static uint8_t s_header[0x200];
+static uint32_t s_size;     /* the dump's size: ROM_EXPECTED_SIZE unless it was rebuilt */
+static int s_modified;      /* not the EU cartridge's SHA-1 */
 
 /* A full SHA-1 over 256 MiB takes a while on the Vita, so a successful check is remembered in a
  * stamp file keyed by the dump's size and modification time. */
@@ -40,7 +42,7 @@ static void fingerprint(char out[41])
         return;
     sha1_init(&sha);
     for (i = 0; i < SLICES; i++) {
-        const uint32_t off = (uint32_t)(((uint64_t)(ROM_EXPECTED_SIZE - SLICE) * i) / (SLICES - 1));
+        const uint32_t off = (uint32_t)(((uint64_t)(s_size - SLICE) * i) / (SLICES - 1));
         const int n = sceIoPread(s_fd, buf, SLICE, off);
         if (n > 0)
             sha1_update(&sha, buf, n);
@@ -51,12 +53,14 @@ static void fingerprint(char out[41])
         sprintf(out + i * 2, "%02x", digest[i]);
 }
 
-/* the stamp: the key line, then the fingerprint line */
-static int stamp_read(const char *stamp_path, char *key, size_t nkey, char fp[41])
+/* the stamp: the key line, the fingerprint line, then "modified" for a modified dump (stamps
+ * written before modified dumps were accepted have no third line: they were all the EU one) */
+static int stamp_read(const char *stamp_path, char *key, size_t nkey, char fp[41], int *modified)
 {
     char buf[256] = { 0 }, *nl;
     SceUID fd = sceIoOpen(stamp_path, SCE_O_RDONLY, 0);
     key[0] = fp[0] = 0;
+    *modified = 0;
     if (fd < 0)
         return 0;
     sceIoRead(fd, buf, sizeof(buf) - 1);
@@ -65,19 +69,37 @@ static int stamp_read(const char *stamp_path, char *key, size_t nkey, char fp[41
     if (nl) {
         snprintf(key, nkey, "%.*s", (int)(nl - buf + 1), buf);
         snprintf(fp, 41, "%.40s", nl + 1);
+        *modified = strstr(nl + 1, "\nmodified") != NULL;
     }
     return 1;
 }
 
-static void stamp_write(const char *stamp_path, const char *key, const char *fp)
+static void stamp_write(const char *stamp_path, const char *key, const char *fp, int modified)
 {
     SceUID fd = sceIoOpen(stamp_path, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
     if (fd >= 0) {
         sceIoWrite(fd, key, strlen(key));
         sceIoWrite(fd, fp, strlen(fp));
         sceIoWrite(fd, "\n", 1);
+        if (modified)
+            sceIoWrite(fd, "modified\n", 9);
         sceIoClose(fd);
     }
+}
+
+/* the file tables the header points to lie inside the dump */
+static int header_sane(void)
+{
+    static const int tables[] = { 0x20, 0x30, 0x40, 0x48, 0x50 }; /* ARM9, ARM7, FNT, FAT, OVT9 */
+    int i;
+    for (i = 0; i < (int)(sizeof(tables) / sizeof(tables[0])); i++) {
+        uint32_t off, size;
+        memcpy(&off, s_header + tables[i], 4);
+        memcpy(&size, s_header + tables[i] + (tables[i] < 0x40 ? 0x0c : 4), 4);
+        if (off > s_size || size > s_size - off)
+            return 0;
+    }
+    return 1;
 }
 
 static int hash_file(void (*progress)(uint32_t, uint32_t), char hex[41])
@@ -91,20 +113,20 @@ static int hash_file(void (*progress)(uint32_t, uint32_t), char hex[41])
     if (!buf)
         return -1;
     sha1_init(&sha);
-    while (done < ROM_EXPECTED_SIZE) {
+    while (done < s_size) {
         int n = sceIoPread(s_fd, buf, CHUNK, done);
         if (n <= 0)
             break;
         sha1_update(&sha, buf, n);
         done += n;
         if (progress)
-            progress(done, ROM_EXPECTED_SIZE);
+            progress(done, s_size);
     }
     free(buf);
     sha1_final(&sha, digest);
     for (i = 0; i < 20; i++)
         sprintf(hex + i * 2, "%02x", digest[i]);
-    return done == ROM_EXPECTED_SIZE ? 0 : -1;
+    return done == s_size ? 0 : -1;
 }
 
 RomStatus rom_open(const char *path, const char *stamp_path,
@@ -112,47 +134,70 @@ RomStatus rom_open(const char *path, const char *stamp_path,
 {
     SceIoStat st;
     char key[160], hex[41];
+    RomStatus status = ROM_OK;
 
     if (sceIoGetstat(path, &st) < 0 || (s_fd = sceIoOpen(path, SCE_O_RDONLY, 0)) < 0) {
         LOG("rom: %s not found", path);
         return ROM_MISSING;
     }
-    if ((uint64_t)st.st_size != ROM_EXPECTED_SIZE) {
+    if (st.st_size < ROM_MIN_SIZE || st.st_size > ROM_MAX_SIZE) {
         LOG("rom: size %lld, expected %u", (long long)st.st_size, ROM_EXPECTED_SIZE);
         return ROM_WRONG_SIZE;
     }
+    s_size = (uint32_t)st.st_size;
     sceIoPread(s_fd, s_header, sizeof(s_header), 0);
     if (memcmp(s_header + 0x0c, ROM_GAMECODE, 4) != 0) {
         LOG("rom: gamecode %.4s, expected %s", (const char *)s_header + 0x0c, ROM_GAMECODE);
+        return ROM_WRONG_GAME;
+    }
+    if (!header_sane()) {
+        LOG("rom: the header's tables lie outside the %u-byte file", s_size);
         return ROM_WRONG_GAME;
     }
 
     stamp_key(&st, key, sizeof(key));
     {
         char old_key[160], old_fp[41], fp[41];
-        stamp_read(stamp_path, old_key, sizeof(old_key), old_fp);
+        int old_modified;
+        stamp_read(stamp_path, old_key, sizeof(old_key), old_fp, &old_modified);
         if (strcmp(old_key, key) != 0) {
             fingerprint(fp);
             if (fp[0] && strcmp(fp, old_fp) == 0) {
                 LOG("rom: same dump as verified before (fingerprint), SHA-1 skipped");
+                s_modified = old_modified;
             } else {
                 LOG("rom: verifying SHA-1 (first boot with this dump)");
-                if (hash_file(progress, hex) != 0 || strcmp(hex, ROM_EXPECTED_SHA1) != 0) {
-                    LOG("rom: SHA-1 %s, expected %s", hex, ROM_EXPECTED_SHA1);
-                    return ROM_WRONG_HASH;
+                if (hash_file(progress, hex) != 0) {
+                    LOG("rom: cannot read the whole file");
+                    return ROM_WRONG_SIZE;
+                }
+                if (s_size != ROM_EXPECTED_SIZE || strcmp(hex, ROM_EXPECTED_SHA1) != 0) {
+                    LOG("rom: SHA-1 %s (%u bytes), the EU dump is %s: modified dump", hex,
+                        s_size, ROM_EXPECTED_SHA1);
+                    s_modified = 1;
+                    status = ROM_MODIFIED;
                 }
             }
-            stamp_write(stamp_path, key, fp);
-        } else if (!old_fp[0]) {
-            /* a stamp from before the fingerprint: add it */
-            fingerprint(fp);
-            stamp_write(stamp_path, key, fp);
+            stamp_write(stamp_path, key, fp, s_modified);
+        } else {
+            s_modified = old_modified;
+            if (!old_fp[0]) {
+                /* a stamp from before the fingerprint: add it */
+                fingerprint(fp);
+                stamp_write(stamp_path, key, fp, s_modified);
+            }
         }
     }
     s_lock = sceKernelCreateMutex("kh_rom", 0, 0, NULL);
     ahead_start(path);
-    LOG("rom: ok (%.12s %.4s)", (const char *)s_header, (const char *)s_header + 0x0c);
-    return ROM_OK;
+    LOG("rom: ok (%.12s %.4s, %u bytes%s)", (const char *)s_header, (const char *)s_header + 0x0c,
+        s_size, s_modified ? ", modified" : "");
+    return status;
+}
+
+int rom_is_modified(void)
+{
+    return s_modified;
 }
 
 /* ---- read cache -------------------------------------------------------------------------
@@ -248,7 +293,7 @@ static int block_victim(void)
 static void ahead_queue(uint32_t base)
 {
     int i;
-    if (s_sema < 0 || base >= ROM_EXPECTED_SIZE || block_find(base) >= 0 || s_q_len == QUEUE)
+    if (s_sema < 0 || base >= s_size || block_find(base) >= 0 || s_q_len == QUEUE)
         return;
     for (i = 0; i < s_q_len; i++)
         if (s_queue[(s_q_head + i) % QUEUE] == base)
@@ -418,10 +463,10 @@ int rom_read(uint32_t offset, void *dst, uint32_t size)
 {
     const uint32_t start = offset;
     int n = 0;
-    if (offset >= ROM_EXPECTED_SIZE)
+    if (offset >= s_size)
         return 0;
-    if (size > ROM_EXPECTED_SIZE - offset)
-        size = ROM_EXPECTED_SIZE - offset;
+    if (size > s_size - offset)
+        size = s_size - offset;
     sceKernelLockMutex(s_lock, 1, NULL);
     s_stats.reads++;
     if (!s_stamp)

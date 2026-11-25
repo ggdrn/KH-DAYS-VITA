@@ -29,7 +29,8 @@ build/decomp/           local build tree = decomp @ DECOMP_COMMIT + decomp.patch
 
 1. `platform/core/main.c`: clocks to 444/222/222/166 MHz, the data directory, the log, vitaGL.
 2. `rom.c` opens `ux0:data/khdays/days.nds`, checks size, gamecode and SHA-1, and caches the
-   result. On failure a system message dialog says what is wrong.
+   result. On failure a system message dialog says what is wrong. A `YKGP` dump with another
+   SHA-1 (an undub, a translation) is played as a modified dump, told once in a dialog.
 3. With the game linked (`KH_WITH_GAME`), `kh_game_run()` sets up the emulated DS state and
    runs the decomp's `main` (NitroMain) on its own thread. Without it, a diagnostic screen shows
    the input.

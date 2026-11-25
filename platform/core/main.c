@@ -83,6 +83,13 @@ static void check_rom(void)
     switch (rom_open(KH_ROM_PATH, KH_ROM_STAMP, hash_progress)) {
     case ROM_OK:
         return;
+    case ROM_MODIFIED:
+        /* told once, on the boot that checked this file */
+        msgdialog_show("The ROM at " KH_ROM_PATH " is a modified copy of the\n"
+                       "European cartridge (an undub, a translation...).\n\n"
+                       "It will be played as it is. If the game misbehaves,\n"
+                       "try the unmodified European dump first.");
+        return;
     case ROM_MISSING:
         fatal("Kingdom Hearts 358/2 Days ROM not found.\n\n"
               "Copy your own dump of the European cartridge to\n" KH_ROM_PATH);
@@ -91,10 +98,6 @@ static void check_rom(void)
     case ROM_WRONG_GAME:
         fatal("The file at " KH_ROM_PATH " is not the European\n"
               "Kingdom Hearts 358/2 Days (YKGP) cartridge.");
-        break;
-    case ROM_WRONG_HASH:
-        fatal("The ROM at " KH_ROM_PATH " does not match the expected dump\n"
-              "(SHA-1 " ROM_EXPECTED_SHA1 ").\n\nRe-dump the European cartridge.");
         break;
     }
 }
